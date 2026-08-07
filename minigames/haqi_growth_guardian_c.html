@@ -441,6 +441,8 @@ art_assets = [];
   const LOGIN_STATE_KEY = 'haqiGrowthGuardianLoginStateV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
+  const CLOUD_HANDOFF_PATH = 'minigames/haqi-growth-guardian/handoff.json';
+  const DEVICE_ID_KEY = 'haqiGrowthGuardianDeviceIdV1';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
   const DEFAULT_METRICS = [
@@ -552,6 +554,14 @@ art_assets = [];
   let sdkLoadPromise = null;
   let focusTimer = 0;
   let focusSession = null;
+  let guardianStateSyncTimer = 0;
+  let handoffSyncTimer = 0;
+  let handoffWriteTimer = 0;
+  let lastHandoffRevision = 0;
+  let applyingRemoteHandoff = false;
+  const deviceId = localStorage.getItem(DEVICE_ID_KEY) || `device_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  let handoffOwnerDeviceId = deviceId;
+  localStorage.setItem(DEVICE_ID_KEY, deviceId);
   let dailyResetTimer = 0;
   let schoolInboxRefreshTimer = 0;
   function refreshVisibleSchoolInbox() {
@@ -674,7 +684,10 @@ art_assets = [];
 
   function saveState() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)), 500);
+    saveTimer = setTimeout(() => {
+      saveTimer = 0;
+      queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+    }, 500);
   }
 
   function persistStateNow() {
@@ -696,6 +709,86 @@ art_assets = [];
       return (await guardianStore.readFile(path, 1, 99999)) || '';
     } catch (_) {
       try { return (await guardianStore.readFile(path)) || ''; } catch (__) { return ''; }
+    }
+  }
+
+  async function refreshGuardianCloudState() {
+    if (!guardianStore || document.hidden || saveTimer) return;
+    try {
+      const cloudStateText = await readCloudFile(CLOUD_STATE_PATH);
+      if (!cloudStateText) return;
+      const cloudState = normalizeState(JSON.parse(cloudStateText));
+      if (!cloudState || !Array.isArray(cloudState.children)) return;
+      if (JSON.stringify(cloudState) === JSON.stringify(state)) return;
+      state = cloudState;
+      syncCurrentPetArt();
+      if (!focusSession) render();
+    } catch (error) {
+      console.warn('跨端刷新成长数据失败:', error);
+    }
+  }
+
+  function handoffSnapshot() {
+    return {
+      version: 1,
+      revision: Date.now(),
+      ownerDeviceId: deviceId,
+      mode,
+      parentTab,
+      selectedDuration,
+      focusSession: focusSession ? { ...focusSession, lastTick: Date.now() } : null
+    };
+  }
+
+  function publishHandoffNow() {
+    if (!guardianStore || applyingRemoteHandoff || handoffOwnerDeviceId !== deviceId) return Promise.resolve();
+    const snapshot = handoffSnapshot();
+    lastHandoffRevision = snapshot.revision;
+    return queueCloudWrite(CLOUD_HANDOFF_PATH, JSON.stringify(snapshot));
+  }
+
+  function scheduleHandoffWrite(delay = 350) {
+    if (handoffOwnerDeviceId !== deviceId) return;
+    clearTimeout(handoffWriteTimer);
+    handoffWriteTimer = window.setTimeout(publishHandoffNow, delay);
+  }
+
+  async function refreshHandoff({ claim = false } = {}) {
+    if (!guardianStore || document.hidden) return;
+    let remote = null;
+    try { remote = JSON.parse(await readCloudFile(CLOUD_HANDOFF_PATH) || 'null'); } catch (_) {}
+    if (!remote || Number(remote.revision) <= lastHandoffRevision) return;
+    lastHandoffRevision = Number(remote.revision) || Date.now();
+    handoffOwnerDeviceId = claim ? deviceId : String(remote.ownerDeviceId || deviceId);
+    applyingRemoteHandoff = true;
+    try {
+      if (['child', 'parent'].includes(remote.mode) && (remote.mode !== 'parent' || loginRole === 'parent' || parentUnlocked)) mode = remote.mode;
+      if (typeof remote.parentTab === 'string') parentTab = remote.parentTab;
+      if (Number.isFinite(Number(remote.selectedDuration))) selectedDuration = Number(remote.selectedDuration);
+      if (remote.focusSession?.id) {
+        focusSession = { ...remote.focusSession, lastTick: Date.now(), paused: Boolean(remote.focusSession.paused) };
+        clearInterval(focusTimer);
+        focusTimer = handoffOwnerDeviceId === deviceId ? window.setInterval(tickFocus, 250) : 0;
+        renderFocusScreen();
+      } else if (focusSession && remote.ownerDeviceId !== deviceId) {
+        focusSession = null;
+        clearInterval(focusTimer);
+        focusTimer = 0;
+        closeModal();
+        render();
+      } else if (!focusSession) {
+        render();
+      }
+    } finally {
+      applyingRemoteHandoff = false;
+    }
+    if (claim) {
+      handoffOwnerDeviceId = deviceId;
+      const url = new URL(location.href);
+      url.searchParams.delete('handoff');
+      history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      await publishHandoffNow();
+      toast('已接续另一设备的成长会话');
     }
   }
 
@@ -953,6 +1046,7 @@ art_assets = [];
           <div class="topbar-actions">
             <div class="currency-display" aria-label="金币余额 ${topbarCoins}"><span class="currency-icon">🪙</span><strong class="currency-value">${topbarCoins}</strong></div>
             <div class="account-chip" title="当前 KeepWork 登录身份">${mode === 'parent' ? '🔐' : '🐾'} ${escapeHtml(roleLabel)} · ${escapeHtml(guardianLoginName() || 'KeepWork 用户')}</div>
+            <button class="icon-btn" id="handoffBtn" title="在手机或电脑继续" aria-label="跨端接力">⇄</button>
             <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
             <button class="icon-btn" id="topbarLogoutBtn" title="退出登录" aria-label="退出登录">↪</button>
           </div>
@@ -1585,6 +1679,11 @@ art_assets = [];
     syncCurrentPetArt();
     render();
     requestPetImage(activeChild().selectedPetId || '');
+    await refreshHandoff({ claim: new URL(location.href).searchParams.get('handoff') === '1' });
+    clearInterval(guardianStateSyncTimer);
+    guardianStateSyncTimer = window.setInterval(refreshGuardianCloudState, 8 * 1000);
+    clearInterval(handoffSyncTimer);
+    handoffSyncTimer = window.setInterval(refreshHandoff, 8 * 1000);
     clearInterval(schoolInboxRefreshTimer);
     refreshVisibleSchoolInbox();
     schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
@@ -1699,6 +1798,7 @@ art_assets = [];
   }
 
   function bindGlobal() {
+    document.getElementById('handoffBtn')?.addEventListener('click', showHandoff);
     document.getElementById('helpBtn')?.addEventListener('click', showHelp);
     document.getElementById('topbarLogoutBtn')?.addEventListener('click', showLogoutConfirm);
   }
@@ -1713,6 +1813,7 @@ art_assets = [];
       return;
     }
     mode = nextMode;
+    scheduleHandoffWrite();
     render();
   }
 
@@ -1802,6 +1903,9 @@ art_assets = [];
     loginRole = null;
     parentUnlocked = false;
     mode = 'child';
+    clearInterval(guardianStateSyncTimer);
+    clearInterval(handoffSyncTimer);
+    clearInterval(schoolInboxRefreshTimer);
     closeModal();
     clearGuardianAuthParams();
     showGuardianLoginGate('已安全退出。请选择身份并重新输入账号密码。');
@@ -2152,11 +2256,41 @@ art_assets = [];
     document.getElementById('cancelModal').addEventListener('click', closeModal);
   }
 
+  async function showHandoff() {
+    await publishHandoffNow();
+    handoffOwnerDeviceId = 'handoff_pending';
+    clearInterval(focusTimer);
+    focusTimer = 0;
+    const url = new URL(location.href);
+    ['token', 'code', 'state', 'wxauth', 'googleauth'].forEach(key => url.searchParams.delete(key));
+    url.searchParams.set('handoff', '1');
+    const link = url.toString();
+    modal(`<h2>跨端接力</h2><p>在另一台电脑或手机打开此链接，并使用当前 KeepWork 账号登录，即可恢复当前页面和专注会话。链接不包含登录凭据。</p><div class="field"><label>安全接力链接</label><input class="input" id="handoffLink" readonly value="${escapeHtml(link)}"></div><div class="modal-actions"><button class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" id="shareHandoffBtn">分享链接</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', () => {
+      closeModal();
+      if (focusSession) renderFocusScreen();
+    });
+    document.getElementById('shareHandoffBtn').addEventListener('click', async () => {
+      try {
+        if (navigator.share) await navigator.share({ title: '哈奇成长守护跨端接力', text: '在另一设备继续当前成长会话', url: link });
+        else await navigator.clipboard.writeText(link);
+        toast(navigator.share ? '已打开系统分享' : '接力链接已复制');
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          document.getElementById('handoffLink')?.select();
+          toast('请手动复制接力链接');
+        }
+      }
+    });
+  }
+
   async function startFocus() {
     if (focusSession) return;
+    handoffOwnerDeviceId = deviceId;
     const task = document.getElementById('focusTask')?.value || '成长任务';
     const durationMs = selectedDuration * 60 * 1000;
     focusSession = { id: `focus_${Date.now()}`, task, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    scheduleHandoffWrite(0);
     renderFocusScreen();
     post('gameStarted', { task, duration: selectedDuration });
     try {
@@ -2179,19 +2313,30 @@ art_assets = [];
     const seconds = Math.ceil(session.remainingMs / 1000);
     const minutesText = String(Math.floor(seconds / 60)).padStart(2, '0');
     const secondsText = String(seconds % 60).padStart(2, '0');
-    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-time">${minutesText}:${secondsText}</div><div class="focus-hint">${session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions"><button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button></div></div></section>`;
-    document.getElementById('pauseFocusBtn').addEventListener('click', toggleFocusPause);
-    document.getElementById('stopFocusBtn').addEventListener('click', () => finishFocus(false));
+    const remoteActive = handoffOwnerDeviceId !== deviceId;
+    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-time">${minutesText}:${secondsText}</div><div class="focus-hint">${remoteActive ? '此会话已接力到另一设备，本页会自动同步进度' : session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions">${remoteActive ? '<button class="btn btn-primary" id="claimFocusBtn">在此设备继续</button>' : `<button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button>`}</div></div></section>`;
+    document.getElementById('pauseFocusBtn')?.addEventListener('click', toggleFocusPause);
+    document.getElementById('stopFocusBtn')?.addEventListener('click', () => finishFocus(false));
+    document.getElementById('claimFocusBtn')?.addEventListener('click', async () => {
+      handoffOwnerDeviceId = deviceId;
+      focusSession.lastTick = Date.now();
+      clearInterval(focusTimer);
+      focusTimer = window.setInterval(tickFocus, 250);
+      await publishHandoffNow();
+      renderFocusScreen();
+      toast('已在此设备继续计时');
+    });
   }
 
   function tickFocus() {
-    if (!focusSession) return;
+    if (!focusSession || handoffOwnerDeviceId !== deviceId) return;
     const now = Date.now();
     const elapsed = now - focusSession.lastTick;
     focusSession.lastTick = now;
     if (!focusSession.paused && document.visibilityState === 'visible') focusSession.remainingMs -= elapsed;
     if (focusSession.remainingMs <= 0) finishFocus(true);
     else {
+      if (Math.floor(now / 5000) !== Math.floor((now - elapsed) / 5000)) scheduleHandoffWrite(0);
       const screen = document.getElementById('focusScreen');
       if (!screen) {
         renderFocusScreen();
@@ -2208,6 +2353,7 @@ art_assets = [];
     if (!focusSession) return;
     focusSession.paused = !focusSession.paused;
     focusSession.lastTick = Date.now();
+    scheduleHandoffWrite(0);
     renderFocusScreen();
   }
 
@@ -2215,6 +2361,7 @@ art_assets = [];
     if (!focusSession) return;
     const session = focusSession;
     focusSession = null;
+    scheduleHandoffWrite(0);
     clearInterval(focusTimer);
     focusTimer = 0;
     try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (_) {}
@@ -2307,12 +2454,16 @@ art_assets = [];
     }
     if (!document.hidden) publishPendingSchoolReceipts();
     if (!document.hidden) refreshVisibleSchoolInbox();
+    if (!document.hidden) refreshGuardianCloudState();
+    if (!document.hidden) refreshHandoff();
     if (focusSession) focusSession.lastTick = Date.now();
   });
 
   window.addEventListener('online', () => {
     publishPendingSchoolReceipts();
     refreshVisibleSchoolInbox();
+    refreshGuardianCloudState();
+    refreshHandoff();
   });
 
   document.addEventListener('fullscreenchange', () => {
@@ -2325,6 +2476,9 @@ art_assets = [];
 
   window.addEventListener('beforeunload', () => {
     clearTimeout(dailyResetTimer);
+    clearTimeout(handoffWriteTimer);
+    clearInterval(guardianStateSyncTimer);
+    clearInterval(handoffSyncTimer);
     clearInterval(schoolInboxRefreshTimer);
     petObjectUrls.forEach(url => URL.revokeObjectURL(url));
   });

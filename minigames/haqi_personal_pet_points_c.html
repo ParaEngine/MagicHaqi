@@ -475,6 +475,7 @@
         if (teacherCloudStore && !window.studentLoginOnly) {
           clearTimeout(teacherCloudSaveTimer);
           teacherCloudSaveTimer = setTimeout(() => {
+            teacherCloudSaveTimer = null;
             const paths = getTeacherCloudPaths(authenticatedUsername);
             queueTeacherCloudWrite(paths.state, JSON.stringify(state));
           }, 500);
@@ -485,6 +486,7 @@
         if (teacherCloudStore && !window.studentLoginOnly) {
           clearTimeout(teacherAwardsCloudSaveTimer);
           teacherAwardsCloudSaveTimer = setTimeout(() => {
+            teacherAwardsCloudSaveTimer = null;
             const paths = getTeacherCloudPaths(authenticatedUsername);
             queueTeacherCloudWrite(paths.awards, JSON.stringify(pendingAwards));
           }, 500);
@@ -1597,6 +1599,7 @@
         clearInterval(pendingAwardRetryTimer);
         clearInterval(schoolReceiptRefreshTimer);
         clearInterval(studentTaskRefreshTimer);
+        clearInterval(teacherStateRefreshTimer);
       }
       document.addEventListener('click', event => {
         const button = event.target.closest('button[data-action]'); if (!button) return;
@@ -1850,6 +1853,7 @@
       let pendingAwardRetryTimer = null;
       let schoolReceiptRefreshTimer = null;
       let studentTaskRefreshTimer = null;
+      let teacherStateRefreshTimer = null;
       function refreshVisibleSchoolReceipts() {
         if (document.hidden || window.studentLoginOnly || state.role !== 'teacher') return;
         refreshSchoolReceipts();
@@ -2077,6 +2081,38 @@
           throw error;
         }
       }
+      async function refreshTeacherCloudState() {
+        if (document.hidden || window.studentLoginOnly || !teacherCloudStore || teacherCloudSaveTimer || teacherAwardsCloudSaveTimer) return;
+        try {
+          const paths = getTeacherCloudPaths(authenticatedUsername);
+          const [cloudStateText, cloudAwardsText] = await Promise.all([
+            readTeacherCloudFile(paths.state),
+            readTeacherCloudFile(paths.awards)
+          ]);
+          const localStateText = JSON.stringify(state);
+          const localAwardsText = JSON.stringify(pendingAwards);
+          let changed = false;
+          if (cloudStateText && cloudStateText !== localStateText) {
+            const cloudState = JSON.parse(cloudStateText);
+            if (Array.isArray(cloudState.students)) {
+              state = cloudState;
+              localStorage.setItem(activeStateStorageKey, cloudStateText);
+              changed = true;
+            }
+          }
+          if (cloudAwardsText && cloudAwardsText !== localAwardsText) {
+            const cloudAwards = JSON.parse(cloudAwardsText);
+            if (Array.isArray(cloudAwards)) {
+              pendingAwards = cloudAwards;
+              localStorage.setItem(activeAwardsStorageKey, cloudAwardsText);
+              changed = true;
+            }
+          }
+          if (changed) render();
+        } catch (error) {
+          console.warn('跨端刷新教师数据失败:', error);
+        }
+      }
       async function enterAfterLogin(user, sdk) {
         if (loginRole !== 'teacher' && loginRole !== 'student') throw new Error('请先选择教师或学生登录身份');
         window.studentLoginOnly = loginRole === 'student';
@@ -2104,12 +2140,14 @@
         identity.classList.remove('hidden');
         showToast(`欢迎，${username}${window.studentLoginOnly ? '（学生访问）' : '（教师管理）'}`);
         render();
+        clearInterval(teacherStateRefreshTimer);
+        if (!window.studentLoginOnly) teacherStateRefreshTimer = setInterval(refreshTeacherCloudState, 8 * 1000);
         clearInterval(studentTaskRefreshTimer);
         if (window.studentLoginOnly) {
           refreshStudentGrowthTasks();
           studentTaskRefreshTimer = setInterval(() => {
             if (!document.hidden) refreshStudentGrowthTasks();
-          }, 45 * 1000);
+          }, 8 * 1000);
         }
         if (!window.studentLoginOnly) {
           await publishPendingAwards();
