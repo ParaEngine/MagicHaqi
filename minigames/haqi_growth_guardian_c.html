@@ -272,7 +272,11 @@
     .focus-pet { width: 210px; height: 210px; margin: 0 auto 12px; animation: focusPetFloat 6s ease-in-out infinite; will-change: transform; }
     .focus-pet.placeholder { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.12); }
     .focus-task { color: #99f6e4; font-size: 13px; font-weight: 900; }
-    .focus-time { margin: 8px 0; font: 900 clamp(58px, 12vw, 112px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .focus-calendar { margin: 8px 0 12px; }
+    .focus-date { color: #c8e6ee; font-size: clamp(15px, 3vw, 20px); font-weight: 800; }
+    .focus-time { margin: 4px 0; font: 900 clamp(52px, 12vw, 104px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .focus-countdown { display: inline-flex; align-items: baseline; gap: 8px; min-height: 38px; padding: 7px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; background: rgba(7,29,43,.34); color: #dff8f4; font-size: 14px; font-weight: 800; }
+    .focus-countdown strong { color: #fde68a; font-size: 21px; font-variant-numeric: tabular-nums; }
     .focus-hint { color: #bdd1dc; font-size: 13px; }
     .focus-progress { height: 8px; margin: 22px auto; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.13); }
     .focus-progress > div { height: 100%; width: 0; background: #2dd4bf; transition: width .5s linear; }
@@ -341,6 +345,8 @@
       .pet-generator-actions { align-items: stretch; flex-direction: column; }
       .focus-screen { place-items: start center; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
       .focus-pet { width: 160px; height: 160px; }
+      .focus-calendar { margin-top: 4px; }
+      .focus-progress { margin: 16px auto; }
     }
     @keyframes mobilePanelIn { from { opacity: 0; transform: translateY(18px); } }
     @media (max-width: 430px) {
@@ -547,9 +553,9 @@ art_assets = [];
   let petRequestId = '';
   let petObjectUrl = '';
   let availablePets = [];
-  const famousPets = FAMOUS_PETS;
+  let famousPets = FAMOUS_PETS;
   let selectedFamousPetId = '';
-  const famousPetsStatus = `内置 ${FAMOUS_PETS.length} 只宠物，可按名字选择。`;
+  let famousPetsStatus = `内置 ${FAMOUS_PETS.length} 只宠物，可按名字选择。`;
   const petObjectUrls = new Map();
   let sdkLoadPromise = null;
   let focusTimer = 0;
@@ -958,6 +964,30 @@ art_assets = [];
     const selectedPetId = child.selectedPetId || state.selectedPetId || currentPetId;
     petObjectUrl = petObjectUrls.get(String(selectedPetId || '')) || '';
     currentPetId = selectedPetId || currentPetId;
+  }
+
+  async function loadFamousPets() {
+    try {
+      const indexUrl = new URL('../famous-pets/_pet_index.json', location.href);
+      const response = await fetch(indexUrl.href, { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+      const normalized = list
+        .map(item => ({
+          id: String(item?.id || '').trim(),
+          name: String(item?.name || item?.id || '').trim(),
+          imageSheetUrl: String(item?.imageSheetUrl || item?.imageUrl || '').trim()
+        }))
+        .filter(item => item.id);
+      if (!normalized.length) throw new Error('宠物索引为空');
+      famousPets = normalized;
+      famousPetsStatus = `完整图鉴共 ${famousPets.length} 只宠物，可按名字选择。`;
+    } catch (error) {
+      console.warn('完整宠物图鉴加载失败，使用内置宠物名单', error);
+      famousPets = FAMOUS_PETS;
+      famousPetsStatus = `当前使用内置 ${FAMOUS_PETS.length} 只宠物；联网打开可加载完整图鉴。`;
+    }
   }
 
   function petArtStyle(energy) {
@@ -1664,7 +1694,7 @@ art_assets = [];
     localStorage.setItem(AUTH_TOKEN_KEY, sdk.token || '');
     localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({ active: true, role, username: user?.username || user?.name || '' }));
     clearGuardianAuthParams();
-    await loadCloudData(sdk);
+    await Promise.all([loadCloudData(sdk), loadFamousPets()]);
     const incomingSchoolLink = schoolLinkFromUrl();
     if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
       Object.assign(state.schoolLink, incomingSchoolLink);
@@ -2306,15 +2336,26 @@ art_assets = [];
     return game_config.focusRewards[minutes] || Math.max(1, Math.floor(minutes / 10));
   }
 
+  function focusClockParts(now = new Date()) {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    return {
+      date: `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`,
+      time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+    };
+  }
+
+  function focusCountdownText(remainingMs) {
+    const seconds = Math.ceil(Math.max(0, remainingMs) / 1000);
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
   function renderFocusScreen() {
     const session = focusSession;
     if (!session) return;
     const percent = Math.max(0, Math.min(100, 100 * (1 - session.remainingMs / session.durationMs)));
-    const seconds = Math.ceil(session.remainingMs / 1000);
-    const minutesText = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const secondsText = String(seconds % 60).padStart(2, '0');
+    const clock = focusClockParts();
     const remoteActive = handoffOwnerDeviceId !== deviceId;
-    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-time">${minutesText}:${secondsText}</div><div class="focus-hint">${remoteActive ? '此会话已接力到另一设备，本页会自动同步进度' : session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions">${remoteActive ? '<button class="btn btn-primary" id="claimFocusBtn">在此设备继续</button>' : `<button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button>`}</div></div></section>`;
+    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-calendar"><div class="focus-date">${clock.date}</div><div class="focus-time">${clock.time}</div><div class="focus-countdown"><span>本次守护剩余</span><strong>${focusCountdownText(session.remainingMs)}</strong></div></div><div class="focus-hint">${remoteActive ? '此会话已接力到另一设备，本页会自动同步进度' : session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions">${remoteActive ? '<button class="btn btn-primary" id="claimFocusBtn">在此设备继续</button>' : `<button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button>`}</div></div></section>`;
     document.getElementById('pauseFocusBtn')?.addEventListener('click', toggleFocusPause);
     document.getElementById('stopFocusBtn')?.addEventListener('click', () => finishFocus(false));
     document.getElementById('claimFocusBtn')?.addEventListener('click', async () => {
@@ -2329,22 +2370,27 @@ art_assets = [];
   }
 
   function tickFocus() {
-    if (!focusSession || handoffOwnerDeviceId !== deviceId) return;
+    if (!focusSession) return;
     const now = Date.now();
+    const screen = document.getElementById('focusScreen');
+    if (screen) {
+      const clock = focusClockParts(new Date(now));
+      screen.querySelector('.focus-date').textContent = clock.date;
+      screen.querySelector('.focus-time').textContent = clock.time;
+    }
+    if (handoffOwnerDeviceId !== deviceId) return;
     const elapsed = now - focusSession.lastTick;
     focusSession.lastTick = now;
     if (!focusSession.paused && document.visibilityState === 'visible') focusSession.remainingMs -= elapsed;
     if (focusSession.remainingMs <= 0) finishFocus(true);
     else {
       if (Math.floor(now / 5000) !== Math.floor((now - elapsed) / 5000)) scheduleHandoffWrite(0);
-      const screen = document.getElementById('focusScreen');
       if (!screen) {
         renderFocusScreen();
         return;
       }
       const percent = Math.max(0, Math.min(100, 100 * (1 - focusSession.remainingMs / focusSession.durationMs)));
-      const seconds = Math.ceil(focusSession.remainingMs / 1000);
-      screen.querySelector('.focus-time').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      screen.querySelector('.focus-countdown strong').textContent = focusCountdownText(focusSession.remainingMs);
       screen.querySelector('.focus-progress > div').style.width = `${percent}%`;
     }
   }

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "minigames/**"
+      - "famous-pets/_pet_index.json"
       - ".github/workflows/deploy-minigames-pages.yml"
   workflow_dispatch:
 
@@ -31,6 +32,8 @@ jobs:
         run: |
           mkdir -p _site/minigames
           cp -R minigames/. _site/minigames/
+          mkdir -p _site/famous-pets
+          cp famous-pets/_pet_index.json _site/famous-pets/
           touch _site/.nojekyll
 
       - name: Configure Pages
