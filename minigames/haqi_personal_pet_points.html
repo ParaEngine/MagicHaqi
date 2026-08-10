@@ -487,6 +487,8 @@
       };
       const configuredSchoolSitePath = () => String(game_config.schoolSitePath || '').trim().replace(/^\/+|\/+$/g, '');
       const schoolSitePath = () => configuredSchoolSitePath() || defaultSchoolSitePath();
+      const PUBLIC_GROWTH_BASE_URL = 'https://magic-haqi-growth.pages.dev/';
+      const sharePageUrl = fileName => new URL(fileName, PUBLIC_GROWTH_BASE_URL);
       const growthStudentRoot = studentId => `${GROWTH_LINK_ROOT}/students/${safeCloudPart(studentId)}`;
       const growthPolicyPath = studentId => `${growthStudentRoot(studentId)}/access-policy.json`;
       const growthEventBasePath = studentId => `${growthStudentRoot(studentId)}/events`;
@@ -507,7 +509,7 @@
       };
       const studentLoginLink = student => {
         if (!validFamilySitePath(schoolSitePath()) || !student.id || !normalizeKeepworkUsername(student.keepworkUsername)) return '';
-        const url = new URL(location.href);
+        const url = sharePageUrl('haqi_personal_pet_points_c.html');
         url.searchParams.set('studentSite', schoolSitePath());
         url.searchParams.set('studentId', student.id);
         url.searchParams.set('studentAccount', normalizeKeepworkUsername(student.keepworkUsername));
@@ -515,7 +517,7 @@
       };
       const guardianLink = student => {
         if (!validFamilySitePath(schoolSitePath()) || !student.id) return '';
-        const url = new URL('haqi_growth_guardian_c.html', location.href);
+        const url = sharePageUrl('haqi_growth_guardian_c.html');
         url.searchParams.set('guardianSite', schoolSitePath());
         url.searchParams.set('guardianClass', classId());
         url.searchParams.set('guardianStudent', student.id);
