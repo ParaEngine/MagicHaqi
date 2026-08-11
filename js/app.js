@@ -1,10 +1,10 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
-import { $, showToast, confirm, clamp, prompt, escapeHtml, isImageIconValue } from './utils.js';
+import { $, showToast, confirm, clamp, prompt, escapeHtml, isImageIconValue, acquireActiveModal, releaseActiveModal } from './utils.js';
 import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, getAgentParams, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
-import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
+import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet, addBiofuel, addCoins, getMineralExplorationBridge, setMineralExplorationBridge, isPetDispatching } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
-    loadAllPets, loadPet, deletePet, setCurrentPetPersisted,
+    loadAllPets, loadPet, loadPets, deletePet, setCurrentPetPersisted,
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced, loadStoryProgress, saveStoryProgress,
     isOnboardingCompleted, saveOnboardingProgress, markOnboardingCompleted,
@@ -19,11 +19,13 @@ import { renderHatch } from './view_hatch.js';
 import { renderShop } from './view_shop.js';
 import { renderInventory } from './view_inventory.js';
 import { renderProfile } from './view_profile.js';
+import { renderHaqiExplorationArchive } from './view_haqi_exploration_archive.js';
 import { renderHelp } from './view_help.js';
 import { normalizeTerrainFieldSlotId, renderTerrainFields, resolveTerrainFieldTypeId } from './view_terrain_fields.js';
 import { applySettledOfficialPlanetFromProfile, applyTemporaryHomePlanetFromUrl, renderStarSettlements } from './view_star_settlements.js';
 import { hasPostcardParams } from './view_postcard.js';
-import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId, crossover } from './dna.js';
+import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId } from './dna.js';
+import './petQuality.js';
 import { randId } from './utils.js';
 import { itemName, t } from './i18n.js';
 import { ensurePlanetProgressStarted, flushPlanetPlaytime } from './planetProgress.js';
@@ -41,17 +43,35 @@ import {
     hireNannyForPet,
     isPetOnCurrentPlanet,
     isPetSelectable,
+    canVipRecallPet,
+    markPetRecalled,
     localPlanetPets,
     markPetReleased,
     markPetRemoteExiled,
     selectablePets,
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
+import { isMiniProgramWebView } from './wxShare.js';
 import { initAgentBridge } from './agentBridge.js';
+import { getDailyExpeditionRoster, markDailyExpeditionExplored, sanitizeExpeditionPet } from './expedition.js';
+import { calculateDerivedStats, upgradePetData } from './pet_stats_core.js';
+import { canBreed, generateChildEmbryo, IV_KEYS, previewChildPotential } from './pet_breeding_core.js';
+import { calculateResearchReleaseRewards, getResearchReleaseCandidates } from './pet_research_core.js';
+import { calculateExpeditionReadiness } from './expedition_buff.js';
+import { getSpeciesExpeditionSpecialty } from './pet_species_growth_core.js';
+import { processExpeditionResult } from './expedition_settlement.js';
+import { settleMineralRoutePreparation } from './mineral_host_core.js';
+import { recordExpeditionHistory } from './expedition_history.mjs';
+import { claimDailyHomeTreasureEffect, formatHomeTreasureReward, getHomeTreasureDailyReward, getHomeTreasureFacility, getHomeTreasureGrowth, getHomeTreasureInventoryId, getHomeTreasures, HOME_TREASURE_META, isHomeTreasureId, isHomeTreasurePlaced } from './home_treasures.js';
+import { getHaqiExpeditionSettlement, HAQI_EXPEDITION_PLUGIN, isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
+import { getHaqiWeeklyProgress } from './haqi_weekly_progress.mjs';
+import { getMineralExplorationConfig, isMineralExplorationEnabled, loadPlanetFeatures } from './planet_features.js';
+import { checkOnboardingTask as advanceOnboardingTask, claimOnboardingReward, dismissOnboardingHint, ensureOnboardingState, getActiveOnboardingTask, getOnboardingProgress, restoreOnboardingHint } from './onboarding.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=5bfc002b0753';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=e59d4db8be50';
+const LOCAL_EXPEDITION_RESET_INTENT_KEY = 'mh_reset_today_expeditions';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -105,9 +125,197 @@ async function ensureKeepworkSDK() {
 const soundManager = SoundManager.getInstance();
 const APP_AUDIO_VOLUME = 2.5;
 const SLEEP_BLOCKED_ROUTES = new Set(['chat', 'minigames', 'hatching', 'hatch']);
+const HAQI_MINERAL_CHANNEL = 'magichaqi-haqi-mineral';
+const HAQI_MINERAL_VERSION = 1;
+let haqiMineralFrame = null;
+const HAQI_MINERAL_PREPARATION_COST = Object.freeze({ manaDust: 2, attackCore: 1 });
+const HAQI_MINERAL_HOST_REWARDS = Object.freeze({
+    emergencyBeacon: { group: 'tacticalItems', limit: 3 },
+    deflectionShield: { group: 'tacticalItems', limit: 3 },
+    ssrMutation: { group: 'breedingCatalysts', limit: 9 },
+    urAttributeLock: { group: 'breedingCatalysts', limit: 9 },
+});
+const HAQI_MINERAL_WORKSHOP_LIMITS = Object.freeze({ refine: 6, sell: 30 });
+
+function mineralWorkshopDay(now = new Date()) {
+    return now.toISOString().slice(0, 10);
+}
+
+function getActiveMineralBridge() {
+    return getMineralExplorationBridge(getActivePlanetId());
+}
+
+function setActiveMineralBridge(nextBridge) {
+    return setMineralExplorationBridge(getActivePlanetId(), nextBridge);
+}
 
 // 主面板
 const app = document.getElementById('app');
+let onboardingNavigationInFlight = false;
+let onboardingRewardCelebrationTimer = null;
+let onboardingDragState = null;
+let onboardingExpeditionExitTarget = null;
+
+function ensureOnboardingPanelRoot() {
+    let panel = document.getElementById('mhOnboardingPanel');
+    if (panel) return panel;
+    panel = document.createElement('aside');
+    panel.id = 'mhOnboardingPanel';
+    panel.className = 'mh-onboarding-panel';
+    panel.setAttribute('aria-live', 'polite');
+    panel.addEventListener('pointerdown', (event) => {
+        const dragHandle = event.target.closest('.mh-onboarding-head, .mh-onboarding-drawer');
+        if (!dragHandle || (event.target.closest('button') && !event.target.closest('.mh-onboarding-drawer'))) return;
+        const rect = panel.getBoundingClientRect();
+        onboardingDragState = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top, moved: false, drawer: dragHandle.classList.contains('mh-onboarding-drawer') };
+        panel.setPointerCapture(event.pointerId);
+    });
+    panel.addEventListener('pointermove', (event) => {
+        if (!onboardingDragState || event.pointerId !== onboardingDragState.pointerId) return;
+        const deltaX = event.clientX - onboardingDragState.startX;
+        const deltaY = event.clientY - onboardingDragState.startY;
+        if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) onboardingDragState.moved = true;
+        if (!onboardingDragState.moved) return;
+        const rect = panel.getBoundingClientRect();
+        const left = Math.min(Math.max(8, onboardingDragState.left + deltaX), window.innerWidth - rect.width - 8);
+        const top = Math.min(Math.max(8, onboardingDragState.top + deltaY), window.innerHeight - rect.height - 8);
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.right = 'auto';
+    });
+    panel.addEventListener('pointerup', (event) => {
+        if (!onboardingDragState || event.pointerId !== onboardingDragState.pointerId) return;
+        const moved = onboardingDragState.moved;
+        const drawer = onboardingDragState.drawer;
+        onboardingDragState = null;
+        if (panel.hasPointerCapture(event.pointerId)) panel.releasePointerCapture(event.pointerId);
+        if (moved) {
+            panel.dataset.dragged = 'true';
+            setTimeout(() => delete panel.dataset.dragged, 0);
+        } else if (drawer) {
+            panel.querySelector('.mh-onboarding-drawer')?.click();
+        }
+    });
+    panel.addEventListener('pointercancel', () => { onboardingDragState = null; });
+    document.body.appendChild(panel);
+    return panel;
+}
+
+function clearOnboardingHighlight() {
+    document.querySelectorAll('.guide-pulse-highlight').forEach((node) => node.classList.remove('guide-pulse-highlight'));
+}
+
+function applyOnboardingHighlight(task) {
+    clearOnboardingHighlight();
+    if (!task?.highlightSelector) return;
+    app.querySelector(task.highlightSelector)?.classList.add('guide-pulse-highlight');
+}
+
+function celebrateOnboardingReward(task) {
+    const coins = Number(task?.reward?.coins) || 0;
+    if (!coins) return;
+    document.querySelector('.mh-reward-celebration')?.remove();
+    if (onboardingRewardCelebrationTimer) clearTimeout(onboardingRewardCelebrationTimer);
+    const celebration = document.createElement('div');
+    celebration.className = 'mh-reward-celebration';
+    celebration.setAttribute('role', 'status');
+    celebration.setAttribute('aria-live', 'assertive');
+    celebration.innerHTML = '<div class="mh-reward-celebration-card"><i class="mh-reward-spark"></i><i class="mh-reward-spark"></i><i class="mh-reward-spark"></i><i class="mh-reward-spark"></i><strong>任务完成！</strong><span></span></div>';
+    celebration.querySelector('span').textContent = `+${coins} 金币`;
+    document.body.appendChild(celebration);
+    soundManager.playPointReward();
+    onboardingRewardCelebrationTimer = setTimeout(() => celebration.remove(), 1800);
+}
+
+function renderOnboardingPanel() {
+    const panel = ensureOnboardingPanelRoot();
+    if (state.currentView === 'login') {
+        panel.hidden = true;
+        panel.classList.remove('is-drawer');
+        clearOnboardingHighlight();
+        return;
+    }
+    const planetId = getActivePlanetId();
+    const onboarding = ensureOnboardingState(state.settings, planetId);
+    const task = getActiveOnboardingTask(state.settings, planetId);
+    const progress = getOnboardingProgress(state.settings, planetId);
+    if (!task) {
+        panel.hidden = true;
+        panel.classList.remove('is-drawer');
+        clearOnboardingHighlight();
+        return;
+    }
+    panel.hidden = false;
+    if (onboarding.dismissedHints?.[task.id]) {
+        panel.classList.add('is-drawer');
+        clearOnboardingHighlight();
+        panel.innerHTML = `<button class="mh-onboarding-drawer" type="button" aria-label="打开新手任务抽屉" title="打开新手任务抽屉"><span class="mh-onboarding-drawer-mark">任务</span><span class="mh-onboarding-drawer-progress">${progress.completed}/${progress.total}</span><span class="mh-onboarding-drawer-reward">+${task.reward?.coins || 0}</span></button>`;
+        panel.querySelector('.mh-onboarding-drawer').onclick = () => {
+            restoreOnboardingHint(state.settings, task.id, planetId);
+            void saveUserProfile();
+            renderOnboardingPanel();
+        };
+        return;
+    }
+    panel.classList.remove('is-drawer');
+    panel.innerHTML = `<section class="mh-onboarding-card" aria-label="新手目标">
+        <header class="mh-onboarding-head"><span class="mh-onboarding-mark" aria-hidden="true">★</span><strong class="mh-onboarding-title">新手目标</strong><span class="mh-onboarding-progress">${progress.completed} / ${progress.total}</span><button class="mh-onboarding-dismiss" type="button" aria-label="暂时收起">×</button></header>
+        <div class="mh-onboarding-body"><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.description)}</p><div class="mh-onboarding-actions"><span class="mh-onboarding-reward">奖励：${task.reward?.coins || 0} 金币</span><button class="mh-onboarding-go" type="button">带我去</button></div></div>
+    </section>`;
+    panel.querySelector('.mh-onboarding-dismiss').onclick = () => {
+        dismissOnboardingHint(state.settings, task.id, planetId);
+        void saveUserProfile();
+        renderOnboardingPanel();
+    };
+    panel.querySelector('.mh-onboarding-go').onclick = async (event) => {
+        if (onboardingNavigationInFlight) return;
+        if (state.currentView === 'minigames' && pendingMinigameLaunch?.mode === 'expedition') {
+            const leaveExpedition = await confirm('正在进行星图远征。现在离开会丢失本局全部进度，确定要离开并前往新手任务吗？', {
+                okText: '放弃并前往',
+                cancelText: '继续当前远征',
+            });
+            if (!leaveExpedition) return;
+            const frame = document.getElementById('mhMinigameFrame');
+            if (!frame?.contentWindow) return;
+            onboardingNavigationInFlight = true;
+            event.currentTarget.disabled = true;
+            onboardingExpeditionExitTarget = task.targetView || null;
+            frame.contentWindow.postMessage({ type: 'requestExpeditionAbandon' }, '*');
+            return;
+        }
+        if (task.targetView && state.currentView !== task.targetView) {
+            onboardingNavigationInFlight = true;
+            event.currentTarget.disabled = true;
+            try {
+                await navigateToView(task.targetView);
+            } finally {
+                onboardingNavigationInFlight = false;
+            }
+            return;
+        }
+        if (!task.highlightSelector) return;
+        const target = app.querySelector(task.highlightSelector);
+        target?.focus?.({ preventScroll: true });
+    };
+    requestAnimationFrame(() => applyOnboardingHighlight(task));
+}
+
+function checkOnboardingTask(taskId) {
+    const planetId = getActivePlanetId();
+    const result = advanceOnboardingTask(state.settings, taskId, planetId);
+    if (!result.changed) return false;
+    const reward = claimOnboardingReward(state.settings, taskId, planetId);
+    if (reward.claimed && result.task?.reward?.coins) addCoins(result.task.reward.coins);
+    void saveUserProfile();
+    notify();
+    renderOnboardingPanel();
+    if (reward.claimed) {
+        celebrateOnboardingReward(result.task);
+        showToast(`完成「${result.task.title}」：获得 ${result.task.reward.coins} 金币`, 'success', 2600);
+    }
+    return true;
+}
+ensureOnboardingPanelRoot();
 
 // 立即绘制启动闪屏：首屏渲染不再等待 SDK（CDN 往返 + ~600KB 解析）或网络数据，
 // 给用户一个即时可见的内容画面（FCP），SDK 在后台并行加载。
@@ -159,12 +367,15 @@ function initSdk() {
 // 后台并行预热 SDK（不阻塞首屏）。
 initSdk().catch(() => {});
 
-const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
+const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) || getHomeTreasureFacility(id) });
 let planetPlaytimeTimer = null;
 let chatViewPromise = null;
 let chatViewModule = null;
 let minigamesViewPromise = null;
 let minigamesViewModule = null;
+let expeditionMapViewPromise = null;
+let expeditionMapViewModule = null;
+let expeditionPetHydrationPromise = null;
 let pendingMinigameLaunch = null;
 let pendingMinigameTab = null;
 // 分享链接进入的小游戏（?gameFrom=&game=），引导进入 minigames 视图并自动试玩。
@@ -812,6 +1023,580 @@ function renderChatRoute() {
         });
 }
 
+function loadExpeditionMapView() {
+    if (!expeditionMapViewPromise) {
+        expeditionMapViewPromise = import('./view_expedition_map.js').then((mod) => { expeditionMapViewModule = mod; return mod; });
+    }
+    return expeditionMapViewPromise;
+}
+
+const EXPEDITION_PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', import.meta.url).href;
+const expeditionCatalogHash = value => String(value || '').split('').reduce((hash, character) => Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0, 2166136261);
+const expeditionCatalogRarity = rarity => {
+    const score = Math.max(0, Math.min(100, Number(rarity) || 0));
+    return score >= 96 ? '传说' : score >= 92 ? '史诗' : score >= 88 ? '精英' : score >= 80 ? '稀有' : '普通';
+};
+const expeditionMatchesEcology = (pet, tags) => {
+    const traits = pet?.traits || {};
+    const values = [traits.elementalAttribute, traits.element, traits.species].map(value => String(value || ''));
+    return Array.isArray(tags) && tags.some(tag => values.some(value => value.includes(tag)));
+};
+
+async function populateExpeditionWildlife(expedition) {
+    try {
+        const response = await fetch(EXPEDITION_PET_INDEX_URL, { cache: 'force-cache' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const catalog = (await response.json())
+            .filter(pet => pet?.id && (pet.imageSheetUrl || pet.imageUrl));
+        if (!catalog.length || !Array.isArray(expedition?.nodes)) return expedition;
+        const seed = expeditionCatalogHash(expedition.id);
+        const ecologyTags = expedition.ecologyPreview?.ecologyTags || [];
+        const preferred = catalog.filter(pet => expeditionMatchesEcology(pet, ecologyTags));
+        const fallback = catalog.filter(pet => !expeditionMatchesEcology(pet, ecologyTags));
+        const wildlife = [
+            ...preferred.sort((left, right) => expeditionCatalogHash(`${seed}:preferred:${left.id}`) - expeditionCatalogHash(`${seed}:preferred:${right.id}`)).slice(0, 24),
+            ...fallback.sort((left, right) => expeditionCatalogHash(`${seed}:fallback:${left.id}`) - expeditionCatalogHash(`${seed}:fallback:${right.id}`)).slice(0, 16),
+        ];
+        let cursor = 0;
+        return {
+            ...expedition,
+            nodes: expedition.nodes.map(node => {
+                if (!node?.enemy) return node;
+                const pet = wildlife[cursor++ % wildlife.length];
+                return {
+                    ...node,
+                    enemy: {
+                        id: String(pet.id),
+                        name: String(pet.name || '星际宠物'),
+                        icon: '🐾',
+                        rarity: expeditionCatalogRarity(pet.rarity),
+                        imageSheetUrl: String(pet.imageSheetUrl || pet.imageUrl),
+                    },
+                };
+            }),
+        };
+    } catch (error) {
+        console.warn('[Haqi Expedition] daily wildlife catalog unavailable; using fallback nodes.', error);
+        return expedition;
+    }
+}
+
+async function launchExpedition(expedition, pet) {
+	if (!isHaqiExpeditionEnabled(getActivePlanetId())) return;
+    if (!pet?.id || !expedition?.id) return;
+    if (isPetDispatching(pet.id, getActivePlanetId())) {
+        showToast('这位伙伴正在星际矿区勘探，暂时无法出战。', 'info');
+        return;
+    }
+    if (expedition.explored) {
+        showToast('这颗星球今天已经探索过了，明天会生成新的星图。', 'info');
+        return;
+    }
+    expedition = await populateExpeditionWildlife(expedition);
+    await ensurePetData(pet.id);
+    upgradePetData(pet);
+    const equipmentEnhancements = getHaqiExpeditionSettlement(state.settings).equipmentEnhancements || {};
+    const derivedStats = calculateDerivedStats(pet, { includeEquipment: true, equipmentEnhancements });
+    const mineralBridge = getActiveMineralBridge();
+    const mineralBonuses = mineralBridge.bonuses;
+    const attackPercent = Math.max(0, Number(mineralBonuses.attackPercent) || 0);
+    const baseAttack = Math.max(0, Number(derivedStats.attack) || 0);
+    const mineralAttackBonus = Math.round(baseAttack * attackPercent / 100);
+    const speciesSpecialty = getSpeciesExpeditionSpecialty(pet);
+    const readiness = { ...calculateExpeditionReadiness(pet.lifeStats) };
+    readiness.initialMpBonus += Number(speciesSpecialty.initialMpBonus) || 0;
+    readiness.shieldPercentage += Number(speciesSpecialty.shieldPercentage) || 0;
+    readiness.healingMultiplier *= Number(speciesSpecialty.healingMultiplier) || 1;
+    readiness.speciesSpecialty = speciesSpecialty;
+    const routePreparation = mineralBridge.preparationCharges > 0;
+    const tacticalItems = {
+        emergencyBeacon: mineralBridge.tacticalItems.emergencyBeacon > 0 ? 1 : 0,
+        deflectionShield: mineralBridge.tacticalItems.deflectionShield > 0 ? 1 : 0,
+    };
+    if (routePreparation) {
+        setActiveMineralBridge({
+            ...mineralBridge,
+            preparationCharges: mineralBridge.preparationCharges - 1,
+            tacticalItems: {
+                emergencyBeacon: mineralBridge.tacticalItems.emergencyBeacon - tacticalItems.emergencyBeacon,
+                deflectionShield: mineralBridge.tacticalItems.deflectionShield - tacticalItems.deflectionShield,
+            },
+            syncedAt: Date.now(),
+        });
+        saveUserProfileDebounced();
+    } else if (tacticalItems.emergencyBeacon || tacticalItems.deflectionShield) {
+        setActiveMineralBridge({
+            ...mineralBridge,
+            tacticalItems: {
+                emergencyBeacon: mineralBridge.tacticalItems.emergencyBeacon - tacticalItems.emergencyBeacon,
+                deflectionShield: mineralBridge.tacticalItems.deflectionShield - tacticalItems.deflectionShield,
+            },
+            syncedAt: Date.now(),
+        });
+        saveUserProfileDebounced();
+    }
+    const selectedPet = {
+        ...sanitizeExpeditionPet(pet),
+        battleStats: {
+            ...derivedStats,
+            attack: baseAttack + mineralAttackBonus + (Number(speciesSpecialty.attackBonus) || 0),
+            defense: Math.max(0, Number(derivedStats.defense) || 0) + (Number(speciesSpecialty.armorBonus) || 0),
+        },
+        lifeStats: { ...pet.lifeStats },
+        expeditionReadiness: readiness,
+        mineralBonuses: { attackPercent, expeditionLootPercent: Math.max(0, Number(mineralBonuses.expeditionLootPercent) || 0) },
+    };
+    if (!selectedPet || !expedition?.id) return;
+    const runId = `exp_${pet.id}_${Date.now()}_${randId(6)}`;
+    pendingMinigameLaunch = {
+        mode: 'expedition',
+        pluginId: HAQI_EXPEDITION_PLUGIN.id,
+        gameId: HAQI_EXPEDITION_PLUGIN.gameId,
+        params: {
+            selectedPet,
+            mineralBonuses: selectedPet.mineralBonuses,
+            expedition,
+            runId,
+            mapSeed: runId,
+            routePreparation,
+            tacticalItems,
+        },
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
+}
+
+const EXPEDITION_PET_ART = {
+    sugar_patrol: 'https://cdn.keepwork.com/maisi/magichaqi/pet/flame_puppy_doudou_20260524132225.webp',
+    bubble_spitter: 'https://cdn.keepwork.com/maisi/magichaqi/pet/coral_leopard_frog_20260527013859.webp',
+    frost_beetle: 'https://cdn.keepwork.com/maisi/magichaqi/pet/star_salt_crab_cat_20260527023615.webp',
+    magnetic_guard: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_tiger_tangtang_20260524161411.webp',
+    crystal_hunter: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nine_tail_cloud_fox_20260525030546.webp',
+    rift_walker: 'https://cdn.keepwork.com/maisi/magichaqi/pet/kraken_gummy_tako_20260525030549.webp',
+    ruin_watcher: 'https://cdn.keepwork.com/maisi/magichaqi/pet/basilisk_emerald_noodle_20260525030549.webp',
+    core_guard: 'https://cdn.keepwork.com/maisi/magichaqi/pet/xingliu_linli_20260527011956.webp',
+    ember_phoenix: 'https://cdn.keepwork.com/maisi/magichaqi/pet/phoenix_spark_peep_20260528043651.webp',
+    snow_fenrir: 'https://cdn.keepwork.com/maisi/magichaqi/pet/fenrir_snow_bite_20260525030549.webp',
+    nebula_leopard: 'https://cdn.keepwork.com/maisi/magichaqi/pet/ningguang_baoyuan_20260527021659.webp',
+    coral_hopper: 'https://cdn.keepwork.com/maisi/magichaqi/pet/coral_leopard_frog_20260527013859.webp',
+    tako_void: 'https://cdn.keepwork.com/maisi/magichaqi/pet/kraken_gummy_tako_20260525030549.webp',
+    cloud_fox: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nine_tail_cloud_fox_20260525030546.webp',
+    emerald_basilisk: 'https://cdn.keepwork.com/maisi/magichaqi/pet/basilisk_emerald_noodle_20260525030549.webp',
+    stellar_tiger: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_tiger_tangtang_20260524161411.webp',
+};
+
+async function restoreExpeditionPetArtwork() {
+    for (const id of state.petOrder || []) {
+        const pet = state.pets[id] || await loadPet(id);
+        if (!pet || pet.source !== 'expedition' || pet.imageSheetUrl || pet.imageUrl) continue;
+        const imageSheetUrl = EXPEDITION_PET_ART[pet.expeditionSpeciesId];
+        if (!imageSheetUrl) continue;
+        pet.imageSheetUrl = imageSheetUrl;
+        state.pets[pet.id] = pet;
+        await savePet(pet);
+    }
+}
+
+async function settleExpeditionCaptures(expedition, captures) {
+	if (!isHaqiExpeditionEnabled(getActivePlanetId())) return 0;
+    const safeCaptures = Array.isArray(captures) ? captures.slice(0, 3) : [];
+    const safeExpeditionId = String(expedition?.id || '').trim();
+    if (!safeExpeditionId) return 0;
+    let saved = 0;
+    for (const capture of safeCaptures) {
+        const speciesId = String(capture?.speciesId || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+        if (!speciesId) continue;
+        const now = Date.now();
+        const dna = randomDna();
+        const qualityId = capture?.quality?.id || capture?.qualityId;
+        const quality = qualityId ? window.MHPetQuality?.snapshot(qualityId) || null : null;
+        const battleStats = quality ? { ...quality.stats, ...(capture?.battleStats || {}) } : null;
+        const imageSheetUrl = String(capture?.imageSheetUrl || EXPEDITION_PET_ART[speciesId] || '').trim();
+        const pet = {
+            id: 'pet_' + randId(8),
+            name: String(capture?.name || '探险伙伴').trim().slice(0, 24) || '探险伙伴',
+            dna,
+            imageUrl: null,
+            imageSheetUrl,
+            traits: decodeDna(dna),
+            rarity: Number.isFinite(capture?.rarity) ? Math.max(0, Math.min(5, capture.rarity)) : dnaRarity(dna),
+            stats: { ...defaultStats(), hunger: 100, mood: 100, clean: 100, bond: 55 },
+            ...(quality ? { quality, battleStats } : {}),
+            permanentTrauma: defaultPermanentTrauma(),
+            bornAt: now,
+            lastTickAt: now,
+            lastCareAt: now,
+            parents: null,
+            stage: 'baby',
+            anim: 'happy',
+            activeRoom: 'living',
+            source: 'expedition',
+            expeditionId: safeExpeditionId,
+            expeditionSpeciesId: speciesId,
+            expeditionSourceRarity: String(capture?.rarity || '').slice(0, 12),
+            expeditionTrait: String(capture?.trait || '').slice(0, 32),
+        };
+        applyStage(pet);
+        await savePet(pet);
+        saved += 1;
+    }
+    if (saved) {
+        preloadLoadedPetAssets();
+        showToast(`探险队带回了 ${saved} 位新伙伴！`, 'success', 3000);
+    }
+    return saved;
+}
+
+async function settleExpeditionProgress(launch, data) {
+    if (launch?.pluginId !== HAQI_EXPEDITION_PLUGIN.id || !isHaqiExpeditionEnabled(getActivePlanetId())) {
+        return { applied: false, reason: 'plugin-disabled', experience: 0, loot: [] };
+    }
+    const petId = String(launch?.params?.selectedPet?.id || '').trim();
+    const pet = petId ? state.pets[petId] || await loadPet(petId) : null;
+    if (!pet) throw new Error('找不到本次出战宠物');
+    await ensurePetData(pet.id);
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    const mineralBridge = getActiveMineralBridge();
+    const mineralBonuses = mineralBridge.bonuses;
+    const result = processExpeditionResult(pet, state.inventory, {
+        ...data,
+        runId: data?.runId || launch.params?.runId,
+        petId,
+    }, settlement, { lootBonusPercent: mineralBonuses.expeditionLootPercent });
+    if (!result.applied) return result;
+    for (const entry of result.loot) {
+        const itemId = `expedition_material_${entry.id}`;
+        if (!state.inventoryOrder.includes(itemId)) state.inventoryOrder.push(itemId);
+    }
+    if (result.homeTreasure) {
+        const itemId = getHomeTreasureInventoryId(result.homeTreasure);
+        if (itemId && !state.inventoryOrder.includes(itemId)) state.inventoryOrder.push(itemId);
+    }
+    await savePet(pet);
+    saveInventoryDebounced();
+    saveUserProfileDebounced();
+    notify();
+    if (result.equipment?.received?.length) {
+        showToast(`远征获得装备：${result.equipment.received.length} 件，可在宠物战斗面板装配`, 'success', 2800);
+    } else if (result.equipment?.materials?.length) {
+        showToast('重复远征装备已转化为星核精粹', 'info', 2400);
+    }
+    return result;
+}
+
+function recordExpeditionOutcome(launch, data = {}, progress = null) {
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    const outcome = progress?.applied ? {
+        ...data,
+        loot: progress.loot,
+        lootBonusPercent: progress.lootBonusPercent,
+        mineralBonuses: launch?.params?.mineralBonuses,
+    } : data;
+    settlement.history = recordExpeditionHistory(settlement.history, launch, outcome);
+    saveUserProfileDebounced();
+}
+
+function claimHomeTreasureDailyReward(treasureId) {
+    if (!isHaqiExpeditionEnabled(getActivePlanetId())) {
+        showToast('家园珍宝设施仅在哈奇星球运行', 'info');
+        return;
+    }
+    if (!isHomeTreasureId(treasureId) || Number(state.inventory?.[treasureId]) < 1) {
+        showToast('尚未拥有这件家园珍宝', 'error');
+        return;
+    }
+    if (!isHomeTreasurePlaced(state.layouts, treasureId)) {
+        showToast('请先将家园珍宝摆放在星球地块上，再启动设施效果', 'info');
+        return;
+    }
+    const claim = claimDailyHomeTreasureEffect(state.planetActions, treasureId);
+    if (!claim.claimed) {
+        showToast('这件珍宝今日已经领取过了', 'info');
+        return;
+    }
+    const reward = getHomeTreasureDailyReward(treasureId, state.planetActions);
+    if (reward.coins) addCoins(reward.coins);
+    if (reward.biofuel) addBiofuel(reward.biofuel);
+    saveUserProfileDebounced();
+    notify();
+    const growth = getHomeTreasureGrowth(state.planetActions, treasureId);
+    showToast(`${HOME_TREASURE_META[treasureId].name}：${formatHomeTreasureReward(reward)} · 设施 Lv.${growth.level}`, 'success', 2600);
+}
+
+function renderExpeditionMapRoute() {
+    if (!isHaqiExpeditionEnabled(getActivePlanetId())) {
+        navigateToView('home');
+        return;
+    }
+    const unloadedPetIds = (state.petOrder || []).filter(id => id && !state.pets[id]);
+    if (unloadedPetIds.length) {
+        app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">今日星图</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在召集出战伙伴...</div>';
+        const back = $('mhBack');
+        if (back) back.onclick = () => navigateToView('home');
+        if (!expeditionPetHydrationPromise) {
+            expeditionPetHydrationPromise = loadPets(unloadedPetIds)
+                .catch(error => {
+                    console.warn('加载远征伙伴失败', error);
+                    showToast('伙伴档案加载失败，请返回后重试', 'error');
+                })
+                .finally(() => { expeditionPetHydrationPromise = null; });
+        }
+        expeditionPetHydrationPromise.then(() => {
+            if (state.currentView === 'expeditionMap') renderExpeditionMapRoute();
+        });
+        return;
+    }
+    const equipmentEnhancements = getHaqiExpeditionSettlement(state.settings).equipmentEnhancements || {};
+    const mineralBridge = getActiveMineralBridge();
+    const mineralBonuses = mineralBridge.bonuses;
+    const pets = state.petOrder
+        .map(id => state.pets[id])
+        .filter(pet => pet?.id)
+        .map(pet => {
+            const derivedStats = calculateDerivedStats(pet, { includeEquipment: true, equipmentEnhancements });
+            const baseAttack = Math.max(0, Number(derivedStats.attack) || 0);
+            const attackPercent = Math.max(0, Number(mineralBonuses.attackPercent) || 0);
+            const speciesSpecialty = getSpeciesExpeditionSpecialty(pet);
+            return {
+                ...pet,
+                isDispatching: isPetDispatching(pet.id, getActivePlanetId()),
+                expeditionPreview: {
+                    baseAttack,
+                    attackPercent,
+                    attack: baseAttack + Math.round(baseAttack * attackPercent / 100),
+                    lootPercent: Math.max(0, Number(mineralBonuses.expeditionLootPercent) || 0),
+                    preparationCharges: mineralBridge.preparationCharges,
+                    speciesSpecialty,
+                },
+            };
+        });
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    const exitFixVersion = settlement.dailyExpeditionExitFixVersion;
+    const expeditions = getDailyExpeditionRoster(settlement, { planetName: state.planetName || '哈奇星球' })
+        .filter(expedition => expedition?.id && Array.isArray(expedition.nodes));
+    if (settlement.dailyExpeditionExitFixVersion !== exitFixVersion) saveUserProfileDebounced();
+    const data = {
+        pets,
+        expeditions,
+        history: settlement.history || [],
+        weeklyProgress: getHaqiWeeklyProgress({ history: settlement.history, bridge: mineralBridge }),
+    };
+    const options = {
+        onBack: () => navigateToView('home'),
+        onLaunch: launchExpedition,
+        onReviewHistory: () => checkOnboardingTask('review-expedition-settlement'),
+        onResetToday: isLocalDevelopmentHost() ? async () => {
+            const currentSettlement = getHaqiExpeditionSettlement(state.settings);
+            getDailyExpeditionRoster(currentSettlement, { planetName: state.planetName || '哈奇星球' });
+            currentSettlement.dailyExpeditionRoster.exploredIds = [];
+            await saveUserProfile();
+            renderExpeditionMapRoute();
+            showToast('今日星图已重置为 0 / 3', 'success', 2200);
+        } : null,
+    };
+    if (expeditionMapViewModule) {
+        expeditionMapViewModule.renderExpeditionMap(app, data, options);
+        renderOnboardingPanel();
+        return;
+    }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">今日星图</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在展开星图...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadExpeditionMapView()
+        .then(({ renderExpeditionMap }) => {
+            if (state.currentView === 'expeditionMap') {
+                renderExpeditionMap(app, data, options);
+                renderOnboardingPanel();
+            }
+        })
+        .catch((error) => {
+            console.error('加载星图失败', error);
+            showToast('加载星图失败：' + (error?.message || error), 'error');
+            if (state.currentView === 'expeditionMap') navigateToView('home');
+        });
+}
+
+function renderHaqiExplorationArchiveRoute() {
+    if (!isHaqiExpeditionEnabled(getActivePlanetId())) {
+        navigateToView('home');
+        return;
+    }
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    const bridge = getActiveMineralBridge();
+    const equipmentCount = Object.values(settlement.equipmentEnhancements || {})
+        .filter(value => Number(value) > 0).length;
+    const treasures = Object.entries(getHomeTreasures(state.inventory)).map(([id, count]) => ({
+        count,
+        name: HOME_TREASURE_META[id]?.name || '家园珍宝',
+        rewardText: HOME_TREASURE_META[id]?.rewardText || '',
+    }));
+    renderHaqiExplorationArchive(app, {
+        bridge,
+        history: settlement.history || [],
+        equipmentCount,
+        activeSeriesCount: bridge.activeSeriesIds.length,
+        treasures,
+    }, {
+        onBack: () => navigateToView('home'),
+        onOpenExpedition: () => navigateToView('expeditionMap'),
+        onOpenMineral: () => navigateToView('haqiMineralExploration'),
+    });
+}
+
+function mineralBridgePetSummaries() {
+    return state.petOrder.map(id => state.pets[id]).filter(pet => pet?.id).map(pet => ({
+        id: pet.id,
+        name: pet.name || dnaToName(pet.dna || '') || '哈奇伙伴',
+        stage: pet.stage || '',
+        imageSheetUrl: pet.imageSheetUrl || '',
+        imageUrl: pet.imageUrl || '',
+    }));
+}
+
+function sendHaqiMineralHostReady(planetId) {
+    if (state.currentView !== 'haqiMineralExploration' || !haqiMineralFrame?.contentWindow) return;
+    haqiMineralFrame.contentWindow.postMessage({
+        channel: HAQI_MINERAL_CHANNEL,
+        version: HAQI_MINERAL_VERSION,
+        planetId,
+        type: 'HOST_READY',
+        payload: {
+            userId: state.user?.id || '',
+            pets: mineralBridgePetSummaries(),
+            existingBridge: getMineralExplorationBridge(planetId),
+            contentPacks: getMineralExplorationConfig(planetId).contentPacks,
+        },
+    }, '*');
+}
+
+function renderHaqiMineralExplorationRoute() {
+    const planetId = getActivePlanetId();
+    if (!isMineralExplorationEnabled(planetId)) {
+        navigateToView('home');
+        return;
+    }
+    if (haqiMineralFrame?.isConnected && app.contains(haqiMineralFrame)) return;
+    app.innerHTML = `
+        <div class="topbar">
+            <button class="btn-icon" id="mhHaqiMineralBack" title="返回" style="width:36px;height:36px;font-size:18px">‹</button>
+            <span class="font-bold" style="color:var(--text-primary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">星际矿区</span>
+            <span style="width:36px;height:36px"></span>
+        </div>
+        <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow:hidden;background:#dff7ff">
+            <iframe id="mhHaqiMineralFrame" title="星际矿区" src="minigames/haqi_mineral_exploration.html?planetId=${encodeURIComponent(planetId)}" style="width:100%;height:100%;border:0;background:#dff7ff"></iframe>
+        </div>`;
+    const back = $('mhHaqiMineralBack');
+    if (back) back.onclick = () => navigateToView('home');
+    haqiMineralFrame = $('mhHaqiMineralFrame');
+    haqiMineralFrame?.addEventListener('load', () => {
+        sendHaqiMineralHostReady(planetId);
+    });
+}
+
+window.addEventListener('message', (event) => {
+    const message = event.data || {};
+    const planetId = getActivePlanetId();
+    if (state.currentView !== 'haqiMineralExploration' || !isMineralExplorationEnabled(planetId) || !haqiMineralFrame?.contentWindow || event.source !== haqiMineralFrame.contentWindow) return;
+    if (message.channel !== HAQI_MINERAL_CHANNEL || message.version !== HAQI_MINERAL_VERSION || message.planetId !== planetId) return;
+    if (message.type === 'MINERAL_FRAME_READY') {
+        sendHaqiMineralHostReady(planetId);
+        return;
+    }
+    if (message.type === 'REQUEST_ROUTE_PREPARATION') {
+        const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
+        const requestId = String(payload.requestId || '').trim().slice(0, 80);
+        const reply = (ok, error = '') => haqiMineralFrame.contentWindow.postMessage({
+            channel: HAQI_MINERAL_CHANNEL, version: HAQI_MINERAL_VERSION, planetId,
+            type: 'ROUTE_PREPARATION_RESULT', payload: { requestId, ok, error, preparationCharges: getMineralExplorationBridge(planetId).preparationCharges },
+        }, '*');
+        const current = getMineralExplorationBridge(planetId);
+        const outcome = settleMineralRoutePreparation({
+            requestId,
+            bridge: current,
+            inventory: state.inventory,
+            cost: HAQI_MINERAL_PREPARATION_COST,
+        });
+        if (!outcome.ok) { reply(false, outcome.error); return; }
+        if (!outcome.changed) { reply(true); return; }
+        Object.assign(state.inventory, outcome.inventory);
+        setMineralExplorationBridge(planetId, { ...outcome.bridge, syncedAt: Date.now() });
+        saveInventoryDebounced();
+        saveUserProfileDebounced();
+        reply(true);
+        return;
+    }
+    if (message.type === 'REQUEST_MINERAL_HOST_REWARD') {
+        const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
+        const requestId = String(payload.requestId || '').trim().slice(0, 80);
+        const rewardId = String(payload.rewardId || '').trim();
+        const definition = HAQI_MINERAL_HOST_REWARDS[rewardId];
+        const reply = (ok, error = '') => haqiMineralFrame.contentWindow.postMessage({
+            channel: HAQI_MINERAL_CHANNEL, version: HAQI_MINERAL_VERSION, planetId,
+            type: 'MINERAL_HOST_REWARD_RESULT',
+            payload: { requestId, rewardId, ok, error, bridge: getMineralExplorationBridge(planetId) },
+        }, '*');
+        if (!requestId || !/^[a-zA-Z0-9_-]+$/.test(requestId) || !definition) { reply(false, '兑换请求无效'); return; }
+        const current = getMineralExplorationBridge(planetId);
+        if (current.consumedRequestIds.includes(requestId)) { reply(true); return; }
+        const balance = current[definition.group]?.[rewardId] || 0;
+        if (balance >= definition.limit) { reply(false, '该物品已达到携带上限'); return; }
+        setMineralExplorationBridge(planetId, {
+            ...current,
+            [definition.group]: { ...current[definition.group], [rewardId]: balance + 1 },
+            consumedRequestIds: [...current.consumedRequestIds, requestId],
+            syncedAt: Date.now(),
+        });
+        saveUserProfileDebounced();
+        reply(true);
+        return;
+    }
+    if (message.type === 'REQUEST_MINERAL_WORKSHOP_REWARD') {
+        const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
+        const requestId = String(payload.requestId || '').trim().slice(0, 80);
+        const kind = String(payload.kind || '').trim();
+        const amount = Math.max(0, Math.floor(Number(payload.amount) || 0));
+        const reply = (ok, error = '') => haqiMineralFrame.contentWindow.postMessage({
+            channel: HAQI_MINERAL_CHANNEL, version: HAQI_MINERAL_VERSION, planetId,
+            type: 'MINERAL_WORKSHOP_REWARD_RESULT', payload: { requestId, ok, error },
+        }, '*');
+        if (!requestId || !/^[a-zA-Z0-9_-]+$/.test(requestId) || !['refine', 'sell'].includes(kind) || !amount) { reply(false, '工坊请求无效'); return; }
+        const current = getMineralExplorationBridge(planetId);
+        if (current.consumedRequestIds.includes(requestId)) { reply(true); return; }
+        const today = mineralWorkshopDay();
+        const workshop = current.workshop?.day === today ? current.workshop : { day:today, refined:0, soldCoins:0 };
+        const used = kind === 'refine' ? workshop.refined : workshop.soldCoins;
+        if (amount > HAQI_MINERAL_WORKSHOP_LIMITS[kind] - used) { reply(false, '今日工坊额度不足，请明天再来。'); return; }
+        if (kind === 'refine') state.inventory.expedition_material_stellarEssence = Math.max(0, Number(state.inventory.expedition_material_stellarEssence) || 0) + amount;
+        else addCoins(amount);
+        setMineralExplorationBridge(planetId, {
+            ...current,
+            workshop: { ...workshop, [kind === 'refine' ? 'refined' : 'soldCoins']: used + amount },
+            consumedRequestIds: [...current.consumedRequestIds, requestId], syncedAt: Date.now(),
+        });
+        saveInventoryDebounced();
+        saveUserProfileDebounced();
+        reply(true);
+        return;
+    }
+    if (!['BRIDGE_SNAPSHOT', 'DISPATCH_STATUS_SYNC', 'GLOBAL_BONUS_SYNC'].includes(message.type)) return;
+    const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
+    const knownPetIds = new Set(state.petOrder.map(String));
+    const current = getMineralExplorationBridge(planetId);
+    const next = {
+        ...current,
+        ...payload,
+        dispatchedPetIds: Array.isArray(payload.dispatchedPetIds)
+            ? payload.dispatchedPetIds.filter(id => knownPetIds.has(String(id)))
+            : current.dispatchedPetIds,
+        bonuses: { ...current.bonuses, ...(payload.bonuses || {}) },
+        syncedAt: Date.now(),
+    };
+    setMineralExplorationBridge(planetId, next);
+    saveUserProfileDebounced();
+    if (message.type === 'BRIDGE_SNAPSHOT') showToast('星际矿区状态已同步', 'success', 1600);
+});
+
 function renderMinigamesRoute() {
     const pet = getCurrentPet();
     if (!pet) return;
@@ -834,6 +1619,10 @@ function renderMinigamesRoute() {
         navigateToView('home');
     };
     const renderOptions = {
+        onBeforeExit: () => {
+            if (launch?.mode !== 'expedition') return true;
+            return window.confirm('离开远征会结束本局，当前星图进度不会保存。确定返回吗？');
+        },
         onBack: () => {
             pendingMinigameLaunch = null;
             if (deferredNewUser) {
@@ -865,6 +1654,12 @@ function renderMinigamesRoute() {
                 returnToFieldLevel();
                 return;
             }
+            if (launch?.mode === 'expedition') {
+                pendingMinigameLaunch = null;
+                showToast('已离开本次远征，当前进度不会保存。', 'info', 2600);
+                navigateToView('expeditionMap');
+                return;
+            }
             navigateToView('home');
         },
         onGameFinished: (game, data) => {
@@ -880,10 +1675,56 @@ function renderMinigamesRoute() {
                 handleAdoptMinigameResult(game, data);
                 return;
             }
-            if (launch?.mode === 'onboarding' && isBoardingGame(game, launch)) {
+            if (launch?.mode === 'expedition') {
+                pendingMinigameLaunch = null;
+                const onboardingTarget = onboardingExpeditionExitTarget;
+                onboardingExpeditionExitTarget = null;
+                if (launch.pluginId !== HAQI_EXPEDITION_PLUGIN.id || !isHaqiExpeditionEnabled(getActivePlanetId())) {
+                    navigateToView(onboardingTarget || 'home');
+                    return;
+                }
+                if (data?.completed !== true || data?.passed !== true) {
+					recordExpeditionOutcome(launch, data);
+                    navigateToView(onboardingTarget || 'expeditionMap');
+                    return;
+                }
+                Promise.all([
+                    settleExpeditionProgress(launch, data),
+                    settleExpeditionCaptures(launch.params?.expedition, data?.captures),
+                ]).then(([progress]) => {
+                    const settlement = getHaqiExpeditionSettlement(state.settings);
+                    if (markDailyExpeditionExplored(settlement, launch.params?.expedition, { planetName: state.planetName || '哈奇星球' })) {
+                        saveUserProfileDebounced();
+                    }
+					recordExpeditionOutcome(launch, data, progress);
+                    if (progress.applied) {
+						checkOnboardingTask('complete-first-expedition');
+                        const materialCount = progress.loot.reduce((sum, entry) => sum + entry.amount, 0);
+                        const baseMaterialCount = progress.loot.reduce((sum, entry) => sum + (entry.baseAmount || entry.amount), 0);
+                        const bonusMaterialCount = progress.loot.reduce((sum, entry) => sum + (entry.bonusAmount || 0), 0);
+                        const treasureName = progress.homeTreasure ? HOME_TREASURE_META[progress.homeTreasure]?.name || '家园宝物' : '';
+                        const materialLabel = materialCount ? `，${materialCount} 份材料${bonusMaterialCount ? `（基础 ${baseMaterialCount} + 博物馆 ${bonusMaterialCount}，+${progress.lootBonusPercent}%）` : ''}` : '';
+                        showToast(`远征结算：获得 ${progress.experience} 战斗经验${materialLabel}${treasureName ? `，${treasureName}` : ''}`, 'success', 4200);
+                    }
+                    navigateToView('expeditionMap');
+                }).catch(error => {
+                    console.error('探险结算失败', error);
+                    showToast('探险结算失败，请稍后重试', 'error');
+                    navigateToView('expeditionMap');
+                });
+                return;
+            }
+            // 领养仪式：onboarding 启动，或小游戏主动回传 autoHatch / setHomePlanet
+            // （如 haqi_planet_boarding_haqi 从列表试玩）时，都走孵化并回到 field。
+            if (isBoardingGame(game, launch) && (
+                launch?.mode === 'onboarding'
+                || data?.autoHatch
+                || data?.setHomePlanet
+            )) {
                 handleBoardingOnboardingResult(game, data);
                 return;
             }
+            checkOnboardingTask('complete-first-minigame');
             rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data);
         },
         initialGameId: launch?.gameId || null,
@@ -895,7 +1736,7 @@ function renderMinigamesRoute() {
         hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
         // 分享小游戏(deferredNewUser)退出时返回小游戏列表(view_minigames)，再从列表返回才回到星球总览；
         // 故这里不让分享小游戏直接 exit-to-back。其余仪式型(onboarding/adopt/...)仍直接退出。
-        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding' || launch?.mode === 'npc',
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding' || launch?.mode === 'npc' || launch?.mode === 'expedition',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -1033,6 +1874,10 @@ async function renderPetListRoute() {
         onSelect: handleSelectPet,
         onFind:   handleFindPet,
         onDelete: handleDeletePet,
+        onResearchRelease: handleResearchRelease,
+        onInspectPetStats: () => checkOnboardingTask('inspect-starter-pet'),
+        onFirstPetRenamed: () => checkOnboardingTask('rename-first-pet'),
+        onBecomeMember: launchKeepworkVipMinigame,
         onBack:   () => setView(state.currentPetId ? 'home' : 'petList'),
         onLoadPet: async (id) => {
             if (!id || state.pets[id] || state.currentView !== 'petList') return;
@@ -1041,6 +1886,7 @@ async function renderPetListRoute() {
             return state.pets[id] || null;
         },
     });
+    renderOnboardingPanel();
 }
 
 // ==== 路由 ====
@@ -1056,6 +1902,8 @@ function loadHomeView() {
 function homeCallbacks() {
     return {
         onAction:     handleAction,
+        onSelectPet:  handleSelectFieldPet,
+        onBecomeMember: launchKeepworkVipMinigame,
         onSwitchRoom: (id) => { state.currentRoom = id; const p = getCurrentPet(); if (p) p.activeRoom = id; savePetDebounced(p); render(); },
         onToggleDecor: handleToggleDecor,
         onToggleFeed:  handleToggleFeed,
@@ -1065,13 +1913,15 @@ function homeCallbacks() {
         onFeedItem:   handleFeedItem,
         onFeedComplete: render,
         onNav:        handleNav,
+		canUseHaqiExpedition: () => isHaqiExpeditionEnabled(getActivePlanetId()),
+        canUseMineralExploration: () => isMineralExplorationEnabled(getActivePlanetId()),
         onTreatSickness: handleTreatSickness,
         onLaunchNpcMinigame: handleNpcMinigameLaunch,
         // 「星球→星球表面(field)」缩放过渡前的同步拦截：领养仪式型星球且玩家尚无真实宠物时，
         // 直接弹出领养小游戏并返回 true，view_home 据此取消本次缩放（不进入 field）。
         onPlanetToFieldOnboarding: () => {
             if (!boardingOnboardingPlanet) return false;
-            if (onboardingDisabledByUrl()) return false;
+            if (boardingOnboardingDisabled()) return false;
             if (hasAdoptedRealPet()) return false;
             maybeStartOnboarding();
             return true;
@@ -1119,6 +1969,18 @@ const routes = {
         onBack:  () => navigateToView('home'),
         onUse:   handleUseItem,
         onSell:  handleSell,
+        onClaimTreasure: claimHomeTreasureDailyReward,
+        onPlaceTreasure: () => {
+            if (!isHaqiExpeditionEnabled(getActivePlanetId())) {
+                showToast('家园珍宝设施仅可在哈奇星球摆放', 'info');
+                return;
+            }
+            state.isDecorMode = true;
+            state.isFeedMode = false;
+            state.currentRoom = 'field_land';
+            setView('home');
+            showToast('在下方设施栏选择珍宝后，点击地块即可摆放', 'info', 2200);
+        },
         onReorder: (order) => {
             state.inventoryOrder = Array.isArray(order) ? order.slice() : [];
             saveInventoryDebounced();
@@ -1132,6 +1994,9 @@ const routes = {
         },
     }),
     chat:      renderChatRoute,
+    expeditionMap: renderExpeditionMapRoute,
+    haqiMineralExploration: renderHaqiMineralExplorationRoute,
+    haqiExplorationArchive: renderHaqiExplorationArchiveRoute,
     minigames: renderMinigamesRoute,
     hatching:  renderHatchingRoute,
     profile:   () => renderProfile(app, { pet: getCurrentPet() }, { onBack: () => navigateToView('home') }),
@@ -1286,12 +2151,16 @@ function cleanupLeavingView(nextView) {
 
 function render() {
     if (isBootstrapping) return;
+    document.title = currentAppTitle();
     const currentView = (sdk.token || state.offlineMode) ? state.currentView : 'login';
     if (state.currentView !== currentView) state.currentView = currentView;
     cleanupLeavingView(currentView);
     homeViewModule?.stopHomeWalk?.();
     const fn = routes[currentView] || routes.login;
-    try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>'; }
+    try {
+        fn();
+        requestAnimationFrame(renderOnboardingPanel);
+    } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>'; }
 }
 subscribe(render);
 
@@ -1314,7 +2183,13 @@ function clearUnauthenticatedSession() {
 }
 
 function currentAppTitle() {
-    return String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
+    const settlementTitle = String(state.settings?.starSettlement?.appTitle || '').trim();
+    if (settlementTitle) return settlementTitle;
+    try {
+        const requestedPlanet = String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim();
+        if (requestedPlanet === HAQI_EXPEDITION_PLUGIN.planetId) return '哈奇星球';
+    } catch (_) {}
+    return t('appName');
 }
 
 // Resolve the boot landing view, honoring a forced `view` URL param / `window.__view`
@@ -1325,6 +2200,7 @@ function resolveForcedBootView(fallbackView) {
     const forced = getForcedView();
     if (!forced) return fallbackView;
     if (forced === 'game') return 'minigames';
+    if (forced === 'mineral') return 'haqiMineralExploration';
     if (forced === 'ops') return 'ops';
     if (forced === 'encyclopedia') return 'encyclopedia';
     const lv = zoomLevelIdToIndex(forced);
@@ -1420,6 +2296,7 @@ async function bootstrap() {
     // 先存入 sessionStorage，回跳后即便 URL 已无参数也能恢复并优先进入分享的小游戏。
     persistSharedGameParams(parseSharedGameParamsFromUrl());
     persistWorkBuddyImportParams(parseWorkBuddyImportParamsFromUrl());
+    persistLocalExpeditionResetIntent();
 
     // URL token
     try {
@@ -1460,7 +2337,9 @@ async function bootstrap() {
         await loadUserProfile();
         await applySettledOfficialPlanetFromProfile();
         await applyTemporaryHomePlanetFromUrl();
+        await resetTodayExpeditionsIfRequested();
         await loadAllPets();
+        await restoreExpeditionPetArtwork();
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
     } catch (e) {
@@ -1529,6 +2408,38 @@ async function bootstrap() {
     setView(resolveLandingView());
 }
 
+function persistLocalExpeditionResetIntent() {
+    const url = new URL(window.location.href);
+    if (!isLocalDevelopmentHost() || url.searchParams.get('reset_today_expeditions') !== '1') return;
+    try { sessionStorage.setItem(LOCAL_EXPEDITION_RESET_INTENT_KEY, '1'); } catch (_) {}
+}
+
+function hasLocalExpeditionResetIntent() {
+    const url = new URL(window.location.href);
+    if (!isLocalDevelopmentHost()) return false;
+    if (url.searchParams.get('reset_today_expeditions') === '1') return true;
+    try { return sessionStorage.getItem(LOCAL_EXPEDITION_RESET_INTENT_KEY) === '1'; } catch (_) { return false; }
+}
+
+async function resetTodayExpeditionsIfRequested() {
+    if (!hasLocalExpeditionResetIntent()) return;
+
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    getDailyExpeditionRoster(settlement, { planetName: state.planetName || '哈奇星球' });
+    settlement.dailyExpeditionRoster.exploredIds = [];
+    await saveUserProfile();
+
+    try { sessionStorage.removeItem(LOCAL_EXPEDITION_RESET_INTENT_KEY); } catch (_) {}
+    const url = new URL(window.location.href);
+    url.searchParams.delete('reset_today_expeditions');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    showToast('今日星图探索记录已重置', 'success', 2200);
+}
+
+function isLocalDevelopmentHost() {
+    return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+}
+
 async function getInitialStoryPath() {
     try {
         const { storyPathFromUrl, normalizeStoryPath } = await loadStoryPlayerView();
@@ -1573,6 +2484,10 @@ async function maybeStartNewUserStory() {
 function getActivePlanetId() {
     const settlement = state.settings?.starSettlement;
     if (settlement?.source === 'official' && settlement.planetId) return String(settlement.planetId);
+    try {
+        const requestedPlanet = String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim();
+        if (requestedPlanet) return requestedPlanet;
+    } catch (_) {}
     return DEFAULT_PLANET_ID;
 }
 
@@ -1583,6 +2498,12 @@ function onboardingDisabledByUrl() {
         const raw = String(url.searchParams.get('skip_onboarding') || '').trim().toLowerCase();
         return /^(1|true|yes|on)$/.test(raw);
     } catch (_) { return false; }
+}
+
+// 是否跳过"星球诞生"领养引导页：URL 开关之外，微信小程序 web-view 按平台要求
+// 也跳过整个引导页（直接走默认蛋流程），其他环境不变。
+function boardingOnboardingDisabled() {
+    return onboardingDisabledByUrl() || isMiniProgramWebView();
 }
 
 // 解析 onboarding.minigame（可填 gameId 或 html 文件名）为 minigames 视图的 gameId。
@@ -1607,7 +2528,7 @@ function hasAdoptedRealPet() {
 // 当前星球的新手指引是否为"领养仪式"型（minigames 模式且为 boarding 小游戏）。
 async function isBoardingOnboardingPlanet() {
     try {
-        if (onboardingDisabledByUrl()) return false;
+        if (boardingOnboardingDisabled()) return false;
         const config = await getPlanetOnboardingConfig(getActivePlanetId());
         if (!config || config.mode !== 'minigames') return false;
         const gameId = resolveOnboardingMinigameId(config.minigame);
@@ -1650,6 +2571,8 @@ async function maybeStartOnboarding() {
         if (!gameId) return false;
         const boarding = isBoardingGame({ id: gameId });
         if (boarding) {
+            // 微信小程序环境跳过整个领养引导页，落到默认蛋流程。
+            if (boardingOnboardingDisabled()) return false;
             // 领养仪式：只要还没有真实宠物就触发（不看 completed 标记）。
             if (hasAdoptedRealPet()) return false;
             // 没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
@@ -1741,9 +2664,12 @@ async function createNewEgg(options = {}) {
     if (systemHatchTarget?.dna) dna = systemHatchTarget.dna;
     // 若用户已有"主屋"，新蛋更倾向于继承主屋所在领地的 DNA 特征
     const territory = findLargestHouseAcrossLayouts(state.layouts);
-    if (!systemHatchTarget && territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
+    if (!systemHatchTarget && !options.breeding && territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
     const traits = systemHatchTarget?.traits || decodeDna(dna);
     const trueName = systemHatchTarget?.name || dnaToName(dna);
+    const embryo = options.embryo && typeof options.embryo === 'object' ? options.embryo : null;
+    const qualityId = String(embryo?.qualityId || '').toUpperCase();
+    const quality = qualityId ? window.MHPetQuality?.snapshot(qualityId) || null : null;
     const pet = {
         id: 'pet_' + randId(8),
         name: trueName,
@@ -1758,6 +2684,19 @@ async function createNewEgg(options = {}) {
         lastTickAt: now,
         lastCareAt: now,
         parents: Array.isArray(options.parents) ? options.parents : null,
+        ...(embryo ? {
+            qualityId: qualityId || 'N',
+            quality,
+            ivs: embryo.ivs,
+            growthMultiplier: embryo.growthMultiplier,
+            baseBattleMultiplier: embryo.baseBattleMultiplier,
+            mutation: embryo.mutation,
+            breeding: {
+                geneticDna: embryo.dna,
+                createdAt: now,
+                lineage: Array.isArray(options.lineage) ? options.lineage : null,
+            },
+        } : {}),
         stage: 'egg',
         activeRoom: 'living',
         // 蛋阶段累计的 DNA 偏置 —— 喂食 / 许愿都会落在这里，孵化时统一应用
@@ -2030,7 +2969,7 @@ async function handleLogin() {
             setView('login');
             return;
         }
-        try { await loadUserProfile(); await applySettledOfficialPlanetFromProfile(); await applyTemporaryHomePlanetFromUrl(); await loadAllPets(); } catch (e) { console.warn(e); }
+        try { await loadUserProfile(); await applySettledOfficialPlanetFromProfile(); await applyTemporaryHomePlanetFromUrl(); await resetTodayExpeditionsIfRequested(); await loadAllPets(); } catch (e) { console.warn(e); }
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
         for (const id of Object.keys(state.pets)) {
@@ -2087,6 +3026,7 @@ async function handleOfflineMode() {
         state.user = { id: 'offline', username: 'offline', name: 'Offline', offline: true };
         await loadUserProfile();
         await applyTemporaryHomePlanetFromUrl();
+        await resetTodayExpeditionsIfRequested();
         await loadAllPets();
         for (const id of Object.keys(state.pets)) {
             const pet = state.pets[id];
@@ -2171,9 +3111,20 @@ async function handleSelectPet(id) {
     const target = state.pets[id];
     if (!target) return;
     if (!isPetSelectable(target)) {
-        const info = getPetLocationInfo(target, state.planetName || '宠物星');
-        showToast(`${target.name || '这只宠物'} 现在在 ${info.label}，不能召回。`, 'info', 2200);
-        return;
+        // 会员可召回放养在当前星球表面的宠物；非会员 / 哈奇岛 / 其它星球仍不可召回。
+        if (state.isPaid && canVipRecallPet(target)) {
+            markPetRecalled(target);
+            try { await savePet(target); } catch (_) { savePetDebounced(target); }
+            showToast(t('vipRecallPet', { name: target.name || '宠物' }), 'success', 1600);
+        } else {
+            const info = getPetLocationInfo(target, state.planetName || '宠物星');
+            if (!state.isPaid && canVipRecallPet(target)) {
+                showToast(t('vipRecallLocked', { name: target.name || '宠物', place: info.label }), 'info', 2400);
+            } else {
+                showToast(`${target.name || '这只宠物'} 现在在 ${info.label}，不能召回。`, 'info', 2200);
+            }
+            return;
+        }
     }
     setCurrentPet(id);
     setCurrentPetPersisted(id).catch(()=>{});
@@ -2186,6 +3137,49 @@ async function handleSelectPet(id) {
     try { await ensurePetData(id); } catch (_) {}
     try { preloadPetAssets(state.pets[id], { includeAll: false }); } catch (_) {}
     setView('home');
+}
+
+/** VIP：在 Field 视图点击其它宠物时切换当前宠，并留在 Field。 */
+async function handleSelectFieldPet(id) {
+    if (!state.isPaid) return false;
+    const target = state.pets[id];
+    if (!target) return false;
+    if (!isPetSelectable(target)) {
+        if (canVipRecallPet(target)) {
+            markPetRecalled(target);
+            try { await savePet(target); } catch (_) { savePetDebounced(target); }
+        } else {
+            const info = getPetLocationInfo(target, state.planetName || '宠物星');
+            showToast(`${target.name || '这只宠物'} 现在在 ${info.label}，不能召回。`, 'info', 2200);
+            return false;
+        }
+    }
+    if (id === state.currentPetId) return true;
+    state.zoomLevel = 1;
+    state.lastHomeZoomLevel = 1;
+    state.activePetFieldPose = null;
+    state.activePetRoomPose = null;
+    state.activePetRoomFocusPose = null;
+    state.isDecorMode = false;
+    state.isFeedMode = false;
+    setCurrentPet(id);
+    setCurrentPetPersisted(id).catch(()=>{});
+    try { await ensurePetData(id); } catch (_) {}
+    try { preloadPetAssets(state.pets[id], { includeAll: false }); } catch (_) {}
+    notify();
+    showToast(t('vipSwitchPet', { name: target.name || '宠物' }), 'success', 1200);
+    return true;
+}
+
+/** 打开 KeepWork 会员介绍小游戏（haqi_keepwork_vip）。 */
+function launchKeepworkVipMinigame() {
+    pendingMinigameLaunch = {
+        mode: 'npc',
+        gameId: 'keepwork_vip',
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
 }
 
 async function handleFindPet(id) {
@@ -2304,14 +3298,27 @@ function isBoardingGame(game, launch = {}) {
 }
 
 async function finishBoardingHatch(data = {}, { stage = 'baby' } = {}) {
+    // 孵化后 setCurrentPet / setView 会重渲 field：请求对准主宠，避免沿用旧场景平移。
+    const requestCenter = async () => {
+        try {
+            const { requestCenterFieldPetOnEnter } = await import('./level_field.js');
+            requestCenterFieldPetOnEnter();
+        } catch (_) {}
+    };
+    await requestCenter();
     const pet = await hatchPetFromBoarding(data || {}, { stage, planetName: state.planetName || '宠物星' });
     try { await ensurePetData(pet.id); } catch (_) {}
     state.currentRoom = pet.activeRoom || 'living';
     state.isDecorMode = false;
     state.isFeedMode = false;
+    state.activePetFieldPose = null;
+    state.activePetRoomPose = null;
+    state.activePetRoomFocusPose = null;
     const exiled = await enforcePlanetPetLimit(pet.id);
     const exileText = exiled.length ? ` ${exiled.map(item => `${item.pet.name || '一只宠物'}去了${item.location.name}`).join('，')}。` : '';
     showToast(stage === 'egg' ? `已领养新的蛋。${exileText}` : `${pet.name || '新宠物'} 已在星球上孵化。${exileText}`, exiled.length ? 'info' : 'success', exiled.length ? 3600 : 2200);
+    // hatch 过程中的 notify 可能已消费过一次对准请求，最终回 field 前再请求一次。
+    await requestCenter();
     setView('home');
 }
 
@@ -2328,9 +3335,32 @@ async function handleAdoptMinigameResult(_game, data = {}) {
 
 async function handleBoardingOnboardingResult(_game, data = {}) {
     pendingMinigameLaunch = null;
-    // 领养仪式完成：新宠物孵化在自己的星球表面，落到 field 视图查看新伙伴。
+    // 领养仪式完成：立刻回到 field，避免等孵化/定居时 iframe 一直停在终局画面。
     state.lastHomeZoomLevel = zoomLevelIdToIndex('field');
-    await finishBoardingHatch(data || {}, { stage: 'baby' });
+    state.activePetFieldPose = null;
+    state.activePetRoomPose = null;
+    state.activePetRoomFocusPose = null;
+    setView('home');
+    const selectedPetId = String(data?.petId || '').replace(/^famous-pets\//, '').trim();
+    const alreadyOwned = selectedPetId && Object.values(state.pets || {}).some(pet => {
+        const sourcePetId = String(pet?.sourcePetId || '').replace(/^famous-pets\//, '').trim();
+        return sourcePetId === selectedPetId;
+    });
+    if (data?.autoHatch && alreadyOwned) {
+        showToast('这只抱抱龙已经在哈奇星球了。', 'info');
+        try {
+            const { requestCenterFieldPetOnEnter } = await import('./level_field.js');
+            requestCenterFieldPetOnEnter();
+            notify();
+        } catch (_) {}
+        return;
+    }
+    try {
+        await finishBoardingHatch(data || {}, { stage: 'baby' });
+    } catch (e) {
+        console.error('领养仪式孵化失败', e);
+        showToast('孵化失败：' + (e?.message || e), 'error');
+    }
     if (pendingOnboardingProgress) {
         try { await markOnboardingCompleted(pendingOnboardingProgress.progressKey, pendingOnboardingProgress.mode || 'minigames'); } catch (_) {}
         pendingOnboardingProgress = null;
@@ -2378,15 +3408,49 @@ async function handleDeletePet(id) {
     if (state.currentView !== 'petList') setView('petList');
 }
 
+async function handleResearchRelease() {
+    const pets = state.petOrder.map(id => state.pets[id]).filter(Boolean);
+    const candidates = getResearchReleaseCandidates(pets, {
+        currentPetId: state.currentPetId,
+        dispatchedPetIds: getActiveMineralBridge().dispatchedPetIds,
+    });
+    if (!candidates.length) {
+        showToast('没有可研究放归的重复 N / R 宠物。', 'info', 1800);
+        return;
+    }
+    const rewards = calculateResearchReleaseRewards(candidates);
+    const materialText = Object.entries(rewards.materials)
+        .map(([id, amount]) => `${itemName(`expedition_material_${id}`) || id} ×${amount}`)
+        .join('、');
+    const ok = await confirm(`将永久研究放归 ${candidates.length} 只重复伙伴，获得 ${rewards.coins} 金币${materialText ? `、${materialText}` : ''}。当前伙伴、锁定伙伴和勘探中的伙伴不会被处理。`, {
+        okText: '确认研究放归',
+        cancelText: '取消',
+    });
+    if (!ok) return;
+
+    for (const pet of candidates) await deletePet(pet.id);
+    addCoins(rewards.coins);
+    for (const [materialId, amount] of Object.entries(rewards.materials)) {
+        const inventoryId = `expedition_material_${materialId}`;
+        state.inventory[inventoryId] = Math.max(0, Number(state.inventory[inventoryId]) || 0) + amount;
+        if (!state.inventoryOrder.includes(inventoryId)) state.inventoryOrder.push(inventoryId);
+    }
+    saveInventoryDebounced();
+    saveUserProfileDebounced();
+    notify();
+    showToast(`已研究放归 ${candidates.length} 只重复伙伴，获得 ${rewards.coins} 金币${materialText ? `和${materialText}` : ''}`, 'success', 2600);
+}
+
 function handleStartBreed() {
     const currentPet = getCurrentPet();
     if (currentPet && isPetInteractionBlocked(currentPet)) { showToast(sleepingInteractionText(currentPet), 'info', 1800); return; }
-    const adults = state.petOrder.map(id => state.pets[id]).filter(p => p && isPetOnCurrentPlanet(p) && CONFIG.breedableStages.includes(p.stage));
-    if (adults.length < 2) {
-        showToast('需要至少两只当前星球的成年宠物才能繁殖', 'info', 2200);
+    const adults = state.petOrder.map(id => state.pets[id]).filter(p => p && isPetOnCurrentPlanet(p) && CONFIG.breedableStages.includes(p.stage) && !isPetDispatching(p.id, getActivePlanetId()));
+    const eligibleParents = adults.filter(parent => adults.some(other => other !== parent && canBreed(parent, other)));
+    if (eligibleParents.length < 2) {
+        showToast('需要两只未锁定、当前星球的成年宠物且永久战斗达到 LV.40', 'info', 2600);
         return;
     }
-    showBreedParentPicker(adults);
+    showBreedParentPicker(eligibleParents);
 }
 
 function ensureBreedPickerStyles() {
@@ -2409,6 +3473,22 @@ function ensureBreedPickerStyles() {
         .mh-breed-drag-ghost { position:fixed; left:0; top:0; z-index:100000; pointer-events:none; opacity:.94; transform:translate(-50%, -50%) scale(1.02); box-shadow:0 12px 28px rgba(14,116,144,.28); }
         .mh-breed-notice { border:1px solid rgba(14,165,233,.24); background:#ecfeff; color:var(--accent-dark); border-radius:14px; padding:9px 11px; font-size:12px; font-weight:800; line-height:1.45; }
         .mh-breed-notice.is-error { border-color:rgba(239,68,68,.28); background:#fff1f2; color:#b91c1c; }
+        .mh-breed-preview { display:grid; gap:9px; padding:10px; border:1px solid #bae6fd; border-radius:12px; background:#f0f9ff; color:var(--text-secondary); }
+        .mh-breed-preview-empty { color:var(--text-muted); font-size:12px; font-weight:800; line-height:1.45; }
+        .mh-breed-preview-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .mh-breed-preview-head strong { color:var(--text-primary); font-size:13px; }
+        .mh-breed-preview-grade { flex:0 0 auto; padding:3px 6px; border-radius:999px; background:#e0f2fe; color:#0e7490; font-size:10px; font-weight:900; }
+        .mh-breed-preview-grade.is-stable { background:#dcfce7; color:#15803d; }
+        .mh-breed-preview-grade.is-complementary { background:#f3e8ff; color:#7e22ce; }
+        .mh-breed-preview-module { display:grid; gap:6px; padding-top:9px; border-top:1px solid rgba(14,165,233,.18); }
+        .mh-breed-preview-module-title { color:var(--text-muted); font-size:10px; font-weight:900; }
+        .mh-breed-iv-grid { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:5px; }
+        .mh-breed-iv-item { min-width:0; display:grid; gap:2px; padding:6px 3px; border:1px solid #bae6fd; border-radius:7px; background:#fff; text-align:center; }
+        .mh-breed-iv-item span { overflow:hidden; color:var(--text-muted); font-size:9px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-breed-iv-item b { color:var(--text-primary); font-size:10px; font-variant-numeric:tabular-nums; }
+        .mh-breed-mutation-alert { display:flex; align-items:center; gap:7px; padding:8px; border:1px solid #f59e0b; border-radius:8px; background:#fffbeb; color:#92400e; font-size:11px; font-weight:900; line-height:1.35; }
+        .mh-breed-mutation-alert span { width:22px; height:22px; flex:0 0 auto; display:grid; place-items:center; border-radius:6px; background:#fef3c7; color:#b45309; font-size:14px; }
+        .mh-breed-advice { margin:0; color:var(--text-secondary); font-size:11px; font-weight:800; line-height:1.45; }
         .mh-breed-slots { display:flex; align-items:center; justify-content:center; gap:12px; padding:2px 0; }
         .mh-breed-slot { width:96px; height:96px; border:2px dashed rgba(14,165,233,.55); border-radius:18px; background:rgba(239,246,255,.72); color:var(--text-muted); display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; }
         .mh-breed-slot.is-over { border-color:var(--accent); background:#ecfeff; }
@@ -2419,6 +3499,7 @@ function ensureBreedPickerStyles() {
         .mh-breed-countdown { width:min(360px, calc(100vw - 40px)); text-align:center; }
         .mh-breed-count-number { margin:12px auto 6px; width:92px; height:92px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--bg-pill); color:var(--accent-dark); font-size:42px; font-weight:900; border:2px solid var(--accent); box-shadow:0 5px 0 rgba(37,99,235,.45); }
         @media (max-width:520px) { .mh-breed-pet-card { flex-basis:96px; } .mh-breed-slots { gap:10px; } .mh-breed-slot { width:88px; height:88px; } .mh-breed-slot-icon { width:70px; height:70px; } }
+        @media (max-width:420px) { .mh-breed-modal { gap:12px; } .mh-breed-preview { padding:9px; } .mh-breed-iv-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); } .mh-breed-iv-item { padding:6px 4px; } }
     `;
     document.head.appendChild(style);
 }
@@ -2427,12 +3508,80 @@ function breedPetIconHtml(pet) {
     return `<span class="mh-breed-pet-icon">${petArtHtml(pet, { alt: pet.name || '' })}</span>`;
 }
 
+const BREED_IV_LABELS = Object.freeze({ life: '生命', attack: '攻击', defense: '防御', speed: '速度', magic: '魔法' });
+
+function breedBloodlineLabel(pet) {
+    const dna = decodeDna(pet?.dna || '');
+    return dna?.element || dna?.attribute || '未显现';
+}
+
+function breedSpecialty(pet) {
+    const values = Object.entries(BREED_IV_LABELS).map(([key, label]) => [
+        label,
+        Math.max(0, Math.min(100, Number(pet?.ivs?.[key] ?? pet?.iv?.[key] ?? pet?.breeding?.ivs?.[key] ?? 50) || 0)),
+    ]);
+    values.sort((left, right) => right[1] - left[1]);
+    return values[0];
+}
+
+function breedParentSnapshot(pet) {
+    const [specialty, specialtyValue] = breedSpecialty(pet);
+    return {
+        id: pet.id || null,
+        name: pet.name || dnaToName(pet.dna || '') || '哈奇伙伴',
+        qualityId: pet?.quality?.id || pet?.qualityId || 'N',
+        stage: pet.stage || 'adult',
+        bloodline: breedBloodlineLabel(pet),
+        specialty,
+        specialtyValue,
+    };
+}
+
+function breedPairSuggestion(parentA, parentB, preview) {
+    const [firstLabel, firstValue] = breedSpecialty(parentA);
+    const [secondLabel, secondValue] = breedSpecialty(parentB);
+    const direction = firstLabel === secondLabel
+        ? `双亲都偏向${firstLabel}，适合稳定培养该属性。`
+        : `双亲分别偏向${firstLabel}与${secondLabel}，属于互补组合。`;
+    const quality = preview.urMutationChance
+        ? 'SSR × SSR 组合可尝试冲击 UR 突变。'
+        : '优先保留高品质亲代，提高正常品质上限。';
+    return `亲代侧重：${firstLabel} ${firstValue} / ${secondLabel} ${secondValue}。${direction}${quality}`;
+}
+
+function breedPreviewHtml(parentA, parentB, preview) {
+    const [firstLabel, firstValue] = breedSpecialty(parentA);
+    const [secondLabel, secondValue] = breedSpecialty(parentB);
+    const isStable = firstLabel === secondLabel;
+    const grade = isStable ? '同向稳定' : '属性互补';
+    const gradeClass = isStable ? 'is-stable' : 'is-complementary';
+    const ivItems = IV_KEYS.map(key => {
+        const range = preview.ivRanges[key];
+        return `<div class="mh-breed-iv-item"><span>${escapeHtml(BREED_IV_LABELS[key])}</span><b>${range.min}-${range.max}</b></div>`;
+    }).join('');
+    const mutationModule = preview.urMutationChance
+        ? `<div class="mh-breed-preview-module"><span class="mh-breed-preview-module-title">突变监测</span><div class="mh-breed-mutation-alert"><span>✦</span>监测到 ${Math.round(preview.urMutationChance * 100)}% UR 基因突变概率！</div></div>`
+        : '';
+    return `<div class="mh-breed-preview-head"><strong>繁育预估</strong><span class="mh-breed-preview-grade ${gradeClass}">${grade}</span></div>
+        <div class="mh-breed-preview-module"><span class="mh-breed-preview-module-title">资质区间预测 · 品质上限 ${escapeHtml(preview.qualityId)} · 成长 ×${preview.growthMultiplier.min}-${preview.growthMultiplier.max}</span><div class="mh-breed-iv-grid">${ivItems}</div></div>
+        ${mutationModule}
+        <div class="mh-breed-preview-module"><span class="mh-breed-preview-module-title">繁育评级 / 建议</span><p class="mh-breed-advice">双亲最高资质为 ${escapeHtml(firstLabel)} ${firstValue} 与 ${escapeHtml(secondLabel)} ${secondValue}。${escapeHtml(breedPairSuggestion(parentA, parentB, preview))}</p></div>`;
+}
+
 function showBreedParentPicker(adults) {
+    const modalName = 'breed-parent-picker';
+    if (!acquireActiveModal(modalName)) {
+        showToast('请先完成当前操作。', 'info', 1600);
+        return;
+    }
     ensureBreedPickerStyles();
     const selected = [null, null];
     const noticeMessages = [];
     const hasEnoughAdults = adults.length >= 2;
     const canAffordBreed = state.coins >= CONFIG.breedCost;
+    const catalystBalance = getActiveMineralBridge().breedingCatalysts;
+    let selectedCatalystType = 'none';
+    let selectedCatalystAttribute = IV_KEYS[0];
     if (!hasEnoughAdults) noticeMessages.push('需要至少两只成年宠物');
     if (!canAffordBreed) noticeMessages.push(`繁殖需要 ${CONFIG.breedCost} 金币，当前 ${state.coins | 0} 金币`);
     let draggedPetId = null;
@@ -2451,7 +3600,8 @@ function showBreedParentPicker(adults) {
                     <button class="mh-breed-pet-card" type="button" draggable="true" data-breed-pet="${escapeHtml(pet.id)}">
                         ${breedPetIconHtml(pet)}
                         <span class="mh-breed-pet-name">${escapeHtml(pet.name || dnaToName(pet.dna || '') || '哈奇伙伴')}</span>
-                        <span class="mh-breed-pet-stage">${escapeHtml(getStageName(pet.stage, '成年'))}</span>
+                        <span class="mh-breed-pet-stage">${escapeHtml(getStageName(pet.stage, '成年'))} · ${escapeHtml(pet?.quality?.id || pet?.qualityId || 'N')}</span>
+                        <span class="mh-breed-pet-stage">血统：${escapeHtml(breedBloodlineLabel(pet))}</span>
                     </button>`).join('')}
             </div>
             <div class="mh-breed-slots">
@@ -2459,13 +3609,26 @@ function showBreedParentPicker(adults) {
                 <div class="mh-breed-slot-plus">+</div>
                 <div class="mh-breed-slot" data-breed-slot="1" title="拖入第二只宠物"></div>
             </div>
+            <div class="mh-breed-preview-module" data-breed-catalyst>
+                <span class="mh-breed-preview-module-title">矿区催化剂（确认繁育时消耗）</span>
+                <select data-breed-catalyst-type>
+                    <option value="none">不使用催化剂</option>
+                    ${catalystBalance.ssrMutation ? `<option value="ssrMutation">SSR 突变催化剂 ×${catalystBalance.ssrMutation}</option>` : ''}
+                    ${catalystBalance.urAttributeLock ? `<option value="urAttributeLock">UR 属性锁定剂 ×${catalystBalance.urAttributeLock}</option>` : ''}
+                </select>
+                <select data-breed-catalyst-attribute hidden>${IV_KEYS.map(key => `<option value="${key}">${escapeHtml(BREED_IV_LABELS[key])}</option>`).join('')}</select>
+            </div>
+            <div class="mh-breed-preview" data-breed-preview><div class="mh-breed-preview-empty">选择两位亲代后，可查看子代资质范围。</div></div>
             <div class="mh-breed-actions">
                 <button class="btn-secondary" data-breed-cancel>取消</button>
                 <button class="btn-primary" data-breed-ok disabled>确定</button>
             </div>
         </div>`;
 
-    const close = () => { pointerDragPet?.ghost?.remove(); mask.remove(); };
+    const close = () => { pointerDragPet?.ghost?.remove(); mask.remove(); releaseActiveModal(modalName); };
+    const selectedCatalyst = () => selectedCatalystType === 'urAttributeLock'
+        ? { type: selectedCatalystType, attribute: selectedCatalystAttribute }
+        : selectedCatalystType === 'ssrMutation' ? { type: selectedCatalystType } : null;
     const petById = new Map(adults.map(pet => [pet.id, pet]));
     const firstEmptySlot = () => selected.findIndex(item => !item);
     const clearSlotOvers = () => mask.querySelectorAll('[data-breed-slot]').forEach(slot => slot.classList.remove('is-over'));
@@ -2491,6 +3654,8 @@ function showBreedParentPicker(adults) {
         clearSlotOvers();
     };
     const renderSlots = () => {
+        const attributeSelect = mask.querySelector('[data-breed-catalyst-attribute]');
+        if (attributeSelect) attributeSelect.hidden = selectedCatalystType !== 'urAttributeLock';
         mask.querySelectorAll('[data-breed-slot]').forEach(slot => {
             const idx = Number(slot.dataset.breedSlot) || 0;
             const pet = selected[idx];
@@ -2503,6 +3668,16 @@ function showBreedParentPicker(adults) {
         });
         const okBtn = mask.querySelector('[data-breed-ok]');
         if (okBtn) okBtn.disabled = !(hasEnoughAdults && canAffordBreed && selected[0] && selected[1] && selected[0].id !== selected[1].id);
+        const previewNode = mask.querySelector('[data-breed-preview]');
+        if (previewNode) {
+            if (!selected[0] || !selected[1]) {
+                previewNode.innerHTML = '<div class="mh-breed-preview-empty">选择两位亲代后，可查看子代资质范围。</div>';
+            } else {
+                const preview = previewChildPotential(selected[0], selected[1], { catalyst: selectedCatalyst() });
+                previewNode.innerHTML = `${breedPreviewHtml(selected[0], selected[1], preview)}${preview.hint ? `<p class="mh-breed-advice">${escapeHtml(preview.hint)}</p>` : ''}`;
+                previewNode.classList.toggle('is-error', !preview.eligible);
+            }
+        }
         scanAndMount(mask);
     };
     const assignPet = (petId, slotIndex = firstEmptySlot()) => {
@@ -2520,13 +3695,17 @@ function showBreedParentPicker(adults) {
     mask.addEventListener('click', async (e) => {
         if (suppressNextClick) { suppressNextClick = false; return; }
         if (e.target === mask || e.target.closest('[data-breed-cancel]')) { close(); return; }
+        const catalystType = e.target.closest('[data-breed-catalyst-type]');
+        if (catalystType) { selectedCatalystType = catalystType.value; renderSlots(); return; }
+        const catalystAttribute = e.target.closest('[data-breed-catalyst-attribute]');
+        if (catalystAttribute) { selectedCatalystAttribute = catalystAttribute.value; renderSlots(); return; }
         const petBtn = e.target.closest('[data-breed-pet]');
         if (petBtn) { assignPet(petBtn.dataset.breedPet); return; }
         const slot = e.target.closest('[data-breed-slot]');
         if (slot && selected[Number(slot.dataset.breedSlot) || 0]) { selected[Number(slot.dataset.breedSlot) || 0] = null; renderSlots(); return; }
         if (e.target.closest('[data-breed-ok]')) {
             if (!selected[0] || !selected[1]) return;
-            await completeBreedWithParents(selected[0], selected[1], close);
+            await completeBreedWithParents(selected[0], selected[1], close, selectedCatalyst());
         }
     });
     mask.addEventListener('dragstart', (e) => {
@@ -2627,9 +3806,24 @@ async function showBreedCountdown() {
     });
 }
 
-async function completeBreedWithParents(parentA, parentB, closePicker) {
+async function completeBreedWithParents(parentA, parentB, closePicker, catalyst = null) {
     if (!parentA || !parentB || parentA.id === parentB.id) return;
     if (state.coins < CONFIG.breedCost) return;
+    if (isPetDispatching(parentA.id, getActivePlanetId()) || isPetDispatching(parentB.id, getActivePlanetId())) {
+        showToast('勘探中的伙伴暂时无法参与繁育。', 'info', 2200);
+        return;
+    }
+    if (!canBreed(parentA, parentB)) {
+        showToast('父母需为未锁定的成年宠物，且永久战斗均达到 LV.40', 'info', 2400);
+        return;
+    }
+    const catalystKey = catalyst?.type === 'ssrMutation' ? 'ssrMutation'
+        : catalyst?.type === 'urAttributeLock' && IV_KEYS.includes(catalyst.attribute) ? 'urAttributeLock' : null;
+    const bridge = getActiveMineralBridge();
+    if (catalystKey && bridge.breedingCatalysts[catalystKey] <= 0) {
+        showToast('该催化剂已被其他操作消耗，请重新选择。', 'info', 2200);
+        return;
+    }
     const current = getCurrentPet();
     if (current && isPetOnCurrentPlanet(current)) {
         const ok = await confirm(t('breedReleaseConfirm', { current: current.name || t('currentPetFallback') }), {
@@ -2640,10 +3834,25 @@ async function completeBreedWithParents(parentA, parentB, closePicker) {
         markPetReleased(current, state.planetName || '宠物星');
         await savePet(current);
     }
+    const embryo = generateChildEmbryo(parentA, parentB, { catalyst: catalystKey ? catalyst : null });
+    if (catalystKey) {
+        setActiveMineralBridge({
+            ...bridge,
+            breedingCatalysts: { ...bridge.breedingCatalysts, [catalystKey]: bridge.breedingCatalysts[catalystKey] - 1 },
+            syncedAt: Date.now(),
+        });
+        saveUserProfileDebounced();
+    }
     closePicker?.();
     await showBreedCountdown();
-    const dna = crossover(parentA.dna, parentB.dna);
-    const newPet = await createNewEgg({ dna, parents: [parentA.id, parentB.id] });
+    const newPet = await createNewEgg({
+        dna: embryo.dna,
+        parents: [parentA.id, parentB.id],
+        embryo,
+        lineage: [breedParentSnapshot(parentA), breedParentSnapshot(parentB)],
+        breeding: true,
+        useSystemPet: false,
+    });
     state.coins = Math.max(0, state.coins - CONFIG.breedCost);
     saveUserProfileDebounced();
     try { await ensurePetData(newPet.id); } catch (_) {}
@@ -2881,6 +4090,7 @@ async function handlePlaceItem(itemId, x, y, roomOverride, extra = null) {
     if (!treatAsUnlimited) await removeFromInventory(pet.id, itemId, 1, { persist });
     if (!skipSound) soundManager.playItemPlace();
     notify();
+    if (item.type !== 'food') checkOnboardingTask('place-first-facility');
 }
 
 async function handleMoveItem(idx, x, y, roomOverride, extra = null) {
@@ -2946,6 +4156,7 @@ async function handleFeedItem(itemId, source = {}) {
         await removeFromInventory(pet.id, itemId, 1, { persist });
     }
     if (!source.skipNotify) notify();
+    checkOnboardingTask('feed-first-pet');
     return true;
 }
 
@@ -3385,6 +4596,7 @@ try {
 }
 
 bootstrap().then(() => {
+    loadPlanetFeatures().then(() => render()).catch(error => console.warn('加载星球玩法配置失败', error));
     // 启动完成后处理 agent 深链（此时已登录 / 已有宠物上下文）
     applyAgentDeepLinks().catch(e => console.warn('agent 深链处理失败', e));
 }).catch(err => {

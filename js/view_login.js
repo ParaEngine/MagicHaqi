@@ -104,6 +104,7 @@ function ensureLoginStyle() {
         .mh-login-checkbox.checked::after{content:'\\2713';font-size:14px;color:#fff;font-weight:700;line-height:1}
         .mh-login-privacy-link{color:#5ecfff;font-size:13px;text-decoration:underline;cursor:pointer}
         .mh-login-privacy-link:hover{color:#7de1ff}
+        @media (max-height:680px){.mh-login-content{justify-content:flex-start!important;overflow-y:auto;padding-top:18px!important;padding-bottom:28px!important}.mh-login-content::-webkit-scrollbar{width:3px}.mh-login-content > .text-7xl{font-size:44px!important;margin-bottom:8px!important}.mh-login-content h1{margin-bottom:6px!important}.mh-login-content p[style*="margin-bottom:32px"]{margin-bottom:14px!important}.mh-login-content p[style*="mb-6"]{margin-bottom:14px!important}.mh-login-content [aria-label]{margin-top:16px!important}}
         .mh-modal-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);padding:24px}
         .mh-modal-card{width:100%;max-width:480px;max-height:70vh;background:linear-gradient(160deg,#0f1a3a,#16213e,#1a2468);border:1px solid rgba(152,239,255,0.2);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
         .mh-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(152,239,255,0.12);flex-shrink:0}
@@ -270,7 +271,7 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
                 <div class="space-bg">${stars}</div>
                 ${planets}
             </div>
-            <div class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
+            <div class="mh-login-content absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
                 ${isShare ? `
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🎮</div>
                 <h1 class="text-2xl font-extrabold mb-3" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6);max-width:300px;line-height:1.32">${escapeHtml(shareTitle)}</h1>

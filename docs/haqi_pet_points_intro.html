@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>哈奇个人宠物积分 — 产品介绍</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      body { @apply m-0 min-h-screen bg-gradient-to-b from-orange-50 via-amber-50 to-sky-50 font-sans text-slate-800 antialiased; }
+    }
+    @layer components {
+      .hero-glow { @apply relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 p-8 text-white sm:p-14; box-shadow: 0 25px 50px -12px rgba(251,146,60,.5); }
+      .hero-glow::before { content: ''; @apply pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl; }
+      .hero-glow::after { content: ''; @apply pointer-events-none absolute -bottom-16 -left-16 h-56 w-56 rounded-full bg-amber-300/20 blur-3xl; }
+      .feature-card { @apply rounded-2xl border border-orange-100 bg-white p-6 shadow-lg shadow-orange-100/40 transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-orange-200/50; }
+      .pet-card { @apply relative overflow-hidden rounded-2xl border border-orange-100 bg-white p-4 text-center shadow-md shadow-orange-100/30 transition hover:-translate-y-1 hover:shadow-lg; }
+      .pet-card .pet-bg { @apply absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-orange-50/60; }
+      .pet-mini { @apply mx-auto h-20 w-20 bg-no-repeat; background-size: 400% 400%; }
+      .step-number { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-base font-black text-white; }
+      .rule-badge { @apply rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700; }
+      .stat-value { @apply text-3xl font-black text-orange-600 sm:text-4xl; }
+      .stat-label { @apply mt-1 text-xs font-bold text-slate-500 tracking-wide; }
+      .section-title { @apply text-2xl font-black text-slate-800 sm:text-3xl; }
+      .section-sub { @apply mt-2 text-sm leading-6 text-slate-500; }
+      .divider { @apply mx-auto h-1 w-16 rounded-full bg-gradient-to-r from-orange-400 to-amber-400; }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(-1deg); }
+      50% { transform: translateY(-10px) rotate(1deg); }
+    }
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .anim-float { animation: float 3s ease-in-out infinite; }
+    .anim-fade-up { animation: fade-up 0.6s ease-out both; }
+    .delay-1 { animation-delay: 0.15s; }
+    .delay-2 { animation-delay: 0.3s; }
+    .delay-3 { animation-delay: 0.45s; }
+    .delay-4 { animation-delay: 0.6s; }
+  </style>
+</head>
+<body>
+  <nav class="sticky top-0 z-40 border-b border-orange-100 bg-white/70 backdrop-blur-lg">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🐾</span>
+        <span class="text-sm font-black tracking-wider text-orange-600">哈奇个人宠物积分</span>
+      </div>
+      <div class="flex items-center gap-3 text-xs font-bold text-slate-500">
+        <a href="#features" class="hidden hover:text-orange-600 sm:inline">功能</a>
+        <a href="#pets" class="hidden hover:text-orange-600 sm:inline">宠物图鉴</a>
+        <a href="#how" class="hidden hover:text-orange-600 sm:inline">玩法</a>
+        <a href="#demo" class="rounded-full bg-orange-500 px-4 py-2 text-white hover:bg-orange-600">在线体验</a>
+      </div>
+    </div>
+  </nav>
+  <section class="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-20">
+    <div class="hero-glow anim-fade-up">
+      <div class="relative z-10">
+        <p class="text-xs font-black tracking-widest text-orange-100">FamousPet · 课堂激励系统</p>
+        <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl sm:leading-tight">哈奇个人宠物积分</h1>
+        <p class="mt-4 max-w-xl text-base leading-7 text-white/85 sm:text-lg">每一个孩子都值得拥有一只属于自己的成长伙伴。<br>通过课堂表现积累积分，让宠物升级进化——<br class="hidden sm:inline">用陪伴与成就感点燃学习内驱力。</p>
+        <div class="mt-7 flex flex-wrap items-center gap-3">
+          <a href="#demo" class="inline-block rounded-2xl bg-white px-6 py-3 text-sm font-bold text-orange-600 shadow-lg shadow-orange-800/20 transition hover:-translate-y-0.5 hover:bg-orange-50">🎮 在线体验</a>
+          <a href="#features" class="inline-block rounded-2xl border border-white/40 px-6 py-3 text-sm font-bold text-white/90 transition hover:border-white/70 hover:bg-white/10">了解更多</a>
+        </div>
+      </div>
+    </div>
+    <div class="anim-fade-up delay-2 mt-8 grid grid-cols-3 gap-3 rounded-2xl border border-orange-100 bg-white/80 p-4 shadow-lg shadow-orange-100/30 backdrop-blur sm:gap-6 sm:p-8">
+      <div class="text-center"><div class="stat-value">24+</div><div class="stat-label">宠物伙伴</div></div>
+      <div class="text-center"><div class="stat-value">11</div><div class="stat-label">积分规则</div></div>
+      <div class="text-center"><div class="stat-value">5</div><div class="stat-label">宠物等级</div></div>
+    </div>
+  </section>
+  <section class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="text-center">
+      <div class="divider"></div>
+      <h2 class="section-title mt-4">一人一只宠物，积分即成长</h2>
+      <p class="section-sub mx-auto max-w-2xl">每位学生拥有一只独特的宠物伙伴。个人积分不仅是课堂表现的记录，更是宠物升级的唯一经验来源——积分越高，宠物越强大、越漂亮。</p>
+    </div>
+    <div class="mt-10 grid gap-4 sm:grid-cols-3">
+      <div class="feature-card anim-fade-up"><div class="text-4xl">🎯</div><h3 class="mt-4 text-lg font-black">正向激励</h3><p class="mt-2 text-sm leading-6 text-slate-500">回答问题、按时作业、成绩进步——每个良好行为都能获得积分，让努力被看见、被奖励。</p></div>
+      <div class="feature-card anim-fade-up delay-1"><div class="text-4xl">🐉</div><h3 class="mt-4 text-lg font-black">宠物伴学</h3><p class="mt-2 text-sm leading-6 text-slate-500">24 只风格各异的精灵宠物，会因积分的增长而改变外观、解锁新表现，成为学生的情感寄托。</p></div>
+      <div class="feature-card anim-fade-up delay-2"><div class="text-4xl">📊</div><h3 class="mt-4 text-lg font-black">轻松管理</h3><p class="mt-2 text-sm leading-6 text-slate-500">教师端一键加分、自定义规则、查看全屏图鉴；学生端专注自己的宠物成长，操作极简。</p></div>
+    </div>
+  </section>
+  <section id="features" class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="text-center">
+      <div class="divider"></div>
+      <h2 class="section-title mt-4">核心功能</h2>
+      <p class="section-sub mx-auto max-w-2xl">教师管理与学生体验双视角，覆盖完整的班级激励场景。</p>
+    </div>
+    <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">📝</span><h3 class="text-base font-black">积分规则库</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">预置 11 条课堂加分项（回答问题、作业优秀、进步名次等），教师可自定义扩展。</p><div class="mt-3 flex flex-wrap gap-1.5"><span class="rule-badge">回答问题 +2</span><span class="rule-badge">作业优秀 +5</span><span class="rule-badge">早读认真 +2</span></div></div>
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">✨</span><h3 class="text-base font-black">宠物成长体系</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">每只宠物拥有 5 个成长阶段，随个人积分提升而进化——外观、光效、动画全面升级。</p></div>
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">🎭</span><h3 class="text-base font-black">丰富动画表现</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">12 种情感动画：开心、喂食、玩耍、撒娇、庆祝、哭泣、晕眩、安睡……宠物有了真实的"性格"。</p></div>
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">🔍</span><h3 class="text-base font-black">全屏学生图鉴</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">教师可一键进入全屏浏览模式，查看全班学生的宠物与积分排行，适合教学一体机展示。</p></div>
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">🔄</span><h3 class="text-base font-black">双角色切换</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">教师管理积分与档案，学生查看个人宠物——无需复杂权限配置，一键切换身份。</p></div>
+      <div class="feature-card"><div class="flex items-center gap-3"><span class="text-2xl">💾</span><h3 class="text-base font-black">本地持久化</h3></div><p class="mt-3 text-xs leading-6 text-slate-500">所有数据保存在浏览器本地，刷新不丢失。支持 KeepWork 账号登录，开箱即用。</p></div>
+    </div>
+  </section>
+  <section class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="rounded-3xl border border-orange-100 bg-white/70 p-6 shadow-lg shadow-orange-100/30 sm:p-10">
+      <div class="text-center"><div class="divider"></div><h2 class="section-title mt-4">积分规则示例</h2><p class="section-sub">教师可根据班级情况灵活启用和调整。</p></div>
+      <div class="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">课堂回答问题积极</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+2</span></div>
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">上课主动回答问题</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+1</span></div>
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">连续一个月作业优秀</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+5</span></div>
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">成绩进步至年级前 200 名</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+5</span></div>
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">成绩前进 10 个名次</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+5</span></div>
+        <div class="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-3"><span class="text-sm font-bold text-slate-700">月考总分达标</span><span class="rounded-full bg-orange-500 px-3 py-0.5 text-xs font-black text-white">+5</span></div>
+      </div>
+    </div>
+  </section>
+  <section id="pets" class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="text-center"><div class="divider"></div><h2 class="section-title mt-4">宠物图鉴</h2><p class="section-sub mx-auto max-w-2xl">每只宠物都拥有独立 4x4 动态精灵图，稀有度各异。积分升级会让它们逐渐解锁更华丽的形态。</p></div>
+    <div id="petGrid" class="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"></div>
+  </section>
+ <section id="how" class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="text-center"><div class="divider"></div><h2 class="section-title mt-4">一分钟上手</h2><p class="section-sub mx-auto max-w-2xl">看看老师如何用四步打造一个让全班学生为之兴奋的宠物成长课堂</p></div>
+    <div class="relative mt-12">
+      <div class="absolute left-1/2 top-0 hidden h-full w-0.5 -translate-x-1/2 bg-gradient-to-b from-orange-200 via-amber-300 to-orange-200 sm:block"></div>
+      <div class="space-y-12">
+        <div class="step-item group relative flex flex-col sm:flex-row items-start gap-6 sm:gap-8 anim-fade-up">
+          <div class="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-lg font-black text-white shadow-lg shadow-orange-200 transition duration-300 group-hover:scale-110 group-hover:shadow-xl group-hover:shadow-orange-300 sm:mx-auto">1</div>
+          <div class="step-content flex-1 rounded-2xl border border-orange-100 bg-white p-5 shadow-md shadow-orange-100/30 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-orange-200/50 sm:p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div class="flex-1">
+                <h3 class="text-base font-black text-slate-800">🏫 设置班级</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-500">填写年级与班级名称，比如"三年级2班"，系统自动生成班级标识，全校统一展示。</p>
+                <div class="mt-3 flex items-center gap-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700"><span>🏫</span> 三年级2班 · 36名学生 · 11条积分规则已就绪</div>
+              </div>
+              <div class="hidden shrink-0 sm:block"><div class="rounded-xl border border-orange-100 bg-gradient-to-b from-orange-50 to-amber-50 p-3 text-center"><div class="text-2xl">🐾</div><p class="mt-1 text-[10px] font-bold text-orange-600">班级已就绪</p></div></div>
+            </div>
+          </div>
+          <div class="absolute -bottom-8 left-7 hidden text-2xl text-orange-300 sm:block">⬇</div>
+        </div>
+        <div class="step-item group relative flex flex-col sm:flex-row items-start gap-6 sm:gap-8 anim-fade-up delay-1">
+          <div class="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-lg font-black text-white shadow-lg shadow-orange-200 transition duration-300 group-hover:scale-110 group-hover:shadow-xl group-hover:shadow-orange-300 sm:mx-auto">2</div>
+          <div class="step-content flex-1 rounded-2xl border border-orange-100 bg-white p-5 shadow-md shadow-orange-100/30 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-orange-200/50 sm:p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div class="flex-1">
+                <h3 class="text-base font-black text-slate-800">🧑‍🎓 添加学生 & 选宠物</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-500">录入学生姓名、性别，为每个孩子从26只精灵宠物中挑选专属伙伴——这一刻，全班都沸腾了！</p>
+                <div class="mt-3 flex flex-wrap gap-1.5">
+                  <span class="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">🐉 阿凡紫</span>
+                  <span class="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">⭐ 糯糯星马</span>
+                  <span class="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">🔥 豆豆火汪</span>
+                  <span class="rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-[10px] font-bold text-purple-700">🐰 软软月兔</span>
+                </div>
+              </div>
+              <div class="hidden shrink-0 sm:block"><div class="rounded-xl border border-orange-100 bg-gradient-to-b from-orange-50 to-amber-50 p-3 text-center"><div class="text-2xl">🐾</div><p class="mt-1 text-[10px] font-bold text-orange-600">宠物已选择</p></div></div>
+            </div>
+          </div>
+          <div class="absolute -bottom-8 left-7 hidden text-2xl text-orange-300 sm:block">⬇</div>
+        </div>
+        <div class="step-item group relative flex flex-col sm:flex-row items-start gap-6 sm:gap-8 anim-fade-up delay-2">
+          <div class="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-lg font-black text-white shadow-lg shadow-orange-200 transition duration-300 group-hover:scale-110 group-hover:shadow-xl group-hover:shadow-orange-300 sm:mx-auto">3</div>
+          <div class="step-content flex-1 rounded-2xl border border-orange-100 bg-white p-5 shadow-md shadow-orange-100/30 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-orange-200/50 sm:p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div class="flex-1">
+                <h3 class="text-base font-black text-slate-800">⭐ 日常加分 · 宠物秒变开心</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-500">课堂表现出色？点一下加分！宠物立刻跳出❤️开心动画，经验条涨一截——全班目光都在大屏幕上。</p>
+                <div class="mt-3 flex items-center gap-2">
+                  <span class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">+2 回答问题积极</span>
+                  <span class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">+5 作业优秀</span>
+                  <span class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700">-1 课堂扣分</span>
+                </div>
+                <div class="mt-3 overflow-hidden rounded-xl bg-gradient-to-r from-orange-100 to-amber-50 p-3 text-center"><div class="inline-block animate-bounce text-3xl">🐉</div><div class="mt-1 text-xs font-bold text-orange-700 animate-pulse">✨ 阿凡紫获得了经验 +2 ✨</div><div class="mx-auto mt-1 h-2 w-48 overflow-hidden rounded-full bg-orange-200"><div class="h-full w-3/5 rounded-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all"></div></div></div>
+              </div>
+              <div class="hidden shrink-0 sm:block"><div class="rounded-xl border border-orange-100 bg-gradient-to-b from-orange-50 to-amber-50 p-3 text-center"><div class="text-4xl animate-bounce">🐉</div><p class="mt-1 text-[10px] font-bold text-orange-600 animate-pulse">开心+1</p></div></div>
+            </div>
+          </div>
+          <div class="absolute -bottom-8 left-7 hidden text-2xl text-orange-300 sm:block">⬇</div>
+        </div>
+        <div class="step-item group relative flex flex-col sm:flex-row items-start gap-6 sm:gap-8 anim-fade-up delay-3">
+          <div class="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-lg font-black text-white shadow-lg shadow-orange-200 transition duration-300 group-hover:scale-110 group-hover:shadow-xl group-hover:shadow-orange-300 sm:mx-auto">4</div>
+          <div class="step-content flex-1 rounded-2xl border border-orange-100 bg-white p-5 shadow-md shadow-orange-100/30 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-orange-200/50 sm:p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div class="flex-1">
+                <h3 class="text-base font-black text-slate-800">💞 陪伴成长 · 宠物有了"性格"</h3>
+                <p class="mt-2 text-sm leading-6 text-slate-500">学生可以随时抚摸、喂食、和宠物玩耍——宠物会用12种真实情感动画回应：开心跳跃、撒娇打滚、困了安睡……</p>
+                <div class="mt-3 flex gap-2">
+                  <span class="cursor-pointer rounded-xl bg-gradient-to-br from-pink-100 to-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:scale-110 hover:shadow-md">🖐️ 抚摸</span>
+                  <span class="cursor-pointer rounded-xl bg-gradient-to-br from-amber-100 to-yellow-50 px-3 py-1.5 text-xs font-bold text-amber-600 transition hover:scale-110 hover:shadow-md">🍎 喂食</span>
+                  <span class="cursor-pointer rounded-xl bg-gradient-to-br from-sky-100 to-cyan-50 px-3 py-1.5 text-xs font-bold text-sky-600 transition hover:scale-110 hover:shadow-md">🎾 玩耍</span>
+                  <span class="cursor-pointer rounded-xl bg-gradient-to-br from-indigo-100 to-purple-50 px-3 py-1.5 text-xs font-bold text-indigo-600 transition hover:scale-110 hover:shadow-md">😴 安睡</span>
+                </div>
+                <div class="mt-3 text-xs leading-5 text-slate-400 italic">"老师！我的波波小龙升到3级了，它变金色了！"——这是每天教室里最常听到的欢呼。</div>
+              </div>
+              <div class="hidden shrink-0 sm:block"><div class="rounded-xl border border-orange-100 bg-gradient-to-b from-orange-50 to-amber-50 p-3 text-center"><div class="text-2xl">💖</div><p class="mt-1 text-[10px] font-bold text-orange-600">亲密度+5</p></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="demo" class="mx-auto mb-20 mt-20 max-w-6xl px-4 sm:px-6">
+    <div class="hero-glow text-center">
+      <div class="relative z-10">
+        <p class="text-xs font-black tracking-widest text-orange-100">开始使用</p>
+        <h2 class="mt-3 text-2xl font-black sm:text-4xl">让课堂激励"活"起来</h2>
+        <p class="mx-auto mt-4 max-w-lg text-sm leading-7 text-white/80">每个积分都能让宠物成长，每次进步都有伙伴见证。<br>免费在线体验，无需安装，打开即用。</p>
+        <div class="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <a href="https://keepwork.com" target="_blank" rel="noopener noreferrer" class="inline-block w-full rounded-2xl bg-white px-8 py-3.5 text-center text-sm font-black text-orange-600 shadow-lg shadow-orange-800/20 transition hover:-translate-y-0.5 hover:bg-orange-50 sm:w-auto">🎮 在 KeepWork 上体验</a>
+        </div>
+        <p class="mt-5 text-xs text-white/50">支持 PC、平板、教学一体机全平台访问</p>
+      </div>
+    </div>
+  </section>
+  <footer class="border-t border-orange-100 bg-white/60 py-8">
+    <div class="mx-auto max-w-6xl px-4 text-center text-xs text-slate-400 sm:px-6">
+      <p class="font-bold">哈奇个人宠物积分 · FamousPet 精灵图互动演示</p>
+      <p class="mt-1">基于 KeepWork 平台构建 · 适用于中小学班级积分激励场景</p>
+      <p class="mt-6">© 2026 哈奇教育</p>
+    </div>
+  </footer>
+  <script>
+    var pets = [
+      { id: 'dragon1', name: '阿凡紫', species: '蜜糖蜜蜂', rarity: 64, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon1_20260525031133.webp' },
+      { id: 'milk_moo_bubu', name: '奶沫哞布布', species: '奶糖小牛兽', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/milk_moo_bubu_20260523165501.webp' },
+      { id: 'star_horse_nuomi', name: '糯糯星马', species: '星鬃小马驹', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/star_horse_nuomi_20260524120457.webp' },
+      { id: 'flame_puppy_doudou', name: '豆豆火汪', species: '棉花糖小狗', rarity: 86, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/flame_puppy_doudou_20260524132225.webp' },
+      { id: 'zodiac_rabbit_ruanruan', name: '软软月兔', species: '月绒兔耳鸟', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rabbit_ruanruan_20260524132501.webp' },
+      { id: 'zodiac_dragon_bobo', name: '波波小龙', species: '祥云泡泡龙', rarity: 98, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dragon_bobo_20260524132332.webp' },
+      { id: 'zodiac_rat_mimi', name: '米米鼠团', species: '灵穗小鼠', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rat_mimi_20260524154201.webp' },
+      { id: 'zodiac_ox_nainai', name: '奶奶哞哞', species: '福角小牛', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_ox_nainai_20260524133030.webp' },
+      { id: 'zodiac_tiger_tangtang', name: '糖糖虎爪', species: '焰纹奶虎', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_tiger_tangtang_20260524161411.webp' },
+      { id: 'zodiac_snake_youyou', name: '悠悠团蛇', species: '玉环小蛇', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_snake_youyou_20260524163751.webp' },
+      { id: 'zodiac_horse_dudu', name: '嘟嘟云马', species: '风鬃小马', rarity: 93, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_horse_dudu_20260524124614.webp' },
+      { id: 'zodiac_goat_mianmian', name: '绵绵咩咩', species: '云绒小羊', rarity: 87, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_goat_mianmian_20260524124724.webp' },
+      { id: 'zodiac_monkey_qiqi', name: '奇奇桃猴', species: '桃叶灵猴', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_monkey_qiqi_20260528041713.webp' },
+      { id: 'zodiac_rooster_jiji', name: '叽叽彩冠', species: '朝霞小鸡', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rooster_jiji_20260524152704.webp' },
+      { id: 'zodiac_dog_wangwang', name: '汪汪福豆', species: '福豆小犬', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dog_wangwang_20260524132956.webp' },
+      { id: 'zodiac_pig_lulu', name: '噜噜元宝', species: '元宝小猪', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_pig_lulu_20260524161535.webp' },
+      { id: 'lulu_flame_lioncub', name: '噜噜焰团', species: '火鬃狮团', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/lulu_flame_lioncub_20260528041744.webp' },
+      { id: 'mimi_frost_seal', name: '咪咪雪泡', species: '霜泡海豹', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/mimi_frost_seal_20260524165412.webp' },
+      { id: 'qiqi_star_drake', name: '琪琪星咕', species: '星幕幼龙', rarity: 96, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/qiqi_star_drake_20260524165652.webp' },
+      { id: 'nono_leaf_guardian', name: '糯糯芽芽', species: '翠芽守护兽', rarity: 84, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nono_leaf_guardian_20260524170800.webp' },
+      { id: 'bobo_pearl_manta', name: '啵啵珍珍', species: '珍珠云鳐', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/bobo_pearl_manta_20260524165135.webp' },
+      { id: 'tangtang_thunder_bee', name: '糖糖嗡嗡', species: '蜜焰战蜂', rarity: 87, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/tangtang_thunder_bee_20260524165728.webp' },
+      { id: 'yoyo_moon_owlcat', name: '悠悠月团', species: '月霜猫头鹰', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/yoyo_moon_owlcat_20260524165829.webp' },
+      { id: 'doudou_shadow_fox', name: '豆豆影尾', species: '影尾团狐', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/doudou_shadow_fox_20260524165232.webp' },
+      { id: 'pipi_life_octopus', name: '皮皮泡爪', species: '灵泡小章鱼', rarity: 86, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/pipi_life_octopus_20260524165117.webp' },
+      { id: 'tuan_sakura_koala', name: '团团樱熊', species: '樱叶树袋熊', rarity: 93, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/tuan_sakura_koala_20260524165551.webp' }
+    ];
+    var grid = document.getElementById('petGrid');
+    if (grid) {
+      grid.innerHTML = pets.map(function(p) {
+        var rLabel = p.rarity >= 95 ? '传说' : p.rarity >= 90 ? '史诗' : p.rarity >= 80 ? '稀有' : '普通';
+        var rColor = p.rarity >= 95 ? 'text-purple-600 bg-purple-50 border-purple-200' : p.rarity >= 90 ? 'text-indigo-600 bg-indigo-50 border-indigo-200' : p.rarity >= 80 ? 'text-blue-600 bg-blue-50 border-blue-200' : 'text-slate-600 bg-slate-50 border-slate-200';
+        return '<div class="pet-card"><div class="pet-bg"></div><div class="relative z-10"><div class="pet-mini" style="background-image:url(' + p.url + ');background-position:0 0;background-size:400% 400%;"></div><h4 class="mt-2 text-sm font-black text-slate-800">' + p.name + '</h4><p class="text-xs text-slate-400">' + p.species + '</p><span class="mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ' + rColor + '">稀有度 ' + p.rarity + ' · ' + rLabel + '</span></div></div>';
+      }).join('');
+    }
+  </script>
+</body>
+</html>

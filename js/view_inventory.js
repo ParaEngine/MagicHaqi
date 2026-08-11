@@ -3,8 +3,16 @@ import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { itemName, t } from './i18n.js';
 import { getShopItemById } from './config.js';
 import { state } from './state.js';
+import { getHomeTreasureGrowth, getHomeTreasures, HOME_TREASURE_META, isHomeTreasureId, isHomeTreasurePlaced } from './home_treasures.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
+const HOME_TREASURE_STYLE = `<style>
+    .mh-home-treasures { box-sizing:border-box; container-type:inline-size; max-width:100%; overflow:hidden; }
+    @container (max-width: 480px) {
+        .mh-home-treasure-row { grid-template-columns: auto minmax(0, 1fr) !important; }
+        .mh-home-treasure-row [data-claim-treasure] { grid-column: 1 / -1; width: 100%; min-height: 36px; }
+    }
+</style>`;
 
 function getInventoryItemHint(item) {
     const name = itemName(item?.name) || t('invHintThisItem');
@@ -13,10 +21,12 @@ function getInventoryItemHint(item) {
     return t('invHintDefault', { name });
 }
 
-export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}) {
+export function renderInventory(panel, _data, { onBack, onSell, onReorder, onClaimTreasure, onPlaceTreasure } = {}) {
     const inv = state.inventory || {};
+    const treasures = getHomeTreasures({ inventory: inv });
+    const ownedTreasures = Object.entries(treasures).filter(([, count]) => count > 0);
     const savedOrder = Array.isArray(state.inventoryOrder) ? state.inventoryOrder : [];
-    const ownedIds = Object.keys(inv).filter(id => (inv[id] || 0) > 0 && ITEM_BY_ID[id]);
+    const ownedIds = Object.keys(inv).filter(id => (inv[id] || 0) > 0 && ITEM_BY_ID[id] && !isHomeTreasureId(id));
     const ownedSet = new Set(ownedIds);
     // Preserve saved order for known ids, then append any new ids not yet ordered.
     const orderedIds = [
@@ -32,13 +42,28 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
             <span class="font-bold text-sm mh-coin-amount" style="color:var(--accent-dark)">${coinIconSvg()} ${state.coins}</span>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px">
+            ${ownedTreasures.length ? `${HOME_TREASURE_STYLE}<section class="card-flat mb-3 mh-home-treasures" aria-label="家园珍宝">
+                <div class="text-xs font-bold mb-2" style="color:var(--text-secondary)">🏡 家园珍宝</div>
+                <div style="display:grid;gap:8px">
+                    ${ownedTreasures.map(([id, count]) => {
+                        const treasure = HOME_TREASURE_META[id];
+                        const placed = isHomeTreasurePlaced(state.layouts, id);
+                        const growth = getHomeTreasureGrowth(state.planetActions, id);
+                        return `<div class="mh-home-treasure-row" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px;border:1.5px solid var(--border-card);border-radius:10px;background:var(--bg-pill)">
+                            <span style="font-size:25px" aria-hidden="true">${treasure.icon}</span>
+                            <div style="min-width:0"><div class="text-sm font-bold" style="color:var(--text-primary)">${escapeHtml(treasure.name)} ×${count}</div><div class="text-xs" style="color:var(--text-muted)">${placed ? `设施 Lv.${growth.level} · 已运行 ${growth.days} 天` : '未摆放，尚未启动'} · ${escapeHtml(treasure.rewardText)}</div></div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btn-secondary text-xs" type="button" data-place-treasure="${escapeHtml(id)}">${placed ? '移动' : '摆放'}</button><button class="btn-primary text-xs" type="button" data-claim-treasure="${escapeHtml(id)}" ${placed ? '' : 'disabled'}>领取</button></div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </section>` : ''}
             ${entries.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px">${escapeHtml(t('inventoryEmpty'))}</div>`
                 : `<div class="grid grid-cols-3 gap-2" id="mhInvGrid">
                     ${entries.map(it => `
                         <div class="shop-item mh-inv-item" draggable="true" data-iid="${escapeHtml(it.id)}" data-type="${escapeHtml(it.type)}">
                             <div class="emoji">${it.emoji}</div>
-                            <div class="name">${escapeHtml(itemName(it.name))} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
+                            <div class="name">${escapeHtml(itemName(it.name))} ×${it.unlimited ? '∞' : it.qty}</div>
                         </div>
                     `).join('')}
                 </div>`}
@@ -65,6 +90,12 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
             }
             showSellConfirm({ ...it, qty: owned }, onSell);
         };
+    });
+    $$('[data-claim-treasure]').forEach(button => {
+        button.onclick = () => onClaimTreasure?.(button.dataset.claimTreasure);
+    });
+    $$('[data-place-treasure]').forEach(button => {
+        button.onclick = () => onPlaceTreasure?.(button.dataset.placeTreasure);
     });
 }
 

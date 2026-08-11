@@ -71,6 +71,27 @@
       .field-preview-action { @apply min-h-0 w-auto border-0 bg-transparent p-0 text-[11px] font-bold text-sky-700 hover:border-transparent hover:bg-transparent hover:underline; }
       .npc-marker { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 3px rgb(15 23 42 / .5)); background-size: contain; background-repeat: no-repeat; background-position: center; pointer-events: none; }
       .npc-marker-active { outline: 3px solid #10b981; box-shadow: 0 2px 10px rgb(16 185 129 / .5); z-index: 2; }
+      .area-link-marker { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; min-width: 54px; max-width: 130px; padding: 3px 7px; border: 2px solid rgb(255 255 255 / .92); border-radius: 999px; color: white; background: linear-gradient(180deg,#22c55e,#15803d); box-shadow: 0 2px 7px rgb(20 83 45 / .4); font-size: 10px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 3; }
+      .area-link-marker-active { outline: 3px solid #f59e0b; outline-offset: 2px; }
+      .field-ui-button-preview-list { position: absolute; left: 7px; right: 7px; top: 7px; z-index: 5; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 5px; pointer-events: none; }
+      .field-ui-button-preview { position: relative; flex: 0 0 var(--preview-button-size, 38px); width: var(--preview-button-size, 38px); min-height: var(--preview-button-size, 38px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: max(3px, calc(var(--preview-button-size, 38px) * .08)); padding: 4px 3px; border: 2px solid rgb(255 255 255 / .92); border-radius: 9px; color: #0f2747; background: linear-gradient(180deg, rgb(255 255 255 / .96), rgb(186 230 253 / .92)); box-shadow: 0 3px 7px rgb(15 23 42 / .24); pointer-events: none; }
+      .field-ui-button-preview-icon { width: 62%; aspect-ratio: 1; display: grid; place-items: center; background-repeat: no-repeat; background-position: center; background-size: contain; font-size: calc(var(--preview-button-size, 38px) * .42); line-height: 1; }
+      .field-ui-button-preview-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 7px; font-weight: 900; line-height: 1.15; }
+      .field-ui-button-list { @apply flex flex-col gap-2; }
+      .field-ui-button-card { @apply flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 p-2.5; }
+      .field-ui-button-card-head { @apply flex items-center justify-between gap-2; }
+      .field-ui-button-actions { @apply flex items-center gap-1; }
+      .field-ui-button-actions button { @apply min-h-[30px] px-2 text-xs; }
+      .minigame-combobox { @apply relative flex items-stretch; }
+      .minigame-combobox input { @apply rounded-r-none; }
+      .minigame-picker { @apply relative flex-none; }
+      .minigame-picker summary { @apply grid h-full min-h-[34px] w-10 cursor-pointer list-none place-items-center rounded-r-md border border-l-0 border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
+      .minigame-picker summary::-webkit-details-marker { display: none; }
+      .minigame-picker[open] summary { @apply border-sky-600 bg-sky-50 text-sky-700; }
+      .minigame-picker-menu { @apply absolute right-0 top-[calc(100%+4px)] z-50 flex max-h-64 w-[min(420px,calc(100vw-48px))] flex-col overflow-auto rounded-md border border-slate-300 bg-white p-1 shadow-xl; }
+      .minigame-picker-option { @apply flex min-h-[38px] w-full items-center gap-2 border-0 bg-white px-2.5 py-2 text-left hover:border-transparent hover:bg-sky-50; }
+      .minigame-picker-option-icon { @apply grid w-6 flex-none place-items-center text-base; }
+      .minigame-picker-option-text { @apply min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs; }
       .modal-window.npc-placer-window { width: min(1300px, 96vw); max-height: 96vh; height: min(92vh, 880px); }
       .npc-placer-body { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; }
       /* 与游戏 field 保持同一坐标画布：默认 10m × 3m；图片更宽时由 JS 按图片有效宽高比扩展。
@@ -87,6 +108,7 @@
       .npc-info strong { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[12px]; }
       .npc-actions { @apply flex shrink-0 flex-wrap gap-1; }
       .npc-actions button { @apply text-[11px]; }
+      .area-link-icon { @apply grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-base; }
       .npc-icon-row { @apply flex items-center gap-1.5; }
       .npc-icon-row input { @apply flex-1; }
       /* 对话行删除按钮：在 .row（grid-cols-2）里默认会被拉伸铺满整格，这里改回按内容宽度、靠左对齐。 */
@@ -310,6 +332,7 @@
     const INDEX_PATH = `${PLANET_DIR}/_planet_index.json`;
     const LOCAL_INDEX_URL = `../${INDEX_PATH}`;
     const LOCAL_SCENE_INDEX_URL = '../pet-story/presets/scenes.json';
+    const LOCAL_MINIGAME_INDEX_URL = '../minigames/_minigame_index.json';
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPlanetGenerator.generationSettings';
     const FIELD_SLOTS = [
       { slotId: 'terrain_slot_4', label: '左耳' },
@@ -319,6 +342,7 @@
       { slotId: 'terrain_slot_6', label: '左胡子' },
       { slotId: 'land', label: '中胡子' },
       { slotId: 'terrain_slot_7', label: '右胡子' },
+      { slotId: 'terrain_slot_8', label: '额心' },
     ];
     const FIELD_TYPES = [
       { id: 'land', name: '陆地' },
@@ -357,7 +381,7 @@
     };
 
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, previewMode: 'planet', fields: FIELD_SLOTS.map(() => ({})), lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null, fieldNpcs: FIELD_SLOTS.map(() => []) };
+    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], minigames: [], activeFieldIndex: 0, previewMode: 'planet', fields: FIELD_SLOTS.map(() => ({})), lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null, fieldNpcs: FIELD_SLOTS.map(() => []), fieldAreaLinks: FIELD_SLOTS.map(() => []), fieldUiButtons: FIELD_SLOTS.map(() => []) };
 
     function escapeHtml(value) {
       const div = document.createElement('div');
@@ -675,7 +699,7 @@
         'planet_pets 是可选数组，最多 10 个，只能填写 famous-pets/_pet_index.json 中的 id；不确定时可留空数组 []。',
         'planet.id 只能使用英文字母、数字、下划线或连字符，必须避免与已有 id 重复。name/title 用简洁可爱的中文名。summary 用一句中文描述星球主题。badge 默认“官方”。',
         'planet.planet 需要包含 readonly:true、hue、bodyBackground、glowColor、accentColor、default_zoom_level。default_zoom_level 只能是 planet/field/pet/cell；可选 hide_planet/hide_cell 为 true 时隐藏对应层。hide_planet=false、hide_cell=false 不要写入 JSON。bodyBackground 用可直接放入 CSS background 的 radial-gradient 组合，颜色要明亮、童话、儿童友好。',
-        '每个 field 的 name 要像星球上的地点名，background 至少包含 type、color、title；没有图片时不要填 imageUrl。',
+        '每个 field 的 name 要像星球上的地点名，background 至少包含 type、color、title；没有图片时不要填 imageUrl。field 可选 uiButtons 数组，按钮统一显示在场景左上并自动换行；每项可包含 size(44-120)、icon、label、minigame、minigameLandscape，不需要 position。',
         'onboarding 是可选对象，描述首次进入该星球的新手指引：{ mode, storyPath?, minigame?, progressKey? }。mode 只能是 none/pet-story/minigames；pet-story 时填 storyPath（如 pet-story/story_of_dragons.json），minigames 时填 minigame（如 adventure）。不需要新手指引时省略 onboarding 或用 mode:"none"。',
         `已有 ids：${existingIds.join(', ') || 'none'}。已有 titles：${existingTitles.join('、') || 'none'}。`,
         description ? `用户最高优先级需求：${description}` : '用户需求：生成一个完整、可直接编辑的新官方星球。',
@@ -779,6 +803,7 @@
           background: { type: 'color', color: ['#bbf7d0', '#bae6fd', '#dbeafe', '#fde68a', '#bbf7d0', '#fef3c7', '#cffafe'][index] || '#bae6fd', title: slot.label },
           particles: index % 2 === 0 ? ['sparkle'] : [],
           npcs: [],
+          uiButtons: [],
         })),
       };
     }
@@ -827,6 +852,8 @@
         dropShadow: !!raw.dropShadow,
         randomNearMainPet: raw.randomNearMainPet !== false,
         dialog: normalizeNpcDialog(raw.dialog),
+        // 玩家完整确认对话后，为盲盒宠物蛋缩短的孵化时间（秒）；同一 NPC 每颗蛋仅生效一次。
+        hatchBoostSeconds: Math.max(0, Math.min(86400, Math.round(Number(raw.hatchBoostSeconds) || 0))),
         // minigame 可填 gameId / html 文件名（本地清单），也可填完整 http(s) 远程小游戏地址。
         minigame: String(raw.minigame || raw.game || '').trim().slice(0, 300),
         // 显式覆盖是否强制横屏：未勾选(false)时沿用该游戏自身默认配置；勾选(true)时强制横屏。
@@ -839,10 +866,9 @@
       return raw.map((npc, index) => normalizeNpc(npc, index));
     }
 
-    // 导出时：npc 必须至少有 dialog 或 minigame 之一，否则点击后没有任何反应，直接丢弃。
+    // 保留尚未配置交互的 NPC 草稿，避免保存并重新加载后新增 NPC 消失。
     function compactFieldNpcs(value) {
       return normalizeFieldNpcs(value)
-        .filter(npc => npc.dialog.length > 0 || npc.minigame)
         .map(npc => {
           const compact = { id: npc.id, name: npc.name, icon: npc.icon, x: npc.x, y: npc.y };
           if (npc.scale !== 1) compact.scale = npc.scale;
@@ -850,10 +876,60 @@
           if (npc.dropShadow) compact.dropShadow = true;
           compact.randomNearMainPet = npc.randomNearMainPet;
           if (npc.dialog.length) compact.dialog = npc.dialog;
+          if (npc.hatchBoostSeconds > 0) compact.hatchBoostSeconds = npc.hatchBoostSeconds;
           if (npc.minigame) compact.minigame = npc.minigame;
           if (npc.minigame && npc.minigameLandscape) compact.minigameLandscape = true;
           return compact;
         });
+    }
+
+    function normalizeAreaLink(raw = {}, index = 0) {
+      return {
+        id: safeId(raw.id, `area_link_${index + 1}`),
+        label: String(raw.label || raw.name || '').trim().slice(0, 24) || `跳转点${index + 1}`,
+        icon: String(raw.icon || '🚪').trim().slice(0, 80) || '🚪',
+        targetFieldId: String(raw.targetFieldId || raw.fieldId || '').trim().slice(0, 64),
+        url: String(raw.url || raw.href || '').trim().slice(0, 500),
+        x: clampPercent(raw.x, 50), y: clampPercent(raw.y, 50),
+      };
+    }
+
+    function normalizeFieldAreaLinks(value) {
+      return (Array.isArray(value) ? value : []).map((link, index) => normalizeAreaLink(link, index));
+    }
+
+    function compactFieldAreaLinks(value) {
+      return normalizeFieldAreaLinks(value).filter(link => link.targetFieldId || link.url).map(link => ({
+        id: link.id, label: link.label, ...(link.icon && link.icon !== '🚪' ? { icon: link.icon } : {}),
+        ...(link.targetFieldId ? { targetFieldId: link.targetFieldId } : {}), ...(link.url ? { url: link.url } : {}), x: link.x, y: link.y,
+      }));
+    }
+
+    function normalizeFieldUiButton(raw = {}, index = 0) {
+      return {
+        id: safeId(raw.id, `ui_button_${index + 1}`),
+        size: Math.max(44, Math.min(120, Math.round(Number(raw.size) || 64))),
+        icon: String(raw.icon || raw.emoji || raw.imageUrl || '🎮').trim().slice(0, 300) || '🎮',
+        label: String(raw.label || raw.text || '').trim().slice(0, 24),
+        minigame: String(raw.minigame || raw.game || raw.url || '').trim().slice(0, 300),
+        minigameLandscape: !!raw.minigameLandscape,
+      };
+    }
+
+    function normalizeFieldUiButtons(value) {
+      const raw = Array.isArray(value) ? value : [];
+      return raw.map((button, index) => normalizeFieldUiButton(button, index));
+    }
+
+    function compactFieldUiButtons(value) {
+      return normalizeFieldUiButtons(value).filter(button => button.minigame).map(button => ({
+        id: button.id,
+        size: button.size,
+        icon: button.icon,
+        ...(button.label ? { label: button.label } : {}),
+        minigame: button.minigame,
+        ...(button.minigameLandscape ? { minigameLandscape: true } : {}),
+      }));
     }
 
     function normalizePlanetPets(value) {
@@ -969,6 +1045,8 @@
             particles: normalizeParticles(field.particles),
             bgMusic: String(field.bgMusic || ''),
             npcs: normalizeFieldNpcs(field.npcs),
+            areaLinks: normalizeFieldAreaLinks(field.areaLinks),
+            uiButtons: normalizeFieldUiButtons(field.uiButtons),
           };
         }),
       };
@@ -1005,6 +1083,10 @@
           if (field.bgMusic) result.bgMusic = field.bgMusic;
           const npcs = compactFieldNpcs(field.npcs);
           if (npcs.length) result.npcs = npcs;
+          const areaLinks = compactFieldAreaLinks(field.areaLinks);
+          if (areaLinks.length) result.areaLinks = areaLinks;
+          const uiButtons = compactFieldUiButtons(field.uiButtons);
+          if (uiButtons.length) result.uiButtons = uiButtons;
           return result;
         }),
       };
@@ -1136,6 +1218,8 @@ ${currentIndent}}`;
             particles: normalizeParticles(field.particles),
             bgMusic: field.bgMusic || '',
             npcs: state.fieldNpcs[index] || [],
+            areaLinks: state.fieldAreaLinks[index] || [],
+            uiButtons: state.fieldUiButtons[index] || [],
           };
         }),
       });
@@ -1167,6 +1251,8 @@ ${currentIndent}}`;
       $('onboardingMinigame').value = onboarding.minigame;
       $('onboardingProgressKey').value = onboarding.progressKey === safePlanet.id ? '' : onboarding.progressKey;
       state.fieldNpcs = safePlanet.fields.map(field => normalizeFieldNpcs(field.npcs));
+      state.fieldAreaLinks = safePlanet.fields.map(field => normalizeFieldAreaLinks(field.areaLinks));
+      state.fieldUiButtons = safePlanet.fields.map(field => normalizeFieldUiButtons(field.uiButtons));
       state.fields = safePlanet.fields.map(field => ({
         name: field.name,
         typeId: field.typeId,
@@ -1247,6 +1333,15 @@ ${currentIndent}}`;
             </div>
             <div class="npc-list" data-npc-list="${index}">${renderNpcListItems(index)}</div>
           </div>
+          <div class="npc-section">
+            <div class="field-head"><strong class="field-title">跳转点（场景 / URL）</strong><button type="button" data-add-area-link="${index}">+ 新增跳转点</button></div>
+            <div class="npc-list" data-area-link-list="${index}">${renderAreaLinkListItems(index)}</div>
+          </div>
+          <div class="npc-section">
+            <div class="field-head"><strong class="field-title">场景左上 UI 按钮</strong><button type="button" data-add-ui-button="${index}">+ 新增按钮</button></div>
+            <div class="hint mb-2">按钮从左到右排列，一行空间不足时自动换到下一行。</div>
+            <div class="field-ui-button-list" data-ui-button-list="${index}">${renderFieldUiButtonEditors(index)}</div>
+          </div>
         </article>`;
       $('fieldList').querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { syncActiveFieldFromDom(); updateOutput(); }));
       $('btnPickScene').onclick = () => openScenePicker(index);
@@ -1257,6 +1352,98 @@ ${currentIndent}}`;
       };
       fixNpcIconAspects($('fieldList'));
       setupNpcListDelegation();
+      setupFieldUiButtonEditors(index);
+    }
+
+    function renderFieldUiButtonEditors(fieldIndex) {
+      const buttons = state.fieldUiButtons[fieldIndex] || [];
+      if (!buttons.length) return '<div class="hint">暂无按钮。</div>';
+      return buttons.map((button, buttonIndex) => `<section class="field-ui-button-card" data-ui-button-editor="${buttonIndex}">
+          <div class="field-ui-button-card-head">
+            <strong>按钮 ${buttonIndex + 1}</strong>
+            <span class="field-ui-button-actions">
+              <button type="button" data-move-ui-button="${buttonIndex}" data-move-direction="-1" ${buttonIndex === 0 ? 'disabled' : ''}>上移</button>
+              <button type="button" data-move-ui-button="${buttonIndex}" data-move-direction="1" ${buttonIndex === buttons.length - 1 ? 'disabled' : ''}>下移</button>
+              <button type="button" class="danger" data-delete-ui-button="${buttonIndex}">删除</button>
+            </span>
+          </div>
+          <label>按钮大小（44-120 px）<input type="number" min="44" max="120" step="1" data-ui-button-key="size" value="${button?.size || 64}"></label>
+          <label>Icon（emoji 或图片 URL）<input data-ui-button-key="icon" maxlength="300" value="${escapeHtml(button?.icon || '🎮')}"></label>
+          <label>Icon 下文字 <input data-ui-button-key="label" maxlength="24" value="${escapeHtml(button?.label || '')}" placeholder="例如：卡牌"></label>
+          <label>小游戏 URL / gameId
+            <span class="minigame-combobox">
+              <input data-ui-button-key="minigame" maxlength="300" value="${escapeHtml(button?.minigame || '')}" placeholder="选择内置小游戏，或输入任意 URL">
+              <details class="minigame-picker">
+                <summary aria-label="选择内置小游戏" title="选择内置小游戏">▼</summary>
+                <span class="minigame-picker-menu">${renderMinigamePickerOptions()}</span>
+              </details>
+            </span>
+          </label>
+          <label class="toggle-line"><input type="checkbox" data-ui-button-key="minigameLandscape" ${button?.minigameLandscape ? 'checked' : ''}>强制横屏</label>
+        </section>`).join('');
+    }
+
+    function renderMinigamePickerOptions() {
+      return state.minigames.map(game => {
+        const id = String(game?.id || '').trim();
+        const title = String(game?.title || id).trim();
+        const icon = String(game?.icon || '🎮').trim();
+        return id ? `<button type="button" class="minigame-picker-option" data-minigame-option="${escapeHtml(id)}"><span class="minigame-picker-option-icon">${escapeHtml(icon)}</span><span class="minigame-picker-option-text">${escapeHtml(title)} · ${escapeHtml(id)}</span></button>` : '';
+      }).join('') || '<span class="hint p-2">未读取到内置小游戏，可直接输入 URL。</span>';
+    }
+
+    function setupFieldUiButtonEditors(fieldIndex) {
+      const listElement = $('fieldList').querySelector(`[data-ui-button-list="${fieldIndex}"]`);
+      const rerender = () => {
+        listElement.innerHTML = renderFieldUiButtonEditors(fieldIndex);
+        bindEditors();
+        updateOutput();
+      };
+      const bindEditors = () => {
+        listElement.querySelectorAll('[data-ui-button-editor]').forEach(editor => {
+          const buttonIndex = Number(editor.dataset.uiButtonEditor);
+          editor.querySelectorAll('[data-ui-button-key]').forEach(input => input.addEventListener('input', () => {
+            const raw = {};
+            editor.querySelectorAll('[data-ui-button-key]').forEach(field => {
+              raw[field.dataset.uiButtonKey] = field.type === 'checkbox' ? field.checked : field.value;
+            });
+            state.fieldUiButtons[fieldIndex][buttonIndex] = normalizeFieldUiButton({ ...state.fieldUiButtons[fieldIndex][buttonIndex], ...raw }, buttonIndex);
+            updateOutput();
+          }));
+        });
+        listElement.querySelectorAll('[data-delete-ui-button]').forEach(button => button.onclick = () => {
+          state.fieldUiButtons[fieldIndex].splice(Number(button.dataset.deleteUiButton), 1);
+          rerender();
+        });
+        listElement.querySelectorAll('.minigame-picker').forEach(picker => {
+          picker.addEventListener('toggle', () => {
+            if (!picker.open) return;
+            listElement.querySelectorAll('.minigame-picker[open]').forEach(other => { if (other !== picker) other.open = false; });
+          });
+        });
+        listElement.querySelectorAll('[data-minigame-option]').forEach(option => option.onclick = () => {
+          const editor = option.closest('[data-ui-button-editor]');
+          const input = editor?.querySelector('[data-ui-button-key="minigame"]');
+          if (!input) return;
+          input.value = option.dataset.minigameOption;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          option.closest('.minigame-picker').open = false;
+        });
+        listElement.querySelectorAll('[data-move-ui-button]').forEach(button => button.onclick = () => {
+          const from = Number(button.dataset.moveUiButton);
+          const to = from + Number(button.dataset.moveDirection);
+          const buttons = state.fieldUiButtons[fieldIndex];
+          if (from < 0 || to < 0 || from >= buttons.length || to >= buttons.length) return;
+          [buttons[from], buttons[to]] = [buttons[to], buttons[from]];
+          rerender();
+        });
+      };
+      $('fieldList').querySelector(`[data-add-ui-button="${fieldIndex}"]`).onclick = () => {
+        const buttons = state.fieldUiButtons[fieldIndex] || (state.fieldUiButtons[fieldIndex] = []);
+        buttons.push(normalizeFieldUiButton({ id: `ui_button_${Date.now().toString(36)}` }, buttons.length));
+        rerender();
+      };
+      bindEditors();
     }
 
     function npcListKey(fieldIndex, npcIndex) {
@@ -1272,7 +1459,7 @@ ${currentIndent}}`;
       const tags = [];
       if (npc.dialog.length) tags.push('💬 对话');
       if (npc.minigame) tags.push(`🎮 ${npc.minigame}${npc.minigameLandscape ? ' 📱↔️横屏' : ''}`);
-      return tags.join(' + ') || '未配置对话/小游戏（不会生效）';
+      return tags.join(' + ') || '未配置对话/小游戏（已保留草稿，不会交互）';
     }
 
     function renderNpcListItems(fieldIndex) {
@@ -1310,6 +1497,65 @@ ${currentIndent}}`;
     function refreshNpcList(fieldIndex) {
       const el = $('fieldList').querySelector(`[data-npc-list="${fieldIndex}"]`);
       if (el) { el.innerHTML = renderNpcListItems(fieldIndex); fixNpcIconAspects(el); }
+    }
+
+    function renderAreaLinkListItems(fieldIndex) {
+      const list = state.fieldAreaLinks[fieldIndex] || [];
+      if (!list.length) return '<div class="hint">暂无跳转点。可添加类似特殊 NPC 的入口，链接到场景或 URL。</div>';
+      return list.map((link, linkIndex) => `<div class="npc-item">
+        <span class="area-link-icon">${escapeHtml(link.icon || '🚪')}</span>
+        <div class="npc-info"><strong>${escapeHtml(link.label)}</strong><span class="hint">(${link.x.toFixed(0)}%, ${link.y.toFixed(0)}%) · ${escapeHtml(link.url || (link.targetFieldId ? `场景 ${link.targetFieldId}` : '未设置目标'))}</span></div>
+        <div class="npc-actions"><button type="button" data-place-area-link="${fieldIndex}:${linkIndex}">摆放</button><button type="button" data-edit-area-link="${fieldIndex}:${linkIndex}">编辑</button><button type="button" class="danger" data-delete-area-link="${fieldIndex}:${linkIndex}">删</button></div>
+      </div>`).join('');
+    }
+
+    function refreshAreaLinkList(fieldIndex) {
+      const el = $('fieldList').querySelector(`[data-area-link-list="${fieldIndex}"]`);
+      if (el) el.innerHTML = renderAreaLinkListItems(fieldIndex);
+    }
+
+    function addAreaLink(fieldIndex) {
+      const list = state.fieldAreaLinks[fieldIndex] || (state.fieldAreaLinks[fieldIndex] = []);
+      list.push(normalizeAreaLink({ label: `跳转点${list.length + 1}` }, list.length));
+      refreshAreaLinkList(fieldIndex); updateOutput(); openAreaLinkEditor(`${fieldIndex}:${list.length - 1}`);
+    }
+
+    function deleteAreaLink(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      (state.fieldAreaLinks[fieldIndex] || []).splice(npcIndex, 1); refreshAreaLinkList(fieldIndex); updateOutput();
+    }
+
+    function openAreaLinkEditor(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const link = (state.fieldAreaLinks[fieldIndex] || [])[npcIndex]; if (!link) return;
+      const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true"><div class="modal-titlebar"><strong>编辑跳转点 · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong><button id="closeAreaLinkEditor">关闭</button></div><div class="modal-body modal-stack">
+        <div class="row"><label>名称 <input id="areaLinkLabel" maxlength="24" value="${escapeHtml(link.label)}"></label><label>图标（emoji） <input id="areaLinkIcon" maxlength="80" value="${escapeHtml(link.icon || '🚪')}"></label></div>
+        <div class="hint">位置 (${link.x.toFixed(0)}%, ${link.y.toFixed(0)}%)；保存后点“摆放”可在场景大图调整。</div>
+        <label>目标场景 <select id="areaLinkTarget"><option value="">不跳场景</option>${FIELD_SLOTS.map((slot, index) => `<option value="${index + 1}" ${link.targetFieldId === String(index + 1) ? 'selected' : ''}>${index + 1}. ${escapeHtml(state.fields[index]?.name || slot.label)}</option>`).join('')}</select></label>
+        <label>URL（填写后优先于目标场景） <input id="areaLinkUrl" maxlength="500" value="${escapeHtml(link.url)}" placeholder="https://example.com/page"></label>
+        <div class="hint">URL 仅接受 http(s) 地址，将在新窗口打开。</div><div class="toolbar"><button id="saveAreaLink" class="success">保存</button></div>
+      </div></div>`;
+      document.body.appendChild(overlay); overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#closeAreaLinkEditor').onclick = () => overlay.remove();
+      overlay.querySelector('#saveAreaLink').onclick = () => {
+        link.label = overlay.querySelector('#areaLinkLabel').value.trim().slice(0, 24) || link.label;
+        link.icon = overlay.querySelector('#areaLinkIcon').value.trim().slice(0, 80) || '🚪';
+        link.targetFieldId = overlay.querySelector('#areaLinkTarget').value; link.url = overlay.querySelector('#areaLinkUrl').value.trim().slice(0, 500);
+        overlay.remove(); refreshAreaLinkList(fieldIndex); updateOutput();
+      };
+    }
+
+    function openAreaLinkPlacer(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const link = (state.fieldAreaLinks[fieldIndex] || [])[npcIndex]; if (!link) return;
+      const scene = sceneFromField(fieldIndex); const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal-window npc-placer-window"><div class="modal-titlebar"><strong>摆放「${escapeHtml(link.label)}」</strong><button id="closeAreaLinkPlacer" class="success">完成</button></div><div class="modal-body npc-placer-body"><div class="hint">点击场景设置跳转点位置。</div><div class="npc-placer-art" id="areaLinkPlacerArt" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'field' })}</div></div></div>`;
+      document.body.appendChild(overlay); setupLazySceneBackgrounds(overlay); const art = overlay.querySelector('#areaLinkPlacerArt');
+      const bgIcon = parseIconSource(scene?.background?.imageUrl || scene?.imageUrl || ''); if (bgIcon.src && !bgIcon.rect) art.classList.add('npc-placer-full-image');
+      const renderMarkers = () => { art.querySelectorAll('.area-link-marker').forEach(el => el.remove()); (state.fieldAreaLinks[fieldIndex] || []).forEach((item, idx) => { const marker = document.createElement('span'); marker.className = `area-link-marker${idx === npcIndex ? ' area-link-marker-active' : ''}`; marker.style.left = `${item.x}%`; marker.style.top = `${item.y}%`; marker.textContent = `${item.icon || '🚪'} ${item.label}`; art.appendChild(marker); }); };
+      renderMarkers(); art.onclick = e => { const rect = art.getBoundingClientRect(); link.x = clampPercent((e.clientX - rect.left) / rect.width * 100); link.y = clampPercent((e.clientY - rect.top) / rect.height * 100); renderMarkers(); };
+      const done = () => { overlay.remove(); refreshAreaLinkList(fieldIndex); updateOutput(); }; overlay.querySelector('#closeAreaLinkPlacer').onclick = done; overlay.addEventListener('click', e => { if (e.target === overlay) done(); });
     }
 
     function addNpc(fieldIndex) {
@@ -1435,6 +1681,14 @@ ${currentIndent}}`;
       $('fieldList').addEventListener('click', (e) => {
         const addBtn = e.target.closest('[data-add-npc]');
         if (addBtn) { addNpc(Number(addBtn.dataset.addNpc) || 0); return; }
+        const addAreaLinkBtn = e.target.closest('[data-add-area-link]');
+        if (addAreaLinkBtn) { addAreaLink(Number(addAreaLinkBtn.dataset.addAreaLink) || 0); return; }
+        const placeAreaLinkBtn = e.target.closest('[data-place-area-link]');
+        if (placeAreaLinkBtn) { openAreaLinkPlacer(placeAreaLinkBtn.dataset.placeAreaLink); return; }
+        const editAreaLinkBtn = e.target.closest('[data-edit-area-link]');
+        if (editAreaLinkBtn) { openAreaLinkEditor(editAreaLinkBtn.dataset.editAreaLink); return; }
+        const deleteAreaLinkBtn = e.target.closest('[data-delete-area-link]');
+        if (deleteAreaLinkBtn) { deleteAreaLink(deleteAreaLinkBtn.dataset.deleteAreaLink); return; }
         const placeBtn = e.target.closest('[data-place-npc]');
         if (placeBtn) { openNpcPlacer(placeBtn.dataset.placeNpc); return; }
         const editBtn = e.target.closest('[data-edit-npc]');
@@ -1476,6 +1730,8 @@ ${currentIndent}}`;
               <div id="npcDialogLines"></div>
               <div class="toolbar"><button type="button" id="npcAddDialogLine">+ 新增对话行</button></div>
             </section>
+            <label>对话完成后孵化加速（分钟，可留 0） <input id="npcEditHatchBoostMinutes" type="number" min="0" max="1440" step="1" value="${Math.round((npc.hatchBoostSeconds || 0) / 60)}"></label>
+            <div class="hint">玩家确认完整段对话后生效；同一个 NPC 对同一颗盲盒宠物蛋只能加速一次。</div>
             <label>小游戏 minigame（可留空；留空则仅对话） <input id="npcEditMinigame" maxlength="300" value="${escapeHtml(npc.minigame)}" placeholder="adventure / haqi_adventure.html / https://完整地址"></label>
             <label class="toggle-line"><input type="checkbox" id="npcEditMinigameLandscape" ${npc.minigameLandscape ? 'checked' : ''}> 强制横屏（Force landscape，竖屏设备自动旋转 90 度）</label>
             <div class="toolbar">
@@ -1517,6 +1773,7 @@ ${currentIndent}}`;
       overlay.querySelector('#btnSaveNpc').onclick = () => {
         npc.name = overlay.querySelector('#npcEditName').value.trim().slice(0, 24) || npc.name;
         npc.icon = overlay.querySelector('#npcEditIcon').value.trim().slice(0, 300) || npc.icon;
+        npc.hatchBoostSeconds = Math.max(0, Math.min(86400, Math.round(Number(overlay.querySelector('#npcEditHatchBoostMinutes').value) || 0) * 60));
         npc.minigame = overlay.querySelector('#npcEditMinigame').value.trim().slice(0, 300);
         npc.minigameLandscape = overlay.querySelector('#npcEditMinigameLandscape').checked;
         npc.dropShadow = overlay.querySelector('#npcEditDropShadow').checked;
@@ -1765,7 +2022,7 @@ ${currentIndent}}`;
         };
         return `
           <div class="field-preview ${isFieldSelected(index) ? 'active' : ''}" data-select-field="${index}" role="button" tabindex="0" aria-label="查看 ${escapeHtml(field.name)} 场景信息">
-            <span class="field-preview-art" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
+            <span class="field-preview-art" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'thumbnail' })}${renderFieldUiButtonPreviews(index)}</span>
             <div class="field-preview-body">
               <strong class="field-preview-title">${index + 1}. ${escapeHtml(field.name)}</strong>
               <span class="field-preview-meta">${escapeHtml(slot.label)} · ${escapeHtml(field.typeId)} · ${escapeHtml(field.background?.title || '')}</span>
@@ -1792,6 +2049,18 @@ ${currentIndent}}`;
       renderNpcMarkers();
     }
 
+    function renderFieldUiButtonPreviews(fieldIndex) {
+      const buttons = compactFieldUiButtons(state.fieldUiButtons[fieldIndex]);
+      if (!buttons.length) return '';
+      return `<span class="field-ui-button-preview-list">${buttons.map(button => {
+        const previewSize = Math.max(30, Math.min(52, Math.round(button.size * 0.6)));
+        const icon = isImageIconValue(button.icon)
+          ? `<span class="field-ui-button-preview-icon" style="${escapeHtml(iconBackgroundStyleAttr(button.icon))}"></span>`
+          : `<span class="field-ui-button-preview-icon">${escapeHtml(button.icon)}</span>`;
+        return `<span class="field-ui-button-preview" style="--preview-button-size:${previewSize}px">${icon}${button.label ? `<small class="field-ui-button-preview-label">${escapeHtml(button.label)}</small>` : ''}</span>`;
+      }).join('')}</span>`;
+    }
+
     // 小预览图上仅作为静态参考标记，实际摆放通过 openNpcPlacer 的全屏弹窗完成。
     function renderNpcMarkers() {
       $('fieldPreviewGrid').querySelectorAll('[data-select-field]').forEach(btn => {
@@ -1815,6 +2084,10 @@ ${currentIndent}}`;
             fitIconCropAspectRatio(marker, npc.icon, size);
           } else marker.textContent = npc.icon || '🧑';
           art.appendChild(marker);
+        });
+        (state.fieldAreaLinks[index] || []).forEach(link => {
+          const marker = document.createElement('span'); marker.className = 'area-link-marker'; marker.style.left = `${link.x}%`; marker.style.top = `${link.y}%`;
+          marker.textContent = `${link.icon || '🚪'} ${link.label}`; marker.title = link.url || `场景 ${link.targetFieldId}`; art.appendChild(marker);
         });
       });
     }
@@ -1869,6 +2142,16 @@ ${currentIndent}}`;
       } catch (e) {
         state.scenes = [];
         setStatus($('sceneState'), `场景预设加载失败：${e?.message || e}`, 'error');
+      }
+    }
+
+    async function loadMinigames() {
+      try {
+        const data = await readLocalJson(LOCAL_MINIGAME_INDEX_URL, []);
+        state.minigames = (Array.isArray(data) ? data : (Array.isArray(data?.minigames) ? data.minigames : []))
+          .filter(game => String(game?.id || '').trim());
+      } catch (_) {
+        state.minigames = [];
       }
     }
 
@@ -2234,7 +2517,7 @@ ${currentIndent}}`;
       state.lastChatModel = String(readLocalGenerationSettings().lastChatModel || '').trim();
       bindEvents();
       fillPlanetForm(defaultPlanet());
-      await Promise.allSettled([initSdk(), loadScenes()]);
+      await Promise.allSettled([initSdk(), loadScenes(), loadMinigames()]);
       await loadRecords();
     }
 

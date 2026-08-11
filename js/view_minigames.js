@@ -10,6 +10,7 @@ import { addLikedGame, deletePetGame, loadExploreSeen, loadLikedGames, loadPetGa
 import SoundManager from './soundManager.js';
 import { isMiniProgramWebView, isWechatBrowser, navigateToSharePage, postShareToMiniProgram, setWxShareData } from './wxShare.js';
 import { handleGameHostMessage, loadGameHtmlIntoFrame } from './gameHostFrame.js';
+import { settleOfficialPlanetById } from './view_star_settlements.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
@@ -657,6 +658,7 @@ const PET_STAT_ITEMS = [
 
 let cleanupMessageListener = null;
 let currentGame = null;
+let currentGameParams = null;
 let rewardedRounds = new Set();
 let currentPet = null;
 let currentGameStartedAt = 0;
@@ -674,7 +676,7 @@ let currentRenderGameList = null;
 let activeMinigameTab = 'recommend';
 let hideTopbarActionsForRoute = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, initialGameLandscape = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null, remoteGame = null } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, onBeforeExit = null, initialGameId = null, initialGameParams = null, initialGameLandscape = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null, remoteGame = null } = {}) {
     // 守护：玩耍视图订阅了全局 state（subscribe(render)），任何 notify() 都会重跑本路由。
     // 若此时已有一局游戏正在进行（iframe 已挂载），重建整个面板会销毁运行中的 iframe，
     // 表现为"首次点开游戏秒退、第二次正常"——典型触发是小游戏加载即请求宠物图（如台球
@@ -1353,6 +1355,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         }
         if (currentGame) {
             if (exitGameToBack) {
+                if (onBeforeExit?.() === false) return;
                 exitForcedLandscape();
                 completeDeferredGame();
                 cleanupMessageListener?.();
@@ -2289,7 +2292,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         refreshPetStats({ previous: beforeStats });
     }
 
-    const onMessage = (event) => {
+    const onMessage = async (event) => {
         const mainFrame = $('mhMinigameFrame');
         const exploreFrame = $('mhExploreFrame');
         let frame = null;
@@ -2330,6 +2333,13 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             return;
         }
         if (msg.type === 'gameFinished' || msg.type === 'learningFinished') {
+            const homePlanetId = String(msg.data?.setHomePlanet || '').trim();
+            if (homePlanetId) {
+                // 定居数据可在后台完成，不能阻塞 gameFinished 回调；否则 iframe 已淡出时会只剩黑屏。
+                settleOfficialPlanetById(homePlanetId).catch(error => {
+                    console.error('小游戏自动定居失败', error);
+                });
+            }
             if (isExplore) {
                 finishExploreGame(frame, msg.data || {});
                 return;
@@ -2339,6 +2349,12 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 if (result) deferredCompletion = { game: currentGame, data: result };
             } else {
                 finishCurrentGame(onGameFinished, msg.data || {}, showCompletionAfterFinish);
+                // 仪式型小游戏（onboarding/adopt 等）的 onGameFinished 会 setView 离开；
+                // 立刻清掉 iframe 监听，避免停在终局画面。sickness 可能续玩，不能在此强制退出。
+                if (exitGameToBack && state.currentView !== 'minigames') {
+                    exitForcedLandscape();
+                    cleanupMessageListener?.();
+                }
             }
         }
     };
@@ -2372,7 +2388,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     const renderToken = cleanupMessageListener;
     if (MINIGAMES.length) {
         renderGameList();
-        if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape });
+        if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape, skipRestPrompt: exitGameToBack });
     } else {
         loadMinigameIndex().then(() => {
             // 视图在加载期间被销毁/重渲染时丢弃过期回调。
@@ -2380,7 +2396,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             renderGameList();
             // 清单异步加载完成后，若当前停留在"探索"标签则构建信息流。
             if (activeMinigameTab === 'explore') renderExplorePane();
-            if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape });
+            if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape, skipRestPrompt: exitGameToBack });
         });
     }
     // 收藏列表 + 最近游玩记录异步加载完成后刷新"推荐"，让收藏作品、爱心状态、最近游玩排序与时间标签显示出来。
@@ -3216,7 +3232,7 @@ function openRemoteGame({ url, title, icon, landscape, allow } = {}) {
 
 // html / game：玩家自创小游戏会直接传入 HTML 正文 + 合成 game 对象，通过 srcdoc 加载；
 // 官方游戏走 game.src + minigameUrl。
-function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null, likeMeta = null, forceLandscape = null } = {}) {
+function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null, likeMeta = null, forceLandscape = null, skipRestPrompt = false } = {}) {
     const baseGame = providedGame || getPlayItems().find(item => item.id === gameId);
     if (!baseGame) return;
     // forceLandscape 非空时覆盖该游戏自身清单里的 landscape 配置（如 NPC 显式指定强制/取消横屏）。
@@ -3227,6 +3243,7 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
         return;
     }
     currentGame = game;
+    currentGameParams = params && typeof params === 'object' ? params : null;
     rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
     enterForcedLandscape(game);
@@ -3238,7 +3255,7 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     else showPlayLikeButton(playLikeMeta);
     // 最近游玩历史：满 15 秒才记入（官方 / 自己 / 别人的游戏都计入），中途退出或换游戏则取消。
     scheduleRecentPlay(game, playLikeMeta);
-    scheduleMinigameRestPrompt();
+    if (!skipRestPrompt) scheduleMinigameRestPrompt();
     const tabContent = $('mhMinigameTabContent');
     const tabs = $('mhMinigameTabs');
     const wrap = $('mhMinigameFrameWrap');
@@ -3261,26 +3278,30 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
         loadGameHtmlIntoFrame(frame, html, { onRendered: () => postGameConfig() });
     } else {
         frame.removeAttribute('srcdoc');
-        frame.src = minigameUrl(game.src, params);
+        // 复杂配置通过 load 后的 postMessage 交付，避免 HTTP 服务器拒绝超长查询字符串。
+        const hasStructuredParams = Object.values(params || {}).some(value => value && typeof value === 'object');
+        frame.src = minigameUrl(game.src, hasStructuredParams ? null : params);
     }
 }
 
 async function postGameConfig(frame = $('mhMinigameFrame')) {
     if (!frame?.contentWindow) return;
-    const pet = await requestedPetForMinigame({});
-    if (!frame?.contentWindow || !pet) return;
+    const pet = await requestedPetForMinigame({ petId: currentGameParams?.selectedPet?.id });
+    if (!frame?.contentWindow) return;
     try {
         frame.contentWindow.postMessage({
             type: 'setGameConfig',
             data: {
-                petId: pet.id || '',
-                petName: displayPetName(pet),
+                petId: pet?.id || currentGameParams?.selectedPet?.id || '',
+                petName: pet ? displayPetName(pet) : currentGameParams?.selectedPet?.name || '',
                 masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+                ...(currentGameParams || {}),
                 // 一并附带用户档案，便于新手领养类小游戏预填星球名 / 称呼。
                 ...buildUserProfilePayload(),
             },
         }, '*');
     } catch (_) {}
+    if (!pet) return;
     try {
         const image = await buildPetImagePayload(pet, { anim: 'happy', petId: pet.id });
         frame.contentWindow?.postMessage({
@@ -3299,7 +3320,7 @@ function minigameUrl(src, params = null) {
     if (params && typeof params === 'object') {
         Object.entries(params).forEach(([key, value]) => {
             if (value == null || value === '') return;
-            query.set(key, String(value));
+            query.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
         });
     }
     const queryString = query.toString();
@@ -3443,6 +3464,7 @@ function showList() {
     const titleEl = $('mhMinigameTitle');
     if (titleEl) { titleEl.textContent = t('mgPlay'); titleEl.removeAttribute('title'); }
     currentGame = null;
+    currentGameParams = null;
     currentGameLikeMeta = null;
     rewardedRounds = new Set();
     currentGameStartedAt = 0;

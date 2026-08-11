@@ -104,8 +104,8 @@ if (!fs.existsSync(uploaderPath)) {
 }
 
 // Compute a stable content hash for the build so each publish gets a unique,
-// immutable CDN folder. Hash the emitted JS + CSS asset bytes plus the entry
-// HTML so any change in code, styles, or markup yields a new hash.
+// immutable CDN folder. Include runtime-fetched pages and assets as well as
+// the bundled app entry, otherwise an unchanged shell can point at stale files.
 function computeReleaseHash() {
     const hash = crypto.createHash('sha256');
     const htmlPath = path.join(distDir, 'MagicHaqi.html');
@@ -120,6 +120,30 @@ function computeReleaseHash() {
         for (const name of assetNames) {
             hash.update(name);
             hash.update(fs.readFileSync(path.join(assetsDir, name)));
+        }
+    }
+    for (const relativePath of [
+        'js/expedition_tactical_core.js',
+        'js/mineral_expedition_core.js',
+        'js/mineral_cooperation_core.js',
+        'js/petQuality.js',
+        'minigames/haqi_mineral_exploration.html',
+        'minigames/haqi_planet_expedition.html',
+        'content/haqi_minerals_wasteland_punk.json',
+        'content/haqi_minerals_molten_geocore.json',
+        'content/haqi_minerals_ancient_starcore.json',
+        'content/haqi_minerals_abyssal_echoes.json',
+    ]) {
+        const dependencyPath = path.join(distDir, ...relativePath.split('/'));
+        if (!fs.existsSync(dependencyPath)) continue;
+        hash.update(relativePath);
+        hash.update(fs.readFileSync(dependencyPath));
+    }
+    const mineralAssetsDir = path.join(distDir, 'assets', 'minerals');
+    if (fs.existsSync(mineralAssetsDir)) {
+        for (const name of fs.readdirSync(mineralAssetsDir).filter((name) => name.endsWith('.webp')).sort()) {
+            hash.update(`assets/minerals/${name}`);
+            hash.update(fs.readFileSync(path.join(mineralAssetsDir, name)));
         }
     }
     return hash.digest('hex').slice(0, 12);

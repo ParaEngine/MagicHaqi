@@ -1,7 +1,7 @@
 // 星际拜访与偏远星球航线逻辑
 
 import { $, clamp, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
-import { normalizeFieldNpcs } from './config.js';
+import { normalizeFieldNpcs, normalizeFieldUiButtons } from './config.js';
 import { planetName, t } from './i18n.js';
 import { addBiofuel, endVisitingMode, isVisitingMode, notify, startVisitingMode, state } from './state.js';
 import { addToInventory, loadRecentFriendPlanets, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, savePetDebounced } from './storage.js';
@@ -289,6 +289,7 @@ function normalizeOfficialVisitField(field, index) {
         particles: Array.isArray(field?.particles) ? field.particles.slice(0, 6) : [],
         bgMusic: typeof field?.bgMusic === 'string' ? field.bgMusic : '',
         npcs: normalizeFieldNpcs(field?.npcs),
+        uiButtons: normalizeFieldUiButtons(field?.uiButtons),
     };
 }
 
@@ -1030,6 +1031,7 @@ function officialVisitProfile(planet) {
         if (Array.isArray(field.particles)) scene.particles = [...field.particles];
         if (field.bgMusic) scene.bgMusic = field.bgMusic;
         if (Array.isArray(field.npcs)) scene.npcs = normalizeFieldNpcs(field.npcs);
+        if (Array.isArray(field.uiButtons)) scene.uiButtons = normalizeFieldUiButtons(field.uiButtons);
         fieldScenes[key] = scene;
         if (field.typeId) fieldScenes[field.typeId] = { ...scene, background: scene.background ? { ...scene.background } : scene.background };
     });

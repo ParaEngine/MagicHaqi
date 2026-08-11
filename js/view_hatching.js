@@ -1,10 +1,10 @@
 // 孵化仓：离线照看与领养新蛋。
-import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast } from './utils.js';
+import { $, acquireActiveModal, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, releaseActiveModal, showDockDisabledToast } from './utils.js';
 import { t } from './i18n.js';
 import { displayPetName } from './dna.js';
 import { CONFIG, getStageName } from './config.js';
 import { computePlanetProgress } from './planetProgress.js';
-import { state } from './state.js';
+import { isPetDispatching, state } from './state.js';
 import {
     formatNannyCareRemaining,
     getCompanionDays,
@@ -17,18 +17,22 @@ import {
     localPlanetPets,
 } from './petLifecycle.js';
 import { petArtHtml } from './pet.js';
+import { canBreed } from './pet_breeding_core.js';
 
 export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, { onBack, onHireNanny, onAdoptEgg, onOpenAlbum, onBreed } = {}) {
     const progress = computePlanetProgress();
     const localPets = localPlanetPets(pets);
-    const breedReadyCount = localPets.filter(p => p && CONFIG.breedableStages.includes(p.stage)).length;
-    const breedReady = breedReadyCount >= 2;
+    const breedablePets = localPets.filter(p => p && CONFIG.breedableStages.includes(p.stage) && !isPetDispatching(p.id));
+    const breedReadyCount = breedablePets.length;
+    const breedReady = breedablePets.some((parent, index) => breedablePets.slice(index + 1).some(other => canBreed(parent, other)));
     const limit = getPlanetPetLimit();
     const location = getPetLocationInfo(pet, planetName || t('planetFallback'));
     const nannyActive = hasNannyCare(pet);
     const hireNannyDisabled = !pet || nannyActive;
     const hireNannyDisabledReason = !pet ? t('nannyNoPet') : t('nannyBusy');
-    const breedDisabledReason = t('breedDisabledReason', { stages: CONFIG.breedableStages.map(stage => getStageName(stage)).join(t('stageSeparator')), count: breedReadyCount });
+    const breedDisabledReason = breedReadyCount >= 2
+        ? '需要两只未锁定的成年宠物，且永久战斗均达到 LV.40'
+        : t('breedDisabledReason', { stages: CONFIG.breedableStages.map(stage => getStageName(stage)).join(t('stageSeparator')), count: breedReadyCount });
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhHatchingBack" title="${escapeHtml(t('back'))}" style="width:36px;height:36px;font-size:18px">‹</button>
@@ -104,6 +108,11 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
 }
 
 function showAdoptEggModal(pet, onAdoptEgg) {
+    const modalName = 'adopt-egg';
+    if (!acquireActiveModal(modalName)) {
+        showDockDisabledToast(null);
+        return;
+    }
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
@@ -117,7 +126,7 @@ function showAdoptEggModal(pet, onAdoptEgg) {
                 <button class="btn-primary" data-adopt-ok>${escapeHtml(t('continueAdopt'))}</button>
             </div>
         </div>`;
-    const close = () => mask.remove();
+    const close = () => { mask.remove(); releaseActiveModal(modalName); };
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest('[data-adopt-cancel]')) { close(); return; }
         if (!e.target.closest('[data-adopt-ok]')) return;
@@ -128,6 +137,11 @@ function showAdoptEggModal(pet, onAdoptEgg) {
 }
 
 function showNannyCareModal(pet, onHireNanny) {
+    const modalName = 'nanny-care';
+    if (!acquireActiveModal(modalName)) {
+        showDockDisabledToast(null);
+        return;
+    }
     const maxDays = Math.max(1, Number(CONFIG.hatchingCare?.maxDays) || 2);
     const costPerDay = Math.max(0, Number(CONFIG.hatchingCare?.costPerDay) || 100);
     const options = Array.from({ length: maxDays }, (_, index) => index + 1);
@@ -166,7 +180,7 @@ function showNannyCareModal(pet, onHireNanny) {
                 <button class="btn-secondary" data-nanny-cancel>${escapeHtml(t('cancel'))}</button>
             </div>
         </div>`;
-    const close = () => mask.remove();
+    const close = () => { mask.remove(); releaseActiveModal(modalName); };
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest('[data-nanny-cancel]')) { close(); return; }
         const btn = e.target.closest('[data-hire-nanny-days]');

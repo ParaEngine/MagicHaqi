@@ -168,6 +168,18 @@ export function debounce(fn, wait = 500) {
     };
 }
 
+let activeModal = '';
+
+export function acquireActiveModal(name) {
+    if (!name || activeModal) return false;
+    activeModal = name;
+    return true;
+}
+
+export function releaseActiveModal(name) {
+    if (activeModal === name) activeModal = '';
+}
+
 export function showModal(html) {
     return new Promise((resolve) => {
         const mask = document.createElement('div');

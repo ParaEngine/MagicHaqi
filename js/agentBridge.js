@@ -17,6 +17,7 @@ import { recordAudit } from './agentAudit.js';
 const STATE_NODE_ID = 'mh-agent-state';
 const CMD_NODE_ID = 'mh-agent-cmd';
 const RESULT_NODE_ID = 'mh-agent-result';
+const EXTERNAL_TOOL_CHANNEL = 'aichat.external-tool.v1';
 
 // app.js 注入的命令处理器集合（见 initAgentBridge）。
 let handlers = {};
@@ -232,6 +233,112 @@ export async function exec(cmdText) {
     return res;
 }
 
+function postExternalToolMessage(type, detail = {}) {
+    if (!window.parent || window.parent === window) return false;
+    try {
+        window.parent.postMessage({ channel: EXTERNAL_TOOL_CHANNEL, type, ...detail }, '*');
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function initExternalToolBridge() {
+    if (!window.parent || window.parent === window) return;
+    window.addEventListener('message', async (event) => {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.channel !== EXTERNAL_TOOL_CHANNEL) return;
+        if (message.type === 'host:init') {
+            postExternalToolMessage('tool:ready', {
+                toolId: 'magichaqi-world',
+                capabilities: ['tool-context', 'game-world-commands'],
+            });
+            return;
+        }
+        if (message.type === 'host:get-tool-context') {
+            try {
+                postExternalToolMessage('tool:tool-context', {
+                    requestId: String(message.requestId || ''),
+                    ok: true,
+                    context: JSON.stringify(buildState()),
+                });
+            } catch (error) {
+                postExternalToolMessage('tool:tool-context', {
+                    requestId: String(message.requestId || ''),
+                    ok: false,
+                    context: '',
+                    error: error?.message || String(error),
+                });
+            }
+            return;
+        }
+        if (message.type === 'host:prompt') {
+            const requestId = String(message.requestId || '');
+            const prompt = String(message.prompt || message.text || '').trim();
+            if (!prompt) {
+                postExternalToolMessage('tool:status', {
+                    requestId,
+                    status: 'error',
+                    message: '请输入想对宠物说的话',
+                });
+                return;
+            }
+            postExternalToolMessage('tool:status', {
+                requestId,
+                status: 'busy',
+                message: '正在和宠物说话…',
+            });
+            try {
+                const result = await exec(JSON.stringify({
+                    cmd: 'say',
+                    args: { text: prompt },
+                    requestId,
+                }));
+                if (result.ok === false) throw new Error(result.error || '宠物暂时没有回应');
+                postExternalToolMessage('tool:status', {
+                    requestId,
+                    status: 'done',
+                    message: result.result?.reply || '宠物回应了你',
+                });
+            } catch (error) {
+                postExternalToolMessage('tool:status', {
+                    requestId,
+                    status: 'error',
+                    message: error?.message || String(error),
+                });
+            }
+            return;
+        }
+        if (message.type === 'host:tool-command') {
+            const requestId = String(message.requestId || '');
+            try {
+                const result = await exec(JSON.stringify({
+                    cmd: String(message.command || ''),
+                    args: message.args && typeof message.args === 'object' ? message.args : {},
+                    requestId,
+                }));
+                postExternalToolMessage('tool:tool-command-result', {
+                    requestId,
+                    ok: result.ok !== false,
+                    result,
+                    error: result.ok === false ? result.error : '',
+                });
+            } catch (error) {
+                postExternalToolMessage('tool:tool-command-result', {
+                    requestId,
+                    ok: false,
+                    error: error?.message || String(error),
+                });
+            }
+        }
+    });
+    postExternalToolMessage('tool:ready', {
+        toolId: 'magichaqi-world',
+        capabilities: ['tool-context', 'game-world-commands'],
+    });
+}
+
 // ---------------------------------------------------------------------------
 // 初始化：注入隐藏节点、绑定 #mh-agent-cmd、暴露 window.MagicHaqiAgent、订阅状态刷新
 // ---------------------------------------------------------------------------
@@ -285,5 +392,6 @@ export function initAgentBridge(opts = {}) {
         getActor,
         version: '1.0.0',
     };
+    initExternalToolBridge();
     return window.MagicHaqiAgent;
 }

@@ -233,6 +233,20 @@ export function isPetSelectable(pet) {
     return getPetLocationType(pet) === 'home';
 }
 
+/** VIP 可召回：放养在当前星球表面的宠物（哈奇岛 / 其它星球仍不可召回）。 */
+export function canVipRecallPet(pet) {
+    return getPetLocationType(pet) === 'released';
+}
+
+/** 将会员召回的放养宠物恢复为可照看的 home 状态。 */
+export function markPetRecalled(pet) {
+    if (!pet || !canVipRecallPet(pet)) return null;
+    pet.status = 'home';
+    delete pet.location;
+    delete pet.releasedAt;
+    return pet;
+}
+
 export function getPetFindTarget(pet) {
     if (useGeneratedLocation(pet)) {
         const home = getGeneratedPetLocation(pet);

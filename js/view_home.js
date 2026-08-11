@@ -124,6 +124,10 @@ function currentAppTitle(lvl = state.zoomLevel, pet = __lastPet) {
         const visitName = String(state.visitingMode?.planetName || '').trim();
         if (visitName) return visitName;
     }
+    try {
+        const requestedPlanet = String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim();
+        if (requestedPlanet === 'haqi') return '哈奇星球';
+    } catch (_) {}
     const title = String(state.settings?.starSettlement?.appTitle || '').trim();
     return title || t('appName');
 }
@@ -829,6 +833,21 @@ function bindZoomLevelBar(root = document) {
                     setTimeout(() => bar.classList.remove('suppress-tip'), 2000);
                     requestZoomLevel(index);
                 }
+                return;
+            }
+        }
+        const track = bar.querySelector('.mh-zoom-bar-track');
+        const trackRect = track?.getBoundingClientRect();
+        const visible = visibleZoomLevels();
+        if (trackRect && visible.length > 1 && e.clientX >= trackRect.left && e.clientX <= trackRect.right) {
+            const progress = Math.max(0, Math.min(1, (e.clientX - trackRect.left) / Math.max(1, trackRect.width)));
+            const targetIndex = Math.round(progress * (visible.length - 1));
+            const targetLevel = visible[targetIndex];
+            if (targetLevel !== clampLvl(state.zoomLevel ?? 0)) {
+                closeZoomLevelBarTips();
+                bar.classList.add('suppress-tip');
+                setTimeout(() => bar.classList.remove('suppress-tip'), 2000);
+                requestZoomLevel(targetLevel);
                 return;
             }
         }
@@ -2173,8 +2192,13 @@ function showPetDetailsModal(pet) {
 function showMenuModal(callbacks) {
     const progress = computePlanetProgress();
     const hasEncyclopedia = !!String(state.settings?.starSettlement?.encyclopediaUrl || '').trim();
+	const hasHaqiExpedition = callbacks?.canUseHaqiExpedition?.() === true;
+	const hasMineralExploration = callbacks?.canUseMineralExploration?.() === true;
     const items = [
         { k: 'petList',   icon: '🐾', label: t('petList') },
+        ...(hasHaqiExpedition ? [{ k: 'expeditionMap', icon: '🪐', label: '星球探险' }] : []),
+        ...(hasMineralExploration ? [{ k: 'haqiMineralExploration', icon: '⛏️', label: '星际矿区' }] : []),
+        ...(hasHaqiExpedition ? [{ k: 'haqiExplorationArchive', icon: '🗂️', label: '探索档案' }] : []),
         ...(hasEncyclopedia ? [{ k: 'encyclopedia', icon: '📖', label: t('encTitle') }] : []),
         { k: 'shop',      icon: '🛒', label: t('shop') },
         { k: 'inventory', icon: '🎒', label: t('inventory') },

@@ -1,4 +1,4 @@
-export const TERRAIN_FIELD_SLOT_COUNT = 7;
+export const TERRAIN_FIELD_SLOT_COUNT = 8;
 
 export const TERRAIN_FIELD_SLOT_DEFS = [
     { index: 1, label: '左耳', x: 7, y: 48 },
@@ -8,6 +8,7 @@ export const TERRAIN_FIELD_SLOT_DEFS = [
     { index: 5, label: '左胡子', x: 34, y: 84 },
     { index: 6, label: '中胡子', x: 50, y: 86 },
     { index: 7, label: '右胡子', x: 66, y: 84 },
+    { index: 8, label: '额心', x: 50, y: 12 },
 ];
 
 const DEFAULT_TERRAIN_SLOT_INDEX = 1;

@@ -54,7 +54,20 @@ MagicHaqi/
     architecture.md       # 技术架构
     code-plan.md          # 实现摘要
     qa-report.md          # QA 报告
+    devlog/               # 开发日志统一归档目录
 ```
+
+## 📝 开发日志约定
+
+- 所有新增开发日志必须写入 `MagicHaqi/docs/devlog/`。
+- 不要在 `MagicHaqi/docs/` 根目录或项目其他目录新增开发日志。
+
+## 🎨 临时美术资源约定
+
+- 临时美术资源统一放在 `MagicHaqi/assets/` 下，仅用于本地开发和测试。
+- `MagicHaqi/assets/` 不上传到 Git；处理此目录中的资源时，不要将文件加入版本控制。
+- 本地测试完成后，将该目录下的文件上传到 CDN 的 `keepwork/cdn/magichaqi/assets/` 目录。
+- 后续涉及临时美术资源的任务，应默认遵循“本地 `assets/` 暂存与测试 → 上传 CDN → 代码引用 CDN 资源”的流程。
 
 ## 🎮 玩法循环
 
@@ -97,6 +110,10 @@ MagicHaqi 可由 AI agent（co-parent）通过**打开真实网站 + 登录 + UR
 - **运营控制台** [`js/view_ops_console.js`](js/view_ops_console.js)：`?view=ops`，人工兜底面板。
 - **官网** [`site/index.html`](site/index.html)：英文对外站，含领养 CTA 与 agent 接入说明。
 - **agent 包** [`agents/`](agents/README.md)：`agents/pet-master/`（装在所有用户电脑的 OpenClaw 宠物管家 skill）、`agents/haqi-operator/`（开发者用的 24h 一人公司运营 agent）。
+
+## ⛏️ 哈奇矿区与星球探险运行手册
+
+开发或调整哈奇矿区、星球探险时，必须遵循 [原始设计与运行手册](docs/haqi_mining_expedition_operational_plan.md)。
 
 ## Common Pitfalls to Avoid
 ❌ **NEVER NEVER NEVER run `npm run build`** (or `npm run build 2`, `vite build`, or any bundling/compile command). The app does NOT need to be built. All games run directly in the browser without bundling. Vite is ONLY for distribution packaging by a human — never for development, never for verifying your changes. After editing, just open the HTML file / use Live Preview; do not build.

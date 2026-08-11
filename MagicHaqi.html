@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>蛋蛋星球 MagicHaqi</title>
     <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+    <script src="./js/petQuality.js"></script>
     <link rel="stylesheet" href="./css/pet.css">
     <link rel="stylesheet" href="./css/planet.css">
     <link rel="stylesheet" href="./css/field.css">
@@ -103,14 +104,6 @@
             perspective: 1100px;
             transform: scale(var(--mh-app-scale));
             transform-origin: top left;
-        }
-        @supports (zoom: 1) {
-            #app {
-                width: 100%;
-                height: 100%;
-                zoom: var(--mh-app-scale);
-                transform: none;
-            }
         }
         #app::before {
             content: '';
@@ -294,6 +287,42 @@
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.92), transparent);
             pointer-events: none;
         }
+
+        .mh-onboarding-panel { position:fixed; top:calc(112px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); z-index:180; width:min(294px, calc(100vw - 24px)); max-height:calc(100dvh - 136px - env(safe-area-inset-bottom)); color:#17324d; }
+        .mh-onboarding-panel.is-drawer { top:calc(112px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); width:auto; }
+        .mh-onboarding-card { max-height:inherit; overflow:hidden auto; border:1px solid rgba(139,197,236,.78); border-radius:8px; background:linear-gradient(145deg, rgba(255,255,255,.72), rgba(226,245,255,.70)); box-shadow:0 10px 24px rgba(16,78,118,.16); backdrop-filter:blur(8px); }
+        .mh-onboarding-head { display:flex; align-items:center; gap:8px; padding:10px 12px 8px; border-bottom:1px solid rgba(78,154,201,.24); cursor:grab; touch-action:none; }
+        .mh-onboarding-head:active { cursor:grabbing; }
+        .mh-onboarding-mark { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:#1c84bc; color:#fff; font-size:13px; font-weight:900; }
+        .mh-onboarding-title { flex:1; min-width:0; font-size:13px; font-weight:900; }
+        .mh-onboarding-progress { color:#4d718d; font-size:11px; font-variant-numeric:tabular-nums; }
+        .mh-onboarding-dismiss { width:24px; height:24px; padding:0; border:0; border-radius:5px; background:transparent; color:#5c7890; font-size:18px; cursor:pointer; }
+        .mh-onboarding-dismiss:hover { background:rgba(67,139,185,.12); color:#174d70; }
+        .mh-onboarding-body { padding:10px 12px 12px; }
+        .mh-onboarding-body h2 { margin:0; font-size:14px; line-height:1.35; }
+        .mh-onboarding-body p { margin:5px 0 10px; color:#4d6880; font-size:12px; line-height:1.5; }
+        .mh-onboarding-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .mh-onboarding-reward { color:#926208; font-size:11px; font-weight:800; }
+        .mh-onboarding-go { min-height:30px; padding:0 11px; border:1px solid #1674a9; border-bottom-color:#0d577f; border-radius:6px; background:#2488bf; color:#fff; font-size:12px; font-weight:900; cursor:pointer; box-shadow:0 2px 0 rgba(15,81,119,.24); }
+        .mh-onboarding-go:active { transform:translateY(1px); box-shadow:0 1px 0 rgba(15,81,119,.24); }
+        .mh-onboarding-drawer { display:grid; grid-template-columns:auto; place-items:center; min-width:52px; min-height:34px; padding:5px 9px; border:1px solid rgba(23,116,169,.76); border-radius:8px; background:rgba(239,249,255,.84); color:#174d70; font:inherit; cursor:grab; touch-action:none; box-shadow:0 6px 16px rgba(16,78,118,.14); backdrop-filter:blur(8px); }
+        .mh-onboarding-drawer:active { cursor:grabbing; }
+        .mh-onboarding-drawer:hover { background:rgba(225,244,255,.88); }
+        .mh-onboarding-drawer-mark { color:#174d70; font-size:13px; font-weight:900; }
+        .mh-onboarding-drawer-progress, .mh-onboarding-drawer-reward { display:none; }
+        .mh-reward-celebration { position:fixed; inset:0; z-index:260; display:grid; place-items:center; pointer-events:none; }
+        .mh-reward-celebration-card { position:relative; min-width:220px; padding:18px 28px 20px; overflow:hidden; border:2px solid #f0b433; border-radius:14px; background:linear-gradient(155deg, #fffde4, #ffe59c); color:#704516; text-align:center; box-shadow:0 10px 0 #b87125, 0 22px 44px rgba(83,57,25,.28); animation:mhRewardPop .42s cubic-bezier(.18,1.35,.45,1) both; }
+        .mh-reward-celebration-card strong, .mh-reward-celebration-card span { position:relative; z-index:1; display:block; }
+        .mh-reward-celebration-card strong { font-size:18px; }
+        .mh-reward-celebration-card span { margin-top:5px; font-size:27px; font-weight:900; color:#b66a08; }
+        .mh-reward-spark { position:absolute; left:50%; top:50%; width:10px; height:10px; border-radius:50%; background:#fff8bf; box-shadow:0 0 0 2px #f3b832; animation:mhRewardSpark .8s ease-out both; }
+        .mh-reward-spark:nth-child(2) { --mh-spark-x:-92px; --mh-spark-y:-42px; animation-delay:.04s; }.mh-reward-spark:nth-child(3) { --mh-spark-x:84px; --mh-spark-y:-58px; animation-delay:.1s; }.mh-reward-spark:nth-child(4) { --mh-spark-x:-76px; --mh-spark-y:56px; animation-delay:.16s; }.mh-reward-spark:nth-child(5) { --mh-spark-x:88px; --mh-spark-y:48px; animation-delay:.08s; }
+        @keyframes mhRewardPop { from { opacity:0; transform:scale(.72) translateY(18px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        @keyframes mhRewardSpark { from { opacity:0; transform:translate(-50%,-50%) scale(.3); } 35% { opacity:1; } to { opacity:0; transform:translate(calc(-50% + var(--mh-spark-x)), calc(-50% + var(--mh-spark-y))) scale(1.2); } }
+        .guide-pulse-highlight { position:relative; z-index:2; outline:2px solid rgba(25,148,213,.88); outline-offset:3px; animation:guidePulseHighlight 1.7s ease-in-out infinite; }
+        @keyframes guidePulseHighlight { 0%,100% { box-shadow:0 0 0 0 rgba(31,150,216,.46); } 55% { box-shadow:0 0 0 8px rgba(31,150,216,0); } }
+        @media (prefers-reduced-motion:reduce) { .mh-reward-celebration-card, .mh-reward-spark { animation:none; } .mh-reward-spark { display:none; } }
+        @media (max-width:390px) { .mh-onboarding-panel { top:calc(116px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); width:min(272px, calc(100vw - 16px)); max-height:calc(100dvh - 136px - env(safe-area-inset-bottom)); } .mh-onboarding-panel.is-drawer { top:calc(116px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); width:auto; } .mh-onboarding-head { padding:8px 10px 7px; } .mh-onboarding-body { padding:8px 10px 10px; } .mh-onboarding-body p { margin-bottom:8px; } }
 
         .mh-pet-room-scene {
             position: absolute;

@@ -1,5 +1,6 @@
 // 全局常量配置
 import { t } from './i18n.js';
+import { getHomeTreasureFacility } from './home_treasures.js';
 export const CDN_ROOT = 'https://cdn.keepwork.com/maisi/magichaqi/';
 
 export const ZOOM_LEVEL_IDS = ['planet', 'field', 'pet', 'cell'];
@@ -25,10 +26,12 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
 // `window.__view` set before the app boots. Supported values:
 //   field | planet | pet | cell -> force the home view at that zoom level
 //   game                        -> force the minigames (mini-game) view
-export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops', 'encyclopedia'];
+//   mineral                     -> force the mineral exploration view when enabled for the planet
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'mineral', 'ops', 'encyclopedia'];
 const FORCE_VIEW_ALIASES = {
     space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
     game: 'game', games: 'game', minigame: 'game', minigames: 'game',
+    mineral: 'mineral', minerals: 'mineral', haqimineralexploration: 'mineral',
     // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
     ops: 'ops', console: 'ops', operator: 'ops',
     // 动物园动物图鉴（?view=encyclopedia / ?view=tujian）
@@ -582,7 +585,7 @@ export function normalizeOnboardingConfig(raw = {}, planetId = '') {
 }
 
 // ===== field NPC（星球编辑器摆放的可交互角色）=====
-// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, randomNearMainPet?, dialog?, minigame? }。
+// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, randomNearMainPet?, dialog?, hatchBoostSeconds?, minigame? }。
 // 默认在主宠物附近自动站位；仅 randomNearMainPet=false 时使用编辑器绝对位置。
 function normalizeFieldNpcDialog(value) {
     const raw = Array.isArray(value) ? value : [];
@@ -616,16 +619,50 @@ export function normalizeFieldNpc(raw = {}, index = 0) {
         dropShadow: !!raw?.dropShadow,
         randomNearMainPet: raw?.randomNearMainPet !== false,
         dialog: normalizeFieldNpcDialog(raw?.dialog),
+        hatchBoostSeconds: Math.max(0, Math.min(86400, Math.round(Number(raw?.hatchBoostSeconds) || 0))),
         minigame: String(raw?.minigame || raw?.game || '').trim().slice(0, 96),
     };
 }
 
-/** 规范化一个 field 的 npcs 数组；没有对话也没有小游戏的 NPC 点击后没有任何反应，直接丢弃。 */
+/** 规范化一个 field 的 npcs 数组；没有对话、孵化奖励或小游戏的 NPC 点击后没有任何反应，直接丢弃。 */
 export function normalizeFieldNpcs(value) {
     const raw = Array.isArray(value) ? value : [];
     return raw
         .map((npc, index) => normalizeFieldNpc(npc, index))
-        .filter(npc => npc.dialog.length > 0 || npc.minigame);
+        .filter(npc => npc.dialog.length > 0 || npc.hatchBoostSeconds > 0 || npc.minigame);
+}
+
+/** 规范化场景内的区域入口；targetFieldId 对应地貌槽位 id。 */
+export function normalizeFieldAreaLinks(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map((link, index) => ({
+            id: String(link?.id || `area_link_${index + 1}`).trim() || `area_link_${index + 1}`,
+            label: String(link?.label || link?.name || '').trim().slice(0, 24),
+            icon: String(link?.icon || '🚪').trim().slice(0, 80) || '🚪',
+            targetFieldId: String(link?.targetFieldId || link?.fieldId || '').trim(),
+            url: String(link?.url || link?.href || '').trim().slice(0, 500),
+            x: Math.max(0, Math.min(100, Number(link?.x) || 0)),
+            y: Math.max(0, Math.min(100, Number(link?.y) || 0)),
+            width: Math.max(0, Math.min(100, Number(link?.width) || 0)),
+            height: Math.max(0, Math.min(100, Number(link?.height) || 0)),
+        }))
+        .filter(link => link.label && (link.targetFieldId || /^https?:\/\//i.test(link.url)));
+}
+
+/** 规范化场景左上 UI 按钮列表；旧 position 字段仅为兼容读取，统一归入左上列表。 */
+export function normalizeFieldUiButtons(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map((button, index) => ({
+            id: String(button?.id || `ui_button_${index + 1}`).trim() || `ui_button_${index + 1}`,
+            size: Math.max(44, Math.min(120, Math.round(Number(button?.size) || 64))),
+            icon: String(button?.icon || button?.emoji || button?.imageUrl || '🎮').trim().slice(0, 300),
+            label: String(button?.label || button?.text || '').trim().slice(0, 24),
+            minigame: String(button?.minigame || button?.game || button?.url || '').trim().slice(0, 300),
+            minigameLandscape: !!button?.minigameLandscape,
+        }))
+        .filter(button => button.minigame);
 }
 
 /** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */
@@ -693,7 +730,7 @@ export async function loadPlanetShopItems(planetOrId = null) {
 }
 
 export function getShopItemById(id) {
-    return SHOP_BY_ID.get(id) || null;
+    return SHOP_BY_ID.get(id) || getHomeTreasureFacility(id);
 }
 
 export function getShopItemsByType(type) {

@@ -22,9 +22,10 @@ MagicHaqi 是一款移动优先的 H5 虚拟养成游戏：纯 ES Module + 原�
   `view_minigames`、`view_mailbox`、`view_email`、`view_story_player`、`view_story_maker`、
   `view_game_maker`、`view_encyclopedia`、`view_dev_console`、`view_chat`、`view_settings`、
   `view_hatching` 等。这是有意的代码分割：避免把数百 KB 的造游戏 / 剧情编辑器塞进首屏。
-- 无构建步骤、无测试套件、无 lint。`npm run build` / `vite build` **仅供人工**做 CDN 发布打包
-  （`dist/`、`release/`、内容哈希 CDN 目录），开发与验证**绝不**运行。验证方式：浏览器
-  直接打开 `MagicHaqi.html`（VS Code Live Preview）。
+- 无构建步骤、无测试套件、无 lint。`npm run build` / `vite build` **仅供人工**生成 `dist/`，
+  不生成 `release/`；只有 `npm run upload` 使用专用 `upload` mode 生成 `release/*.html` 并上传
+  内容哈希 CDN 目录。开发与验证**绝不**运行这些命令。验证方式：浏览器直接打开
+  `MagicHaqi.html`（VS Code Live Preview）。
 
 ---
 

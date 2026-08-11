@@ -19,9 +19,12 @@ The game ships as a single HTML entry served from keepwork.com, with all static
 assets loaded from the immutable CDN (`cdn.keepwork.com`).
 
 ```bash
-npm run build    # produce dist/ and release/MagicHaqi_v1.html
-npm run upload   # upload dist/ to the CDN folder defined in the release HTML
+npm run build    # produce dist/ only
+npm run upload   # build in upload mode, generate release/*.html, and upload dist/
 ```
+
+`npm run dev` never writes `dist/` or `release/`. `npm run build` writes only
+`dist/`. Files under `release/` are generated exclusively by `npm run upload`.
 
 ### `npm run build`
 
@@ -33,9 +36,12 @@ Vite builds the game into `dist/`:
   `pet-story/`, `dev_tools/`) and a couple of `docs/*.html` files are copied
   verbatim and fetched at runtime (not bundled).
 
-A post-build step then emits `release/MagicHaqi_v1.html` - a clone of
-`dist/MagicHaqi.html` with a `<base>` tag injected as the first child of
-`<head>`:
+### `npm run upload`
+
+The upload command runs Vite with the dedicated `upload` mode, then
+`uploadRelease.mjs` emits `release/MagicHaqi_v1.html` and its planet/view
+variants. Each file is a clone of `dist/MagicHaqi.html` with a `<base>` tag
+injected as the first child of `<head>`:
 
 ```html
 <base href="https://cdn.keepwork.com/maisi/magichaqi/release/<hash>/">
@@ -48,9 +54,7 @@ the entry HTML uses relative URLs, the `<base>` tag makes every relative asset
 and runtime `fetch` resolve against that CDN folder. Absolute URLs (Tailwind
 CDN, CDN-hosted pet images) are unaffected.
 
-### `npm run upload`
-
-`uploadRelease.mjs` reads the `<base href>` from `release/MagicHaqi_v1.html`,
+`uploadRelease.mjs` then uses that `<base href>`,
 derives the remote prefix (e.g. `maisi/magichaqi/release/<hash>/`), and uploads
 every top-level entry under `dist/` to that CDN folder via the shared
 `upload-deploy-cdn-files` skill (`qiniu_upload_local_files.py`). The CDN layout
@@ -77,7 +81,7 @@ Cache-Control: public, max-age=31536000, immutable
 Publishing a new build creates a new hash folder; pointing
 `release/MagicHaqi_v1.html` at it is enough - no CDN purge is needed.
 
-`dist/` and `release/` are build artifacts and are gitignored.
+`dist/` is a build artifact. `release/` contains upload-only generated files.
 
 ## Project Layout
 
@@ -89,8 +93,8 @@ Publishing a new build creates a new hash folder; pointing
 - `site/` - English landing page ("AI pets for humans and agents")
 - `docs/` - design, architecture, QA, and planning notes
 - `dev_tools/` - helper generators for pets, planets, scenes, and shop items
-- `vite.config.mjs` - build config + post-build CDN release HTML emitter
-- `uploadRelease.mjs` - uploads `dist/` to the CDN folder (run via `npm run upload`)
+- `vite.config.mjs` - dev server and `dist/` build configuration
+- `uploadRelease.mjs` - generates `release/*.html` and uploads `dist/` (run only via `npm run upload`)
 
 ## Main Flow
 

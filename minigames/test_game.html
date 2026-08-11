@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>混合解锁测试游戏</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .game-container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .level-display {
+            text-align: center;
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 15px 20px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-locked {
+            background: #ddd;
+            color: #999;
+            cursor: not-allowed;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 10px;
+            background: #f5f5f5;
+            color: #666;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .instructions {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 12px;
+            font-size: 14px;
+            color: #666;
+        }
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .instructions code {
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .vip-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #ffc107;
+            color: #333;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>🎮 混合解锁测试</h1>
+        <p class="subtitle">测试 VIP 免广告、看广告解锁、付费解锁</p>
+        
+        <div id="vipStatus" style="text-align: center; margin-bottom: 15px;">
+            <span id="vipBadge" style="display: none;" class="vip-badge">👑 VIP 用户</span>
+        </div>
+        
+        <div class="level-display">
+            第 <span id="currentLevel">1</span> 关
+        </div>
+        
+        <div id="status" class="status">
+            准备开始游戏！
+        </div>
+        
+        <button class="btn btn-primary" onclick="playLevel()">
+            ▶️ 玩当前关卡
+        </button>
+        
+        <button id="unlockBtn" class="btn btn-secondary" onclick="requestUnlockNextLevel()">
+            🔓 解锁第 <span id="nextLevel">2</span> 关
+        </button>
+        
+        <button class="btn btn-secondary" onclick="getHint()">
+            💡 获取提示（看广告）
+        </button>
+        
+        <div class="instructions">
+            <h3>📋 测试说明</h3>
+            <p><strong>场景 1:</strong> 点击"解锁第2关"测试混合解锁</p>
+            <p><strong>场景 2:</strong> 点击"获取提示"测试纯广告解锁</p>
+            <p><strong>检查 VIP:</strong> 如果是 VIP，会直接解锁无需看广告</p>
+            <p><strong>消息协议:</strong> 使用 <code>haqi_request_unlock</code> → <code>haqi_unlock_result</code></p>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // 游戏状态
+        // ============================================
+        let currentLevel = 1;
+        let unlockedLevels = [1]; // 第1关默认解锁
+        let isVip = false;
+
+        // ============================================
+        // 初始化
+        // ============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            updateUI();
+            // 监听来自父窗口的消息
+            window.addEventListener('message', handleParentMessage);
+            // 向父窗口请求 VIP 状态
+            requestVipStatus();
+        });
+
+        // ============================================
+        // 父窗口消息处理
+        // ============================================
+        function handleParentMessage(e) {
+            const msg = e.data || {};
+            
+            console.log('[小游戏] 收到父窗口消息:', msg);
+            
+            switch (msg.type) {
+                case 'haqi_vip_status':
+                    isVip = !!msg.isVip;
+                    updateVipBadge();
+                    break;
+                    
+                case 'haqi_unlock_ack':
+                    updateStatus('⏳ 正在处理解锁请求...');
+                    break;
+                    
+                case 'haqi_unlock_result':
+                    handleUnlockResult(msg);
+                    break;
+            }
+        }
+
+        // ============================================
+        // VIP 状态
+        // ============================================
+        function requestVipStatus() {
+            try {
+                window.parent.postMessage({ type: 'haqi_get_vip_status' }, '*');
+            } catch (e) {
+                console.log('[小游戏] 无法向父窗口请求 VIP 状态');
+            }
+        }
+
+        function updateVipBadge() {
+            const badge = document.getElementById('vipBadge');
+            badge.style.display = isVip ? 'inline-block' : 'none';
+            if (isVip) {
+                updateStatus('👑 欢迎 VIP 用户！解锁将直接跳过广告');
+            }
+        }
+
+        // ============================================
+        // 游戏逻辑
+        // ============================================
+        function playLevel() {
+            if (!unlockedLevels.includes(currentLevel)) {
+                updateStatus('❌ 这一关还没解锁！', 'error');
+                return;
+            }
+            updateStatus(`🎉 正在玩第 ${currentLevel} 关...`, 'success');
+        }
+
+        function requestUnlockNextLevel() {
+            const nextLevel = currentLevel + 1;
+            if (unlockedLevels.includes(nextLevel)) {
+                currentLevel = nextLevel;
+                updateUI();
+                updateStatus(`✅ 第 ${nextLevel} 关已解锁，直接开始！`, 'success');
+                return;
+            }
+            
+            requestUnlock(nextLevel);
+        }
+
+        function requestUnlock(levelNum) {
+            const requestId = `unlock_level_${levelNum}_${Date.now()}`;
+            
+            updateStatus(`🔓 请求解锁第 ${levelNum} 关...`);
+            
+            // 发送解锁请求给父窗口
+            try {
+                window.parent.postMessage({
+                    type: 'haqi_request_unlock',
+                    requestId: requestId,
+                    scene: `test_game_level_${levelNum}`,
+                    title: `解锁第${levelNum}关`
+                }, '*');
+            } catch (e) {
+                // 如果无法向父窗口发送消息（独立运行时），使用本地模拟
+                simulateLocalUnlock(levelNum);
+            }
+        }
+
+        function handleUnlockResult(msg) {
+            if (msg.ok && msg.unlocked) {
+                const level = parseInt(msg.scene?.replace('test_game_level_', '') || currentLevel + 1);
+                if (!unlockedLevels.includes(level)) {
+                    unlockedLevels.push(level);
+                }
+                updateStatus(`✅ 解锁成功！方式: ${msg.via || 'unknown'}`, 'success');
+                
+                if (level === currentLevel + 1) {
+                    currentLevel = level;
+                    setTimeout(() => {
+                        updateUI();
+                        updateStatus(`🎮 现在可以玩第 ${level} 关了！`, 'success');
+                    }, 1000);
+                }
+            } else {
+                updateStatus('❌ 解锁取消或失败', 'error');
+            }
+        }
+
+        // ============================================
+        // 本地模拟（独立运行时使用）
+        // ============================================
+        function simulateLocalUnlock(levelNum) {
+            updateStatus('⚠️ 独立运行模式，使用本地模拟解锁');
+            
+            setTimeout(() => {
+                unlockedLevels.push(levelNum);
+                if (levelNum === currentLevel + 1) {
+                    currentLevel = levelNum;
+                }
+                updateUI();
+                updateStatus(`✅ 本地模拟解锁成功！方式: simulated`, 'success');
+            }, 1500);
+        }
+
+        // ============================================
+        // 获取提示（纯广告解锁）
+        // ============================================
+        function getHint() {
+            updateStatus('💡 请求游戏提示...');
+            
+            const requestId = `hint_${Date.now()}`;
+            
+            try {
+                window.parent.postMessage({
+                    type: 'haqi_request_unlock',
+                    requestId: requestId,
+                    scene: 'test_game_hint',
+                    title: '获取提示'
+                }, '*');
+                
+                // 临时监听结果
+                const originalHandler = handleParentMessage;
+                handleParentMessage = function(e) {
+                    const msg = e.data || {};
+                    if (msg.type === 'haqi_unlock_result' && msg.requestId === requestId) {
+                        if (msg.ok && msg.unlocked) {
+                            showHint();
+                        }
+                        handleParentMessage = originalHandler;
+                    } else {
+                        originalHandler(e);
+                    }
+                };
+            } catch (e) {
+                showHint();
+            }
+        }
+
+        function showHint() {
+            updateStatus('💡 提示：试试点击解锁按钮！', 'success');
+        }
+
+        // ============================================
+        // UI 更新
+        // ============================================
+        function updateUI() {
+            document.getElementById('currentLevel').textContent = currentLevel;
+            document.getElementById('nextLevel').textContent = currentLevel + 1;
+            
+            const unlockBtn = document.getElementById('unlockBtn');
+            if (unlockedLevels.includes(currentLevel + 1)) {
+                unlockBtn.className = 'btn btn-primary';
+                unlockBtn.innerHTML = `➡️ 进入第 ${currentLevel + 1} 关`;
+            } else {
+                unlockBtn.className = 'btn btn-secondary';
+                unlockBtn.innerHTML = `🔓 解锁第 ${currentLevel + 1} 关`;
+            }
+        }
+
+        function updateStatus(message, type = '') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status';
+            if (type) status.className += ' ' + type;
+        }
+    </script>
+</body>
+</html>

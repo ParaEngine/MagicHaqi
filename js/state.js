@@ -65,6 +65,91 @@ const subs = new Set();
 export function subscribe(fn) { subs.add(fn); return () => subs.delete(fn); }
 export function notify() { subs.forEach(fn => { try { fn(state); } catch (e) { console.error(e); } }); }
 
+export function normalizeMineralExplorationBridge(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const toPercent = (raw) => Math.max(0, Math.min(100, Number(raw) || 0));
+    return {
+        revision: Math.max(0, Math.floor(Number(source.revision) || 0)),
+        dispatchedPetIds: [...new Set((Array.isArray(source.dispatchedPetIds) ? source.dispatchedPetIds : [])
+            .map(id => String(id || '').trim()).filter(Boolean))],
+        bonuses: {
+            attackPercent: toPercent(source.bonuses?.attackPercent),
+            expeditionLootPercent: toPercent(source.bonuses?.expeditionLootPercent),
+        },
+        activeSeriesIds: [...new Set((Array.isArray(source.activeSeriesIds) ? source.activeSeriesIds : [])
+            .map(id => String(id || '').trim()).filter(Boolean))],
+        research: Math.max(0, Math.min(999, Math.floor(Number(source.research) || 0))),
+        preparationCharges: Math.max(0, Math.min(3, Math.floor(Number(source.preparationCharges) || 0))),
+        tacticalItems: {
+            emergencyBeacon: Math.max(0, Math.min(3, Math.floor(Number(source.tacticalItems?.emergencyBeacon) || 0))),
+            deflectionShield: Math.max(0, Math.min(3, Math.floor(Number(source.tacticalItems?.deflectionShield) || 0))),
+        },
+        breedingCatalysts: {
+            ssrMutation: Math.max(0, Math.min(9, Math.floor(Number(source.breedingCatalysts?.ssrMutation) || 0))),
+            urAttributeLock: Math.max(0, Math.min(9, Math.floor(Number(source.breedingCatalysts?.urAttributeLock) || 0))),
+        },
+        workshop: {
+            day: /^\d{4}-\d{2}-\d{2}$/.test(String(source.workshop?.day || '')) ? String(source.workshop.day) : '',
+            refined: Math.max(0, Math.min(6, Math.floor(Number(source.workshop?.refined) || 0))),
+            soldCoins: Math.max(0, Math.min(30, Math.floor(Number(source.workshop?.soldCoins) || 0))),
+        },
+        consumedRequestIds: [...new Set((Array.isArray(source.consumedRequestIds) ? source.consumedRequestIds : [])
+            .map(id => String(id || '').trim().slice(0, 80)).filter(Boolean))].slice(-40),
+        syncedAt: Math.max(0, Number(source.syncedAt) || 0),
+    };
+}
+
+function normalizeMineralPlanetId(planetId = 'haqi') {
+    return String(planetId || 'haqi').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'haqi';
+}
+
+function mineralExplorationBridges() {
+    state.settings = state.settings || {};
+    const bridges = state.settings.mineralExplorationBridges;
+    state.settings.mineralExplorationBridges = bridges && typeof bridges === 'object' ? bridges : {};
+    if (!state.settings.mineralExplorationBridges.haqi && state.settings.haqiMineralBridge) {
+        state.settings.mineralExplorationBridges.haqi = normalizeMineralExplorationBridge(state.settings.haqiMineralBridge);
+    }
+    return state.settings.mineralExplorationBridges;
+}
+
+export function getMineralExplorationBridge(planetId = 'haqi') {
+    const safePlanetId = normalizeMineralPlanetId(planetId);
+    const bridges = mineralExplorationBridges();
+    const bridge = normalizeMineralExplorationBridge(bridges[safePlanetId]);
+    bridges[safePlanetId] = bridge;
+    return bridge;
+}
+
+export function setMineralExplorationBridge(planetId, nextBridge) {
+    const safePlanetId = normalizeMineralPlanetId(planetId);
+    const bridges = mineralExplorationBridges();
+    bridges[safePlanetId] = normalizeMineralExplorationBridge(nextBridge);
+    notify();
+    return bridges[safePlanetId];
+}
+
+export function getHaqiMineralBridge() {
+    return getMineralExplorationBridge('haqi');
+}
+
+export function setHaqiMineralBridge(nextBridge) {
+    return setMineralExplorationBridge('haqi', nextBridge);
+}
+
+export function isPetDispatching(petId, activePlanetId = '') {
+    let planetId = String(activePlanetId || '').trim();
+    if (!planetId) {
+        const settlement = state.settings?.starSettlement;
+        planetId = settlement?.source === 'official' ? String(settlement.planetId || '').trim() : '';
+    }
+    if (!planetId && typeof window !== 'undefined') {
+        try { planetId = String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim(); } catch (_) {}
+    }
+    const id = String(petId || '').trim();
+    return !!id && getMineralExplorationBridge(planetId).dispatchedPetIds.includes(id);
+}
+
 export function setView(name) {
     if (state.currentView === 'home') {
         state.lastHomeZoomLevel = Math.max(0, Math.min(3, state.zoomLevel | 0));

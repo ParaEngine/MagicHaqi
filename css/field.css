@@ -51,13 +51,8 @@
     pointer-events:none;
 }
 .field-bg::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 31;
-    pointer-events: none;
-    background: linear-gradient(rgba(255,255,255,0.045) 50%, rgba(6,18,44,0.05) 50%) 0 0 / 100% 4px;
-    opacity: 0.42;
+    content: none;
+    /* was CRT scanlines: linear-gradient(...)/100% 4px — disabled */
 }
 /* 程序化背景（horizon / path / terrain patch / props / remote landmark）已移除：
    场景背景统一使用静态场景图（field-custom-background-image）。 */
@@ -289,9 +284,50 @@
 .field-tab-icon-thunder {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='52' rx='25' ry='7' fill='%23111827' opacity='.45'/%3E%3Cpath d='M12 34c2-12 18-18 28-10 6-10 24-5 24 8 0 10-9 15-22 13H19C7 47 2 39 12 34Z' fill='%234f46e5'/%3E%3Cpath d='M33 14 20 37h11l-7 17 22-27H34Z' fill='%23facc15' stroke='%23fff7ad' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M9 44h46' stroke='%237c3aed' stroke-width='5' stroke-linecap='round' opacity='.65'/%3E%3C/svg%3E");
 }
-.field-items, .field-poops, .field-npcs { position:absolute; inset:0; pointer-events:none; }
+.field-items, .field-poops, .field-npcs, .field-area-links { position:absolute; inset:0; pointer-events:none; }
 .field-items { z-index: 18; }
 .field-poops { z-index: 35; }
+.field-area-links { z-index: 36; }
+.field-area-link {
+    position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer;
+    min-width: 72px; padding: 6px 12px; border: 2px solid rgba(255,255,255,.92); border-radius: 999px;
+    color: #fff; background: linear-gradient(180deg, rgba(34,197,94,.94), rgba(21,128,61,.94));
+    box-shadow: 0 4px 12px rgba(20,83,45,.35), inset 0 1px 0 rgba(255,255,255,.3);
+    font-size: 13px; font-weight: 900; line-height: 1.2; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+.field-area-link span { margin-right: 4px; }
+.field-area-link:hover { transform: translate(-50%, -50%) scale(1.06); filter: brightness(1.08); }
+.field-area-link:active { transform: translate(-50%, -50%) scale(.97); }
+.field-area-link.field-area-hitbox {
+    min-width: 0; padding: 0; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; opacity: 0;
+}
+.field-area-link.field-area-hitbox:hover,
+.field-area-link.field-area-hitbox:focus-visible {
+    transform: translate(-50%, -50%); filter: none; opacity: 1;
+    border: 2px dashed rgba(255,255,255,.86); background: rgba(74,222,128,.16);
+    box-shadow: inset 0 0 0 2px rgba(21,128,61,.38);
+}
+.field-area-link.field-area-hitbox:active { transform: translate(-50%, -50%) scale(.98); }
+.mh-stage.zoom-field.decor-mode .field-area-link { pointer-events: none; }
+.field-ui-buttons {
+    position: absolute; left: 14px; right: 62px; top: 14px; z-index: 44;
+    display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 10px;
+    pointer-events: none;
+}
+.field-ui-button {
+    position: relative; flex: 0 0 var(--field-ui-button-size); width: var(--field-ui-button-size); min-height: var(--field-ui-button-size);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: max(5px, calc(var(--field-ui-button-size) * .08));
+    padding: 8px 6px; border: 2px solid rgba(255,255,255,.92); border-radius: 16px;
+    color: #0f2747; background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(186,230,253,.92));
+    box-shadow: 0 5px 0 rgba(14,116,144,.3), 0 10px 18px rgba(6,18,44,.2), inset 0 1px 0 rgba(255,255,255,.9);
+    cursor: pointer; pointer-events: auto; touch-action: manipulation;
+}
+.field-ui-button-image { display: block; width: 62%; aspect-ratio: 1; background-repeat: no-repeat; background-position: center; background-size: contain; }
+.field-ui-button-emoji { font-size: calc(var(--field-ui-button-size) * .42); line-height: 1; }
+.field-ui-button-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: max(10px, calc(var(--field-ui-button-size) * .18)); font-weight: 900; line-height: 1.15; }
+.field-ui-button:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(14,116,144,.3), inset 0 2px 5px rgba(14,116,144,.18); }
+.mh-stage.zoom-field.decor-mode .field-ui-button { pointer-events: none; }
 /* 层级：主宠物 > NPC > 其它宠物。NPC 固定 z-index 29；宠物用 fieldPetZIndex() 算出的行内
    z-index 直接和它比较（其它宠物 10-20，主宠物 32-42），见 js/level_field.js。 */
 .field-npcs { z-index: 29; }
@@ -320,6 +356,34 @@
     color: #fde68a;
     text-shadow: 0 1px 0 #92400e, 0 1px 3px rgba(0,0,0,.5);
 }
+.field-npc-task {
+    position: absolute; z-index: 48; top: 12px; left: 50%; width: min(310px, calc(100vw - 112px));
+    padding: 9px 12px 10px; transform: translateX(-50%); pointer-events: none;
+    border: 2px solid rgba(255,255,255,.92); border-radius: 16px;
+    color: #31593c; background: rgba(245,255,238,.92);
+    box-shadow: 0 7px 18px rgba(20,83,45,.2); backdrop-filter: blur(7px);
+}
+.field-npc-task-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 900; }
+.field-npc-task-head b { color: #15803d; font-size: 13px; font-variant-numeric: tabular-nums; }
+.field-npc-task-track { overflow: hidden; height: 8px; margin: 6px 0 4px; border-radius: 999px; background: #d9ead5; }
+.field-npc-task-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#84cc16,#22c55e,#14b8a6); box-shadow: 0 0 8px rgba(34,197,94,.45); transition: width .4s cubic-bezier(.2,.8,.2,1); }
+.field-npc-task small { display: block; color: #56735c; font-size: 10px; font-weight: 700; }
+.field-npc-task em { display: block; margin-top: 2px; color: #ca8a04; font-size: 9px; font-style: normal; font-weight: 800; }
+.field-npc-task.is-complete { border-color: #fde68a; background: rgba(255,251,220,.94); }
+.field-npc-task.is-complete .field-npc-task-head b { color: #ca8a04; }
+.field-npc-task.is-complete .field-npc-task-track i { background: linear-gradient(90deg,#facc15,#fb923c); }
+.field-npc-task.is-hidden { opacity: 0; transform: translate(-50%, -12px) scale(.94); transition: opacity .35s ease, transform .35s ease; }
+.field-npc-task-complete {
+    position: absolute; z-index: 49; top: 28%; left: 50%; width: min(360px, calc(100vw - 64px));
+    padding: 18px 24px; transform: translate(-50%, -50%) scale(.72); opacity: 0; pointer-events: none;
+    border: 3px solid rgba(255,255,255,.96); border-radius: 22px; text-align: center;
+    color: #92400e; background: linear-gradient(135deg,rgba(255,251,214,.97),rgba(255,226,153,.97));
+    box-shadow: 0 14px 36px rgba(146,64,14,.3), 0 0 0 7px rgba(253,224,71,.18);
+    transition: opacity .28s ease, transform .38s cubic-bezier(.2,1.3,.35,1);
+}
+.field-npc-task-complete.is-visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.field-npc-task-complete strong { display: block; margin-bottom: 6px; font-size: 24px; font-weight: 1000; }
+.field-npc-task-complete span { display: block; color: #a16207; font-size: 12px; font-weight: 800; }
 .npc-dialog-overlay {
     position: fixed; inset: 0; z-index: 900; display: flex; align-items: flex-end; justify-content: center;
     background: rgba(15,23,42,.35); padding: 0 16px 22px;
@@ -945,3 +1009,141 @@
 }
 .field-tray-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
 .field-tray-row { display:flex; gap:6px; overflow-x:auto; }
+
+/* VIP 首次进入 Field：会员清扫 / 洗澡服务条 */
+.mh-vip-field-service {
+    position: absolute;
+    left: 50%;
+    top: 14%;
+    z-index: 20020;
+    transform: translate(-50%, -8px) scale(0.96);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.mh-vip-field-service.is-on {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+}
+.mh-vip-field-service.is-off {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.98);
+}
+.mh-vip-field-service-card {
+    min-width: min(78vw, 280px);
+    padding: 12px 16px 10px;
+    border-radius: 16px;
+    border: 2px solid rgba(245, 158, 11, 0.85);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,251,235,0.9)),
+        linear-gradient(135deg, #fff7ed, #fef3c7);
+    box-shadow: 0 10px 28px rgba(120, 53, 15, 0.22);
+    text-align: center;
+}
+.mh-vip-field-service-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+}
+.mh-vip-field-service-title {
+    font-size: 15px;
+    font-weight: 900;
+    color: #92400e;
+    line-height: 1.25;
+}
+.mh-vip-field-service-sub {
+    margin-top: 3px;
+    font-size: 12px;
+    color: #a16207;
+    font-weight: 700;
+}
+.mh-vip-field-service-bar {
+    margin-top: 10px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+    overflow: hidden;
+}
+.mh-vip-field-service-bar > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #fbbf24, #f59e0b 55%, #fb923c);
+    animation: mhVipFieldServiceBar 2s linear forwards;
+}
+@keyframes mhVipFieldServiceBar {
+    from { width: 0; }
+    to { width: 100%; }
+}
+
+.mh-vip-field-bath-fx {
+    position: absolute;
+    inset: -18% -10% 8%;
+    pointer-events: none;
+    z-index: 8;
+}
+.mh-vip-field-bath-fx > span {
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    font-size: 16px;
+    line-height: 1;
+    transform: translate(-50%, -50%);
+    animation: mhVipFieldBathPop 1.2s ease-out var(--vip-bath-delay, 0s) both;
+}
+@keyframes mhVipFieldBathPop {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+    35% { opacity: 1; transform: translate(calc(-50% + var(--vip-bath-x, 0px)), calc(-50% + var(--vip-bath-y, 0px))) scale(1.15); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--vip-bath-x, 0px) * 1.2), calc(-50% + var(--vip-bath-y, 0px) * 1.35 - 18px)) scale(0.85); }
+}
+
+/* 清理扫场时右下角低调加速按钮 */
+.mh-vip-clean-speed-btn {
+    position: absolute;
+    right: 10px;
+    bottom: 12px;
+    z-index: 20025;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 9px 5px 7px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(251, 191, 36, 0.55);
+    background: rgba(255, 251, 235, 0.72);
+    color: #92400e;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(120, 53, 15, 0.12);
+    backdrop-filter: blur(3px);
+    opacity: 0.72;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+.mh-vip-clean-speed-btn:hover,
+.mh-vip-clean-speed-btn:active {
+    opacity: 1;
+    background: rgba(255, 247, 237, 0.95);
+    transform: translateY(-1px);
+}
+.mh-vip-clean-speed-btn > span { font-size: 12px; }
+.mh-vip-clean-speed-btn > em {
+    font-style: normal;
+    letter-spacing: 0.02em;
+}
+
+.mh-vip-gate-card .mh-vip-gate-crown {
+    font-size: 28px;
+    line-height: 1;
+    margin-bottom: 6px;
+}

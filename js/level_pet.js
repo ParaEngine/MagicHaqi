@@ -12,6 +12,8 @@ import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage, randomBathCompleteLine } from './petInteractions.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 import { injectVisitAnimationStyles } from './visit_animations.js';
+import { getHomeTreasureFacility, getHomeTreasures } from './home_treasures.js';
+import { isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const BASIC_FEED_ID = 'food_basic_feed';
@@ -2256,9 +2258,14 @@ function stripActionIcon(label) {
 
 function renderDecorTray(inv) {
     const currentRoom = state.currentRoom || 'living';
-    const items = Object.entries(inv)
+    const planetId = state.settings?.starSettlement?.source === 'official' ? state.settings.starSettlement.planetId : 'default';
+    const ownedFacilities = (isHaqiExpeditionEnabled(planetId) ? Object.entries(getHomeTreasures({ inventory: inv })) : [])
+        .filter(([, count]) => count > 0)
+        .map(([id, qty]) => ({ ...getHomeTreasureFacility(id), qty }))
+        .filter(it => it && canPlaceItemInArea(it, currentRoom));
+    const items = [...Object.entries(inv)
         .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
-        .filter(it => it && it.id && it.type === 'furniture' && canPlaceItemInArea(it, currentRoom));
+        .filter(it => it && it.id && it.type === 'furniture' && canPlaceItemInArea(it, currentRoom)), ...ownedFacilities];
     const shopButton = renderRoomShopButton('indoor', { minWidth: 62, padding: '6px' });
     return `
         <div class="mh-dock-tray mh-scroll-x">

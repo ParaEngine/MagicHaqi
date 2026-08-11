@@ -60,8 +60,17 @@
       },
       "onboarding": {
         "mode": "minigames",
-        "minigame": "planet_boarding",
+        "minigame": "planet_boarding_haqi",
         "progressKey": "haqi"
+      },
+      "features": ["mineralExploration"],
+      "mineralExploration": {
+        "contentPacks": [
+          "content/haqi_minerals_abyssal_echoes.json",
+          "content/haqi_minerals_molten_geocore.json",
+          "content/haqi_minerals_wasteland_punk.json",
+          "content/haqi_minerals_ancient_starcore.json"
+        ]
       },
       "fields": [
         {
@@ -710,6 +719,297 @@
         { "name": "Pet Plaza", "typeId": "land", "background": { "type": "image", "color": "#fed7aa", "title": "像素春日小镇广场", "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/pixel_spring_town_square-1780330541780.webp", "presetId": "pixel_spring_town_square" }, "particles": ["sparkle"], "bgMusic": "square" },
         { "name": "Star Dock", "typeId": "sky", "background": { "type": "image", "color": "#c7d2fe", "title": "像素星光山径", "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/pixel_starlit_mountain_pass-1780329811940.webp", "presetId": "pixel_starlit_mountain_pass" }, "particles": ["mist", "bubbles"], "bgMusic": "mountain" }
       ]
+    },
+    {
+      "id": "chongqing_zoo",
+      "title": "重庆动物园星球",
+      "name": "重庆动物园星球",
+      "appTitle": "",
+      "planet_pets": [],
+      "badge": "官方",
+      "summary": "一颗把山城动物园、竹林溪谷和云雾坡坡装进童话里的可爱星球。",
+      "planet": {
+        "readonly": true,
+        "hue": 142,
+        "bodyBackground": "radial-gradient(circle at 30% 20%, rgba(255,255,255,.84) 0%, rgba(255,255,255,.24) 18%, transparent 34%), radial-gradient(circle at 72% 70%, rgba(134,239,172,.34) 0%, transparent 36%), radial-gradient(circle at 52% 46%, #dcfce7 0%, #86efac 34%, #67e8f9 68%, #22c55e 100%)",
+        "glowColor": "rgba(34, 197, 94, 0.58)",
+        "accentColor": "#22c55e",
+        "default_zoom_level": "field",
+        "hide_cell": true
+      },
+      "fields": [
+        {
+          "name": "动物园主园区",
+          "typeId": "life",
+          "background": {
+            "type": "image",
+            "color": "#bbf7d0",
+            "title": "重庆动物园全景",
+            "imageUrl": "https://qiniu-public-temporary.keepwork.com/temp_180_anon-asset_1024x342.webp"
+          },
+          "particles": ["petals"],
+          "areaLinks": [
+            { "id": "to_panda", "label": "熊猫馆", "targetFieldId": "2", "x": 18, "y": 68 },
+            { "id": "to_water", "label": "水上乐园", "targetFieldId": "3", "x": 36, "y": 57 },
+            { "id": "to_goldfish", "label": "金鱼馆", "targetFieldId": "4", "x": 55, "y": 48 },
+            { "id": "to_dinosaur", "label": "恐龙谷", "targetFieldId": "5", "x": 73, "y": 57 },
+            { "id": "to_science", "label": "儿童科普乐园", "targetFieldId": "6", "x": 26, "y": 82 },
+            { "id": "to_monkey", "label": "金丝猴馆", "targetFieldId": "7", "x": 51, "y": 76 },
+            { "id": "to_birds", "label": "鸟语林", "targetFieldId": "8", "x": 77, "y": 80 }
+          ]
+        },
+        {
+          "name": "熊猫馆",
+          "typeId": "life",
+          "background": {
+            "type": "image",
+            "color": "#bbf7d0",
+            "title": "熊猫馆",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/xiongmaoguan_20260717155113.webp"
+          },
+          "particles": ["petals"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "大熊猫饲养员",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260717110253.webp#23.51_7.74_15.31_92.26",
+              "x": 26.985370552278237,
+              "y": 77.83552366287772,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "大熊猫饲养员", "text": "你好呀小探险家！我是这里的保育员。大熊猫是国宝，它们很爱吃竹子！", "buttonText": "好的，大熊猫真可爱！" }
+              ],
+              "minigame": "blind_box_egg_hatch",
+              "hatchBoostSeconds": 120
+            },
+            {
+              "id": "npc_2",
+              "name": "熊猫先生",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#0.00_3.49_22.51_96.51",
+              "x": 71.02925769961365,
+              "y": 79.14171712779665,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "熊猫先生", "text": "今天又是吃掉一百斤竹子的一天！", "buttonText": "我也想变成熊猫，那样竹子一定很好味道！" }
+              ],
+              "minigame": "blind_box_egg",
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "水上乐园",
+          "typeId": "water",
+          "background": {
+            "type": "image",
+            "color": "#bae6fd",
+            "title": "左眉",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/shatan_20260718164815.webp"
+          },
+          "particles": ["bubbles"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "水上乐园管理员",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260717110131.webp#22.33_4.58_19.47_95.42",
+              "x": 40.93521381246632,
+              "y": 78.61923974182908,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "水上乐园管理员", "text": "阳光、水花，还有冰激凌！这才是生活！", "buttonText": "我也想，一年365都可以游泳就好了！" }
+              ],
+              "minigame": "family_like_charge",
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "金鱼馆",
+          "typeId": "sky",
+          "background": {
+            "type": "image",
+            "color": "#dbeafe",
+            "title": "右眉",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/jinyu_20260717161120.webp"
+          },
+          "particles": ["mist"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "猫猫仔",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#60.55_1.42_20.38_98.58",
+              "x": 36.85997870274846,
+              "y": 66.8634985575587,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "猫猫仔", "text": "咕噜咕噜……忍住，我是管理员，不能流口水……", "buttonText": "哈哈，金鱼那么可爱，不可以吃掉！" }
+              ],
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "恐龙谷",
+          "typeId": "life",
+          "background": {
+            "type": "image",
+            "color": "#fde68a",
+            "title": "右耳",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/konglongguan_20260717160814.webp"
+          },
+          "particles": ["sparkle"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "恐龙伯伯",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260718154343.webp#0.00_3.81_20.79_96.19",
+              "x": 33.725182464503945,
+              "y": 70.78207895231549,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "恐龙伯伯", "text": "唔....霸王龙的前肢到底能用来干什么呢……", "buttonText": "hi~我对恐龙也很感兴趣！" }
+              ],
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "儿童科普乐园",
+          "typeId": "land",
+          "background": {
+            "type": "image",
+            "color": "#d9f99d",
+            "title": "左胡子",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/kepuguan_20260717160645.webp"
+          },
+          "particles": ["petals"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "科普卫士",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#0.00_0.57_21.51_99.43",
+              "x": 50.49634233911209,
+              "y": 78.88047843481286,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "科普卫士", "text": "长颈鹿的脖子为什么那么长？来猜猜看呀。", "buttonText": "让我想想.....唔......" }
+              ],
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "金丝猴馆",
+          "typeId": "land",
+          "background": {
+            "type": "image",
+            "color": "#fef3c7",
+            "title": "中胡子",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/houzi_20260717160517.webp"
+          },
+          "particles": ["sparkle"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "金丝猴大使",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#18.80_1.44_20.56_98.56",
+              "x": 68.44305080306194,
+              "y": 68.43093071546141,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "金丝猴大使", "text": "森林里的空气真好呀，深呼吸——金丝猴很可爱吧！", "buttonText": "对！我很喜欢它们！" }
+              ],
+              "hatchBoostSeconds": 120
+            }
+          ]
+        },
+        {
+          "name": "鸟语林",
+          "typeId": "life",
+          "background": {
+            "type": "image",
+            "color": "#cffafe",
+            "title": "右胡子",
+            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/niaoyulin_20260717155945.webp"
+          },
+          "particles": ["mist"],
+          "npcs": [
+            {
+              "id": "npc_1",
+              "name": "鸟先生",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#40.17_0.79_20.29_99.21",
+              "x": 31.530825097732784,
+              "y": 73.65570457513714,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "鸟先生", "text": "叽叽喳喳，今天的风儿带来了远方的消息。", "buttonText": "每一种鸟鸣，都是一首独特的歌。" }
+              ],
+              "hatchBoostSeconds": 120
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mineral_qa",
+      "title": "矿区验收星",
+      "name": "矿区验收星",
+      "badge": "本地测试",
+      "summary": "仅用于验证星际矿区的 iframe 协议、内容包和跨星球存档隔离。",
+      "audience": {
+        "targetUser": "开发与测试",
+        "ageRange": "0-0",
+        "petPersona": "不适用",
+        "selfCare": 1
+      },
+      "planet": {
+        "readonly": true,
+        "hue": 172,
+        "bodyBackground": "radial-gradient(circle at 28% 22%, rgba(255,255,255,.86), rgba(255,255,255,.16) 24%, transparent 38%), radial-gradient(circle at 70% 70%, rgba(45,212,191,.3), transparent 34%), linear-gradient(145deg, #cffafe 0%, #5eead4 48%, #0f766e 100%)",
+        "glowColor": "rgba(45, 212, 191, 0.58)",
+        "accentColor": "#14b8a6",
+        "default_zoom_level": "field",
+        "hide_cell": true
+      },
+      "features": ["mineralExploration"],
+      "mineralExploration": {
+        "contentPacks": [
+          "content/haqi_minerals_abyssal_echoes.json",
+          "content/haqi_minerals_molten_geocore.json",
+          "content/haqi_minerals_wasteland_punk.json",
+          "content/haqi_minerals_ancient_starcore.json"
+        ]
+      },
+      "fields": [
+        {
+          "name": "验收控制台",
+          "typeId": "sky",
+          "background": {
+            "type": "color",
+            "color": "#ccfbf1",
+            "title": "本地矿区验收"
+          },
+          "particles": []
+        }
+      ],
+      "appTitle": "矿区验收星",
+      "planet_pets": []
     }
   ]
 }

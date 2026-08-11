@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="哈奇课堂宠物积分与家庭成长守护的三端联动说明">
+  <title>哈奇成长联动说明</title>
+  <style>
+    :root {
+      --ink: #1f2937;
+      --muted: #64748b;
+      --paper: #fffdf8;
+      --line: #e7e5e4;
+      --orange: #d97706;
+      --orange-soft: #fff7ed;
+      --green: #047857;
+      --green-soft: #ecfdf5;
+      --blue: #0369a1;
+      --blue-soft: #f0f9ff;
+      --rose: #be123c;
+      --rose-soft: #fff1f2;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(circle at 8% 0%, #ffedd5 0, transparent 27rem), linear-gradient(180deg, #fffdf8 0%, #f8fafc 100%);
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      line-height: 1.7;
+    }
+    a { color: inherit; }
+    .shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; }
+    .topbar { border-bottom: 1px solid rgba(231, 229, 228, .85); background: rgba(255, 253, 248, .84); backdrop-filter: blur(12px); }
+    .topbar .shell { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 18px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .02em; }
+    .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: #f59e0b; color: white; }
+    .nav { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 14px; font-weight: 700; }
+    .nav a { text-decoration: none; }
+    .nav a:hover { color: var(--orange); }
+    .hero { display: grid; grid-template-columns: 1.08fr .92fr; gap: 34px; align-items: center; padding: 68px 0 40px; }
+    .eyebrow { margin: 0; color: var(--orange); font-size: 13px; font-weight: 800; letter-spacing: .12em; }
+    h1 { max-width: 780px; margin: 10px 0 16px; font-size: clamp(34px, 6vw, 58px); line-height: 1.15; letter-spacing: 0; }
+    .lead { max-width: 760px; margin: 0; color: #475569; font-size: 18px; }
+    .version { display: inline-flex; margin-top: 24px; padding: 6px 11px; border: 1px solid #fed7aa; border-radius: 6px; background: #fff7ed; color: #9a3412; font-size: 13px; font-weight: 800; }
+    .relay-board { position: relative; overflow: hidden; padding: 22px; border: 1px solid #fed7aa; border-radius: 8px; background: linear-gradient(145deg, #fff7ed, #fff 58%, #ecfdf5); box-shadow: 0 22px 48px rgba(217,119,6,.14); }
+    .relay-board::after { position: absolute; inset: auto -35px -45px auto; width: 170px; height: 170px; border: 24px solid rgba(16,185,129,.13); border-radius: 50%; content: ""; }
+    .relay-caption { position: relative; z-index: 1; margin: 0 0 14px; color: #9a3412; font-size: 13px; font-weight: 900; letter-spacing: .1em; }
+    .relay-route { position: absolute; z-index: 0; top: 50%; right: 15%; left: 15%; height: 2px; background: repeating-linear-gradient(90deg, #f59e0b 0 7px, transparent 7px 13px); opacity: .55; }
+    .relay-people { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+    .person { min-height: 156px; padding: 13px 9px; border: 1px solid rgba(255,255,255,.8); border-radius: 8px; background: rgba(255,255,255,.78); text-align: center; box-shadow: 0 8px 18px rgba(120,113,108,.08); }
+    .person-avatar { display: grid; width: 54px; height: 54px; place-items: center; margin: 0 auto 8px; border-radius: 50%; font-size: 29px; }
+    .person.teacher .person-avatar { background: #ffedd5; }
+    .person.student .person-avatar { background: #e0f2fe; }
+    .person.guardian .person-avatar { background: #d1fae5; }
+    .person strong { display: block; font-size: 14px; }
+    .person span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .relay-note { position: relative; z-index: 1; margin: 18px 0 0; padding: 9px 11px; border-radius: 6px; background: rgba(255,255,255,.7); color: #475569; font-size: 12px; }
+    .overview { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; margin: 18px 0 52px; }
+    .panel { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 12px 34px rgba(120, 113, 108, .08); }
+    .panel-inner { padding: 24px; }
+    h2 { margin: 0 0 12px; font-size: 25px; line-height: 1.35; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .flow { display: grid; gap: 10px; margin-top: 18px; }
+    .flow-step { display: grid; grid-template-columns: 32px 1fr; gap: 11px; align-items: start; }
+    .flow-num { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #fff7ed; color: var(--orange); font-size: 13px; font-weight: 900; }
+    .quick-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .quick-list li { padding: 10px 12px; border-left: 3px solid #f59e0b; background: #fffbeb; font-size: 14px; }
+    section { margin: 0 0 52px; scroll-margin-top: 20px; }
+    .section-intro { max-width: 720px; margin-bottom: 20px; color: var(--muted); }
+    .role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .role-card { min-height: 100%; padding: 22px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+    .role-card.teacher { border-top: 4px solid #f59e0b; }
+    .role-card.student { border-top: 4px solid #0ea5e9; }
+    .role-card.guardian { border-top: 4px solid #10b981; }
+    .role-icon { font-size: 28px; }
+    .role-card ul, .checklist { margin: 12px 0 0; padding-left: 20px; color: #475569; font-size: 14px; }
+    .role-card li, .checklist li { margin: 6px 0; }
+    .timeline { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: white; }
+    .timeline-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 16px; align-items: start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .timeline-row:last-child { border-bottom: 0; }
+    .timeline-label { color: var(--orange); font-weight: 900; }
+    .timeline-state { padding: 3px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .timeline-row:nth-child(3) .timeline-state { background: #fff7ed; color: #9a3412; }
+    .timeline-row:nth-child(4) .timeline-state { background: #f0f9ff; color: #0369a1; }
+    .timeline-row:nth-child(5) .timeline-state { background: #ecfdf5; color: #047857; }
+    .code { margin: 0; overflow-x: auto; padding: 18px; border-radius: 8px; background: #172033; color: #e2e8f0; font: 13px/1.65 Consolas, "Courier New", monospace; white-space: pre; }
+    .data-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .data-card { padding: 18px; border-radius: 8px; background: #fff; border: 1px solid var(--line); }
+    .data-card strong { display: block; margin-bottom: 4px; color: var(--orange); }
+    .notice { padding: 18px 20px; border-radius: 8px; }
+    .notice h3 { margin-bottom: 5px; }
+    .notice.warning { border: 1px solid #fecdd3; background: var(--rose-soft); color: #881337; }
+    .notice.info { border: 1px solid #bae6fd; background: var(--blue-soft); color: #075985; }
+    .notice.success { border: 1px solid #a7f3d0; background: var(--green-soft); color: #065f46; }
+    .mini-story { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center; padding: 20px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; }
+    .pet-orbit { position: relative; width: 82px; height: 82px; border: 2px dashed #fbbf24; border-radius: 50%; }
+    .pet-orbit::before { position: absolute; inset: 17px; display: grid; place-items: center; border-radius: 50%; background: #fff; content: "🐾"; font-size: 26px; animation: bob 2.8s ease-in-out infinite; }
+    .story-tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 900; }
+    .reveal { animation: rise .55s ease both; animation-timeline: view(); animation-range: entry 7% cover 24%; }
+    @keyframes bob { 50% { transform: translateY(-5px) rotate(8deg); } }
+    @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    .faq { display: grid; gap: 10px; }
+    details { border: 1px solid var(--line); border-radius: 8px; background: white; }
+    summary { padding: 15px 18px; cursor: pointer; font-weight: 800; }
+    details p { padding: 0 18px 15px; color: var(--muted); }
+    footer { margin-top: 20px; border-top: 1px solid var(--line); padding: 28px 0 42px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 760px) {
+      .topbar .shell { padding: 10px 0; align-items: flex-start; }
+      .nav { justify-content: flex-end; gap: 9px; font-size: 12px; }
+      .hero { grid-template-columns: 1fr; padding-top: 45px; }
+      .overview, .role-grid, .data-grid { grid-template-columns: 1fr; }
+      .timeline-row { grid-template-columns: 1fr; gap: 4px; }
+      .timeline-state { width: fit-content; }
+      .panel-inner, .role-card { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell">
+      <div class="brand"><span class="brand-mark">H</span><span>哈奇成长联动</span></div>
+      <nav class="nav" aria-label="文档目录">
+        <a href="#roles">三端职责</a>
+        <a href="#flow">联动流程</a>
+        <a href="#data">数据与权限</a>
+        <a href="#launch">上线检查</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">课堂激励 × 家庭成长守护</p>
+        <h1>一份奖励，贯通教师、学生与家长</h1>
+        <p class="lead">教师记录课堂进步，学生完成一项轻量的家庭行动，家长确认是否计入家庭成长。三端各自只处理自己该做的事，同时共享一条可追溯的成长记录。</p>
+        <span class="version">当前实现：共享学校站点 · 数据协议 V3</span>
+      </div>
+      <aside class="relay-board" aria-label="三端成长接力示意">
+        <p class="relay-caption">一条成长记录的接力</p>
+        <div class="relay-route"></div>
+        <div class="relay-people">
+          <div class="person teacher"><div class="person-avatar">🧑‍🏫</div><strong>教师</strong><span>记录课堂进步<br>发出奖励</span></div>
+          <div class="person student"><div class="person-avatar">🧒</div><strong>学生</strong><span>完成小行动<br>告诉家长</span></div>
+          <div class="person guardian"><div class="person-avatar">🧑‍🧑‍🧒</div><strong>家长</strong><span>确认家庭认可<br>形成回执</span></div>
+        </div>
+        <p class="relay-note">课堂记录不直接改写家庭账本；每个角色都有自己的决定权。</p>
+      </aside>
+    </section>
+
+    <div class="overview">
+      <article class="panel"><div class="panel-inner">
+        <h2>联动一句话</h2>
+        <p class="muted">一个班级配置一个由学校或教师拥有的 KeepWork 共享站点；每位学生在站点内拥有独立目录。教师发入口，学生完成行动，家长确认奖励，不再要求每个家庭另建站点。</p>
+        <div class="flow">
+          <div class="flow-step"><span class="flow-num">1</span><div><strong>课堂</strong><br><span class="muted">教师为学生加分并发布家庭成长奖励。</span></div></div>
+          <div class="flow-step"><span class="flow-num">2</span><div><strong>孩子</strong><br><span class="muted">学生通过专属链接登录，完成页面给出的家庭小行动。</span></div></div>
+          <div class="flow-step"><span class="flow-num">3</span><div><strong>家庭</strong><br><span class="muted">家长收到待处理消息，决定计入成长或暂不计入。</span></div></div>
+        </div>
+      </div></article>
+      <aside class="panel"><div class="panel-inner">
+        <h2>涉及页面</h2>
+        <ul class="quick-list">
+          <li><strong>教师与学生：</strong><code>minigames/haqi_personal_pet_points.html</code></li>
+          <li><strong>家长：</strong><code>minigames/haqi_growth_guardian.html</code></li>
+          <li><strong>本说明：</strong><code>docs/haqi_growth_link_guide.html</code></li>
+        </ul>
+      </div></aside>
+    </div>
+
+    <section id="roles">
+      <h2>三端职责</h2>
+      <p class="section-intro">联动的重点不是让三方都进入同一个管理后台，而是让每个人只面对最少、最符合自身角色的操作。</p>
+      <div class="role-grid reveal">
+        <article class="role-card teacher">
+          <div class="role-icon">🧑‍🏫</div>
+          <h3>教师端：发布课堂认可</h3>
+          <ul>
+            <li>在班级设置中配置一次学校共享 KeepWork 站点。</li>
+            <li>单个添加或从 Excel 批量导入学生、学生账号和家长账号。</li>
+            <li>按课堂表现加分，生成家庭成长奖励。</li>
+            <li>通过“家庭入口卡”分别发送学生与家长链接。</li>
+            <li>可查看家长处理结果；家长处理后不允许撤销奖励。</li>
+          </ul>
+        </article>
+        <article class="role-card student">
+          <div class="role-icon">🧒</div>
+          <h3>学生端：把进步带回家</h3>
+          <ul>
+            <li>打开教师发送的专属链接。</li>
+            <li>首次输入 KeepWork 账号和密码；密码不保存在页面中。</li>
+            <li>后续会尝试恢复已登录会话，无需重复输入密码。</li>
+            <li>只查看自己的宠物、课堂积分和待完成成长任务。</li>
+            <li>完成小行动后，提交给家长确认。</li>
+          </ul>
+        </article>
+        <article class="role-card guardian">
+          <div class="role-icon">🧑‍🧑‍🧒</div>
+          <h3>家长端：决定家庭认可</h3>
+          <ul>
+            <li>打开教师发送的家长链接，孩子会自动绑定。</li>
+            <li>查看课堂奖励和孩子提交的家庭小行动。</li>
+            <li>选择“计入成长”或“暂不计入”。</li>
+            <li>家庭账本保留在家长侧，不会被课堂档案覆盖。</li>
+            <li>仅当链接丢失时，才需要手动填写站点、班级和学生编号恢复绑定。</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow">
+      <h2>完整联动流程</h2>
+      <p class="section-intro">以下流程描述的是一条课堂奖励从产生到家庭确认的实际生命周期。</p>
+      <div class="timeline reveal">
+        <div class="timeline-row"><div class="timeline-label">0. 班级准备</div><div>教师在“班级设置”中填写年级、班级和学校共享站点路径，例如 <code>teacher_zhang/class-growth</code>。随后导入学生资料，并为每位学生配置其 KeepWork 用户名与家长账号白名单。</div><span class="timeline-state">教师配置</span></div>
+        <div class="timeline-row"><div class="timeline-label">1. 发布入口</div><div>教师在“家庭入口卡”中发布学生的授权与课堂档案，并分别发送学生入口和家长入口。链接已带上共享站点、班级和学生标识。</div><span class="timeline-state">一键发送</span></div>
+        <div class="timeline-row"><div class="timeline-label">2. 课堂加分</div><div>教师对某位学生加分。系统保留课堂积分流水，同时创建一条有效期默认 72 小时的家庭成长奖励。</div><span class="timeline-state">奖励待办</span></div>
+        <div class="timeline-row"><div class="timeline-label">3. 学生行动</div><div>学生在个人页面看到待办，例如完成学习小任务或分享当天收获；点击完成后，系统写入该奖励对应的学生行动记录。</div><span class="timeline-state">孩子已完成</span></div>
+        <div class="timeline-row"><div class="timeline-label">4. 家长确认</div><div>家长在“学校成长收件箱”看到孩子已完成的行动，选择是否计入家庭成长。该决定会生成回执，教师端可刷新查看状态。</div><span class="timeline-state">家庭确认</span></div>
+        <div class="timeline-row"><div class="timeline-label">5. 保留边界</div><div>课堂积分仍由教师端维护；家庭成长账本仍由家长端维护。教师的课堂档案只用于展示，不会覆盖家长自己的家庭记录。</div><span class="timeline-state">各自留存</span></div>
+      </div>
+    </section>
+
+    <section class="mini-story reveal" aria-label="成长联动场景示例">
+      <div class="pet-orbit"></div>
+      <div>
+        <span class="story-tag">场景示例</span>
+        <h2 style="margin-top:7px">“作业认真 +5”，不止停在课堂</h2>
+        <p class="muted" style="margin-bottom:0">老师为小雨加分后，宠物收到课堂认可；小雨回家完成“分享今天学到的一件事”；家长在收件箱确认后，这份努力才真正成为家庭成长记录。</p>
+      </div>
+    </section>
+
+    <section id="data">
+      <h2>共享站点、数据隔离与权限</h2>
+      <p class="section-intro">所有联动文件都在一个学校共享站点内，但按学生编号分目录保存。这样减少建站成本，同时使每条奖励、回执和通知都能定位到对应孩子。</p>
+      <pre class="code">minigames/haqi-growth-link/v3/students/&lt;studentId&gt;/
+  access-policy.json              # 学生与家长白名单、授权策略
+  student-profile.json            # 当前学生的课堂档案
+  events/index.json               # 该学生的课堂奖励索引
+  events/&lt;eventId&gt;.json           # 单条课堂奖励
+  actions/&lt;eventId&gt;.json          # 学生提交的家庭小行动
+  receipts/&lt;eventId&gt;.json         # 家长“计入/暂不计入”的回执
+  notifications/index.json        # 该学生的通知索引
+  notifications/&lt;notificationId&gt;.json</pre>
+      <div class="data-grid" style="margin-top:14px">
+        <article class="data-card"><strong>应用层隔离</strong><span class="muted">所有 V3 文件带有 <code>privacyScope: "student"</code>，读取时会校验班级、学生编号、学生账号或家长白名单。</span></article>
+        <article class="data-card"><strong>KeepWork 站点权限</strong><span class="muted">站点是否可读写仍由 KeepWork 的真实访问权限决定。教师需拥有编辑权限；学生和家长账号需要具备完成各自读取或回执写入所需的站点访问权限。</span></article>
+      </div>
+      <div class="notice warning" style="margin-top:14px">
+        <h3>重要：白名单不等于 KeepWork ACL</h3>
+        <p>页面中的家长白名单用于应用逻辑校验，不能替代 KeepWork 平台的真实成员权限。静态 HTML 无法自动创建站点、加入成员或授予编辑权限，这些操作必须先在 KeepWork 平台完成。</p>
+      </div>
+    </section>
+
+    <section id="launch">
+      <h2>教师上线检查清单</h2>
+      <div class="panel"><div class="panel-inner">
+        <ol class="checklist">
+          <li>已在 KeepWork 创建真实可访问的学校共享站点，格式为 <code>用户名/站点名</code>，不是任意多级路径。</li>
+          <li>当前教师账号拥有该站点编辑权限；能正常读取和写入页面文件。</li>
+          <li>班级设置已保存正确的学校共享站点路径。</li>
+          <li>每位需要参与联动的学生都已填写学生 KeepWork 用户名，且家长白名单至少有一个账号。</li>
+          <li>已发布至少一位学生的云端授权与课堂档案，并通过入口卡发送学生、家长链接。</li>
+          <li>已确认学生和家长账号具备 KeepWork 站点所需的访问权限。</li>
+          <li>用一个测试学生完成“教师加分 → 学生行动 → 家长确认 → 教师刷新回执”的闭环验证。</li>
+        </ol>
+      </div></div>
+    </section>
+
+    <section>
+      <h2>常见情况</h2>
+      <div class="faq">
+        <details><summary>为什么发布时出现 HTTP 404 或“请求不合法”？</summary><p>通常表示填写的站点不存在、站点路径不符合 <code>用户名/站点名</code> 格式，或当前登录教师没有该站点的编辑权限。先在 KeepWork 中确认站点和权限，再重新发布。</p></details>
+        <details><summary>学生每次登录都需要输入学生编号吗？</summary><p>不需要。普通使用时学生只打开教师链接，再输入账号和密码；链接携带学生标识。学生编号仅在没有链接时用于手动恢复家长绑定。</p></details>
+        <details><summary>学生或家长能看到其他孩子的数据吗？</summary><p>应用会始终使用当前学生的独立目录，并校验策略、学生编号与账号信息。但对真实敏感数据，仍必须正确配置 KeepWork 站点的访问权限，不能只依赖页面白名单。</p></details>
+        <details><summary>为什么家长暂时不能“计入成长”？</summary><p>当前奖励可能尚未被学生提交家庭小行动、已过 72 小时有效期、已被撤销，或家长账号没有站点写入权限。家长端会显示相应状态或同步失败信息。</p></details>
+      </div>
+    </section>
+
+    <section class="notice success">
+      <h3>日常使用建议</h3>
+      <p>教师把入口卡发一次即可；学生首次登录后由浏览器恢复会话，家长链接也会自动绑定孩子。日常只需在课堂加分、学生完成行动、家长确认三处完成最小闭环。</p>
+    </section>
+  </main>
+  <footer>
+    <div class="shell">哈奇课堂宠物积分 × 家庭成长守护 · 当前联动说明 · 数据协议 V3</div>
+  </footer>
+</body>
+</html>

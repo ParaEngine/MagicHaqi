@@ -1,13 +1,19 @@
 // 宠物列表视图（用于浏览所有宠物）
-import { $, $$, coinIconSvg, confirm, escapeHtml, randId, showToast } from './utils.js';
+import { $, $$, coinIconSvg, confirm, escapeHtml, prompt, randId, showToast } from './utils.js';
 import { t, getAlbumCaptions } from './i18n.js';
 import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel, decodeDna, ELEMENTAL_ATTRIBUTES } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { defaultPermanentTrauma, defaultStats, eggStats, applyStage } from './petTick.js';
 import { markPetReleased, getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
-import { savePet, setCurrentPetPersisted, saveUserProfileDebounced, ensurePetData } from './storage.js';
-import { notify, setView, state } from './state.js';
+import { savePet, setCurrentPetPersisted, saveUserProfileDebounced, ensurePetData, saveInventoryDebounced } from './storage.js';
+import { addCoins, isPetDispatching, notify, setView, state } from './state.js';
 import { getStageName } from './config.js';
+import { showVipGateDialog } from './vipGate.js';
+import { applyGrowthMaterial, calculateDerivedStats, canApplyGrowthMaterial, getGrowthCap, getGrowthMaterialId, getPetGrowthProfile, upgradePetData } from './pet_stats_core.js';
+import { EQUIPMENT_SLOTS, MAX_EQUIPMENT_LEVEL, STARTER_EQUIPMENT_IDS, equipItem, getEquipmentDefinition, getEquipmentLevel, getEquipmentUpgradeCost, normalizeEquipment, unequipSlot } from './pet_equipment_core.js';
+import { calculateExpeditionReadiness } from './expedition_buff.js';
+import { getExperienceToNextLevel } from './expedition_settlement.js';
+import { getHaqiExpeditionSettlement, isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
 
 // 阶段顺序（与 4×4 精灵图行对齐）：baby=0, teen=1, adult=2, elder=3
 const ALBUM_STAGES = [
@@ -21,6 +27,20 @@ const PET_LIST_TABS = [
     { id: 'mine', labelKey: 'tabMyPets' },
     { id: 'rare', labelKey: 'tabRarePets' },
 ];
+
+function equipmentIconHtml(definition, fallbackIcon = '◇') {
+    const fallback = escapeHtml(definition?.icon || fallbackIcon);
+    const image = String(definition?.image || '').trim();
+    return image
+        ? `<span class="mh-equipment-image"><img src="${escapeHtml(image)}" alt="" onerror="this.remove();this.parentElement.textContent='${fallback}'"></span>`
+        : fallback;
+}
+
+function equipmentUpgradeFrameHtml(level) {
+    const frameLevel = Math.max(0, Math.min(MAX_EQUIPMENT_LEVEL, Math.floor(Number(level) || 0)));
+    return `<img class="mh-equipment-upgrade-frame" src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/equipment/equipment_upgrade_${frameLevel}.webp" alt="" aria-hidden="true">`;
+}
+
 let activePetListTab = 'mine';
 let activeFamousPetFilter = 'all';
 let famousPetsIndex = null;
@@ -49,6 +69,360 @@ const ELEMENTAL_ATTRIBUTE_BACKGROUNDS = {
     '雷': '#fef08a',
 };
 const DEFAULT_PET_ART_BACKGROUND = '#dff7ff';
+const PET_RENAME_COST = 200;
+const PET_NAME_SENSITIVE_TERMS = ['傻逼', 'shabi', '妈的', '操你', '草你', 'caoni', '垃圾', 'laji', '废物', '色情', '裸体', '性交', '强奸', '卖淫', '赌博', '毒品', '炸弹', '恐怖分子', '习近平', '共产党'];
+
+function normalizePetNameForModeration(value) {
+    return String(value || '').normalize('NFKC').trim().toLowerCase();
+}
+
+function getPetNameSensitiveTerms() {
+    const configuredTerms = window.MagicHaqiPetNamingPolicy?.sensitiveTerms;
+    return Array.isArray(configuredTerms)
+        ? [...PET_NAME_SENSITIVE_TERMS, ...configuredTerms]
+        : PET_NAME_SENSITIVE_TERMS;
+}
+
+function validatePetName(value) {
+    const name = String(value || '').trim();
+    const normalized = normalizePetNameForModeration(name);
+    if (!name) return '请输入名字';
+    if ([...name].length > 6) return '名字最多 6 个字';
+    if (!/^[\u4e00-\u9fffA-Za-z0-9]+$/.test(name)) return '名字仅支持中文、字母或数字';
+    if (getPetNameSensitiveTerms().some(term => normalized.includes(normalizePetNameForModeration(term)))) return '名字含有不适宜的内容，请换一个';
+    return '';
+}
+
+async function renamePet(pet, onRenamed, onFirstRenamed) {
+    const renameCount = Math.max(0, Number(pet?.renameCount) || 0);
+    const cost = renameCount > 0 ? PET_RENAME_COST : 0;
+    if (cost && (Number(state.coins) || 0) < cost) {
+        showToast(`金币不足，改名需要 ${cost} 金币`, 'error', 1800);
+        return;
+    }
+    const name = await prompt('给伙伴改名', {
+        hint: cost ? `本次改名将消耗 ${cost} 金币，最多 6 个字。` : '首次改名免费，之后每次消耗 200 金币；最多 6 个字。',
+        defaultValue: String(pet?.name || ''),
+        maxLength: 6,
+        validate: validatePetName,
+    });
+    if (name == null || name === pet.name) return;
+    const previousName = pet.name;
+    const previousCount = pet.renameCount;
+    const previousCoins = state.coins;
+    try {
+        pet.name = name;
+        pet.renameCount = renameCount + 1;
+        if (cost) addCoins(-cost);
+        const saved = await savePet(pet);
+        if (!saved) throw new Error('Pet rename was not persisted');
+        if (cost) saveUserProfileDebounced();
+        notify();
+        showToast(cost ? `已改名为 ${name}，消耗 ${cost} 金币` : `已免费改名为 ${name}`, 'success', 1800);
+        if (renameCount === 0) onFirstRenamed?.(pet);
+        onRenamed?.();
+    } catch (error) {
+        pet.name = previousName;
+        pet.renameCount = previousCount;
+        if (cost) addCoins(previousCoins - state.coins);
+        console.error('Failed to rename pet:', error);
+        showToast('改名保存失败，请稍后重试', 'error', 1800);
+    }
+}
+
+function petQualityData(pet) {
+    const fallback = window.MHPetQuality?.getTier?.(pet?.rarity);
+    const quality = pet?.quality || (fallback ? window.MHPetQuality.snapshot(fallback.id) : null);
+    return {
+        quality,
+        stats: { ...(quality?.stats || {}), ...(pet?.battleStats || {}) },
+    };
+}
+
+function petQualityClass(pet) {
+    const qualityId = String(petQualityData(pet).quality?.id || 'N').toLowerCase();
+    return `mh-quality-${/^(n|r|sr|ssr|ur)$/.test(qualityId) ? qualityId : 'n'}`;
+}
+
+function petQualityBadgeHtml(pet) {
+    const { quality } = petQualityData(pet);
+    if (!quality) return '';
+    return `<span class="stage-badge mh-pet-quality-badge ${petQualityClass(pet)}">${escapeHtml(quality.id)} · ${escapeHtml(quality.name)}</span>`;
+}
+
+const GROWTH_STAT_LABELS = Object.freeze({
+    maxHp: '生命上限',
+    maxMp: '魔力上限',
+    attack: '攻击',
+    defense: '防御',
+    magic: '魔法',
+    luck: '幸运',
+});
+
+const GROWTH_MATERIAL_LABELS = Object.freeze({
+    hpShard: '生命碎块',
+    manaDust: '魔力尘',
+    attackCore: '攻击晶核',
+    guardPlate: '守护甲片',
+    stellarEssence: '星核精粹',
+});
+
+const EQUIPMENT_SLOT_LABELS = Object.freeze({ charm: '徽记', core: '晶核', guard: '护甲' });
+
+function isHaqiEquipmentEnabled() {
+    const settlement = state.settings?.starSettlement;
+    const planetId = settlement?.source === 'official' ? settlement.planetId : 'default';
+    return isHaqiExpeditionEnabled(planetId);
+}
+
+function getOwnedEquipment() {
+    const progress = getHaqiExpeditionSettlement(state.settings);
+    const owned = Array.isArray(progress.equipment) ? progress.equipment : [];
+    return [...new Set(owned.filter(id => !!getEquipmentDefinition(id)))];
+}
+
+function ensureStarterEquipment() {
+    if (!isHaqiEquipmentEnabled()) return [];
+    const progress = getHaqiExpeditionSettlement(state.settings);
+    if (!Array.isArray(progress.equipment)) progress.equipment = [...STARTER_EQUIPMENT_IDS];
+    return getOwnedEquipment();
+}
+
+function statPercent(value) {
+    return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function petLineageSectionHtml(pet) {
+    const lineage = Array.isArray(pet?.breeding?.lineage) ? pet.breeding.lineage.filter(Boolean) : [];
+    const hasParentIds = Array.isArray(pet?.parents) && pet.parents.length > 0;
+    if (!lineage.length && !hasParentIds) return '';
+    const isMutation = pet?.mutation?.triggered === true;
+    const parentRoles = ['父代', '母代'];
+    const parentCards = lineage.slice(0, 2).map((parent, index) => {
+        const qualityId = String(parent.qualityId || 'N').toUpperCase();
+        const qualityClass = `mh-quality-${/^(N|R|SR|SSR|UR)$/.test(qualityId) ? qualityId.toLowerCase() : 'n'}`;
+        const specialtyValue = Math.max(0, Math.min(100, Number(parent.specialtyValue) || 0));
+        return `<article class="mh-lineage-parent-card ${qualityClass}">
+            <span class="mh-lineage-parent-role">${parentRoles[index]}</span>
+            <div class="mh-lineage-parent-main">
+                <span class="mh-lineage-quality-badge">${escapeHtml(qualityId)}</span>
+                <strong title="${escapeHtml(parent.name || '哈奇伙伴')}">${escapeHtml(parent.name || '哈奇伙伴')}</strong>
+            </div>
+            <span class="mh-lineage-parent-meta">${escapeHtml(getStageName(parent.stage, parent.stage || '成年'))} · ${escapeHtml(parent.bloodline || '血统未显现')}</span>
+            <span class="mh-lineage-parent-trait">擅长 ${escapeHtml(parent.specialty || '未记录')} ${specialtyValue}</span>
+        </article>`;
+    }).join('');
+    const archiveNote = lineage.length < 2
+        ? '亲代档案残缺，暂未保存完整双亲资质快照。'
+        : '已保存双亲资质快照。';
+    const statusTitle = isMutation ? 'UR 基因突变已记录' : '正常遗传';
+    const statusDetail = isMutation ? '该宠物继承了可追溯的突变增幅。' : '基因稳定传承，适合继续观察资质走向。';
+    return `<section class="mh-pet-stats-section mh-lineage-section">
+        <div class="mh-pet-stats-section-head"><span>血统档案</span><b>${lineage.length >= 2 ? '双亲已归档' : '档案残缺'}</b></div>
+        <div class="mh-lineage-card ${isMutation ? 'is-mutation' : ''}">
+            <div class="mh-lineage-status">
+                <span class="mh-lineage-status-icon">${isMutation ? '✦' : '◎'}</span>
+                <div><strong>${statusTitle}</strong><small>${statusDetail}</small></div>
+            </div>
+            ${parentCards ? `<div class="mh-lineage-parent-grid">${parentCards}</div>` : ''}
+            <p class="mh-lineage-archive-note">${archiveNote}</p>
+        </div>
+    </section>`;
+}
+
+function openPetStatsModal(pet) {
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask mh-pet-stats-mask';
+    let upgrading = false;
+
+    const render = () => {
+        upgradePetData(pet);
+        const { quality } = petQualityData(pet);
+        const life = pet.lifeStats;
+        const readiness = calculateExpeditionReadiness(life);
+        const battle = pet.battle;
+        const equipmentEnhancements = getHaqiExpeditionSettlement(state.settings).equipmentEnhancements || {};
+        const derived = calculateDerivedStats(pet, { includeEquipment: isHaqiEquipmentEnabled(), equipmentEnhancements });
+        const baseBattleMultiplier = Number(pet?.baseBattleMultiplier ?? pet?.mutation?.baseBattleMultiplier) || 1;
+        const growthMultiplier = Number(pet?.growthMultiplier ?? pet?.mutation?.growthMultiplier) || 1;
+        const mutationBonus = baseBattleMultiplier > 1 || growthMultiplier > 1
+            ? `<div class="mh-pet-mutation-bonus">变异增幅：基础战力 ×${baseBattleMultiplier} · 成长上限 ×${growthMultiplier}</div>`
+            : '';
+        const growthProfile = getPetGrowthProfile(pet);
+        const growthSpecialty = GROWTH_STAT_LABELS[growthProfile.specialty] || '均衡';
+        const experienceNeeded = getExperienceToNextLevel(battle.level);
+        const experiencePercent = Math.min(100, Math.round(battle.experience / experienceNeeded * 100));
+        const lifeRows = [
+            ['精力', life.energy], ['心情', life.mood], ['清洁', life.clean], ['羁绊', life.bond],
+        ].map(([label, value]) => `<div class="mh-pet-life-row"><span>${label}</span><div class="mh-pet-life-meter"><i style="width:${statPercent(value)}%"></i></div><b>${statPercent(value)}</b></div>`).join('');
+        const battleRows = Object.entries(GROWTH_STAT_LABELS).map(([statName, label]) => {
+            const materialId = getGrowthMaterialId(statName);
+            const materialKey = `expedition_material_${materialId}`;
+            const available = Math.max(0, Number(state.inventory?.[materialKey]) || 0);
+            const growth = battle.growthStats[statName];
+            const cap = getGrowthCap(pet, statName);
+            const capped = !canApplyGrowthMaterial(pet, statName);
+            const materialLabel = GROWTH_MATERIAL_LABELS[materialId] || materialId;
+            return `<div class="mh-pet-battle-row">
+                <div><span>${label}</span><b>${derived[statName]}</b></div>
+                <div class="mh-pet-growth-controls"><small>成长 ${growth}/${cap}</small><button type="button" data-growth-stat="${statName}" ${capped ? 'disabled' : ''} title="消耗 1 个${escapeHtml(materialLabel)}">+</button><em>${available}</em></div>
+            </div>`;
+        }).join('');
+        const ownedEquipment = ensureStarterEquipment();
+        const equipped = normalizeEquipment(battle.equipment);
+        const equipmentSlots = isHaqiEquipmentEnabled() ? EQUIPMENT_SLOTS.map(slot => {
+            const definition = getEquipmentDefinition(equipped[slot]);
+            const candidates = ownedEquipment
+                .map(getEquipmentDefinition)
+                .filter(item => item?.slot === slot && item.id !== definition?.id);
+            const slotLabel = EQUIPMENT_SLOT_LABELS[slot];
+            const slotIcon = ({ charm: '✦', core: '◆', guard: '◈' })[slot] || '◇';
+            if (!definition) {
+                return `<div class="mh-equipment-slot mh-equipment-slot-empty">
+                    <div class="mh-equipment-slot-icon" aria-hidden="true">${slotIcon}</div>
+                    <div class="mh-equipment-slot-copy"><span>${escapeHtml(slotLabel)}</span><b>未装备</b><small>等待一件远征装备</small></div>
+                    <div class="mh-equipment-slot-actions">${candidates.length ? candidates.map(item => `<button type="button" class="mh-equipment-action" data-equip-item="${item.id}" title="装备 ${escapeHtml(item.name)}">装配 ${equipmentIconHtml(item)}</button>`).join('') : '<em>暂无可用装备</em>'}</div>
+                </div>`;
+            }
+            const level = getEquipmentLevel(equipmentEnhancements, definition.id);
+            const upgradeCost = getEquipmentUpgradeCost(equipmentEnhancements, definition.id);
+            const [mainStatKey, mainStatValue] = Object.entries(definition.stats || {})[0] || [];
+            const mainStatLabel = mainStatKey ? `${GROWTH_STAT_LABELS[mainStatKey] || mainStatKey} +${mainStatValue}` : '无固定属性';
+            return `<div class="mh-equipment-slot mh-equipment-slot-equipped mh-equipment-quality-${escapeHtml(String(definition.quality || 'N').toLowerCase())}">
+                <div class="mh-equipment-slot-icon mh-equipment-slot-icon-upgraded" aria-hidden="true">${equipmentIconHtml(definition)}${equipmentUpgradeFrameHtml(level)}</div>
+                <div class="mh-equipment-slot-copy"><span>${escapeHtml(slotLabel)}</span><b>${escapeHtml(definition.name)}</b><small>${escapeHtml(definition.quality)} · ${escapeHtml(mainStatLabel)}</small></div>
+                <div class="mh-equipment-slot-level"><strong>+${level}</strong><small>强化</small></div>
+                <div class="mh-equipment-slot-actions"><button type="button" class="mh-equipment-action" data-upgrade-equipment="${definition.id}" ${upgradeCost ? `title="消耗 ${upgradeCost} 星核精粹强化"` : 'disabled title="已达到强化上限"'}>${upgradeCost ? '强化' : '满级'}</button><button type="button" class="mh-equipment-action mh-equipment-action-remove" data-unequip-slot="${slot}" title="卸下 ${escapeHtml(definition.name)}">卸下</button>${candidates.map(item => `<button type="button" class="mh-equipment-action mh-equipment-action-swap" data-equip-item="${item.id}" title="替换为 ${escapeHtml(item.name)}">换 ${equipmentIconHtml(item)}</button>`).join('')}</div>
+            </div>`;
+        }).join('') : '';
+        const equipmentSection = isHaqiEquipmentEnabled() ? `<section class="mh-pet-stats-section"><div class="mh-pet-stats-section-head"><span>远征装备</span><b>${ownedEquipment.length} 件</b></div><div class="mh-pet-readiness">装备固定值先计入属性，百分比效果最后结算。</div><div class="mh-equipment-slots">${equipmentSlots}</div></section>` : '';
+        const lineageSection = petLineageSectionHtml(pet);
+        mask.innerHTML = `<div class="modal-card mh-pet-stats-card">
+            <button class="mh-rare-modal-close" data-pet-stats-close type="button" aria-label="关闭">×</button>
+            <div class="mh-pet-stats-title">${escapeHtml(displayPetName(pet))}</div>
+            ${quality ? `<div class="mh-pet-quality-pill ${petQualityClass(pet)}">${escapeHtml(quality.id)} · ${escapeHtml(quality.name)}品质</div>` : ''}
+            <div class="mh-pet-stats-scroll">
+                <section class="mh-pet-stats-section">
+                    <div class="mh-pet-stats-section-head"><span>家园生活</span><b>${escapeHtml(readiness.tier)}</b></div>
+                    <div class="mh-pet-life-grid">${lifeRows}</div>
+                    <div class="mh-pet-readiness">远征状态：<b>${escapeHtml(readiness.tier)}</b><span>${readiness.score} / 100</span></div>
+                </section>
+                <section class="mh-pet-stats-section">
+                    <div class="mh-pet-stats-section-head"><span>永久战斗</span><b>LV.${battle.level}</b></div>
+                    <div class="mh-pet-growth-profile">物种倾向：<b>${escapeHtml(growthSpecialty)}</b><span>品质决定主强度</span></div>
+                    ${mutationBonus}
+                    <div class="mh-pet-exp-head"><span>经验 ${battle.experience} / ${experienceNeeded}</span><span>${experiencePercent}%</span></div>
+                    <div class="mh-pet-exp-bar"><i style="width:${experiencePercent}%"></i></div>
+                    <div class="mh-pet-battle-grid">${battleRows}</div>
+                </section>
+                ${lineageSection}
+                ${equipmentSection}
+            </div>
+        </div>`;
+    };
+
+    render();
+    mask.addEventListener('click', event => {
+        if (event.target === mask || event.target.closest?.('[data-pet-stats-close]')) mask.remove();
+    });
+    mask.addEventListener('click', async event => {
+        const button = event.target.closest?.('[data-growth-stat], [data-equip-item], [data-unequip-slot], [data-upgrade-equipment]');
+        if (!button || upgrading) return;
+        const equipmentId = button.dataset.equipItem;
+        const equipmentSlot = button.dataset.unequipSlot;
+        const upgradeEquipmentId = button.dataset.upgradeEquipment;
+        if (upgradeEquipmentId) {
+            const progress = getHaqiExpeditionSettlement(state.settings);
+            const cost = getEquipmentUpgradeCost(progress.equipmentEnhancements, upgradeEquipmentId);
+            const materialKey = 'expedition_material_stellarEssence';
+            const available = Math.max(0, Number(state.inventory?.[materialKey]) || 0);
+            if (!cost) { showToast('该装备已达到强化上限', 'info', 1600); return; }
+            if (available < cost) { showToast(`强化需要 ${cost} 个星核精粹`, 'info', 1600); return; }
+            upgrading = true;
+            const previousLevels = { ...(progress.equipmentEnhancements || {}) };
+            const previousInventoryValue = state.inventory[materialKey];
+            try {
+                progress.equipmentEnhancements = { ...previousLevels, [upgradeEquipmentId]: getEquipmentLevel(previousLevels, upgradeEquipmentId) + 1 };
+                state.inventory[materialKey] = available - cost;
+                if (state.inventory[materialKey] <= 0) delete state.inventory[materialKey];
+                pet.battleStats = calculateDerivedStats(pet, { includeEquipment: true, equipmentEnhancements: progress.equipmentEnhancements });
+                await savePet(pet);
+                saveInventoryDebounced();
+                saveUserProfileDebounced();
+                notify();
+                showToast(`${getEquipmentDefinition(upgradeEquipmentId).name}强化成功`, 'success', 1600);
+                render();
+            } catch (error) {
+                progress.equipmentEnhancements = previousLevels;
+                if (previousInventoryValue === undefined) delete state.inventory[materialKey];
+                else state.inventory[materialKey] = previousInventoryValue;
+                console.error('Failed to upgrade pet equipment:', error);
+                showToast('装备强化保存失败，请稍后重试', 'error', 1800);
+            } finally {
+                upgrading = false;
+            }
+            return;
+        }
+        if (equipmentId || equipmentSlot) {
+            upgrading = true;
+            try {
+                const changed = equipmentId ? equipItem(pet, equipmentId, getOwnedEquipment()) : unequipSlot(pet, equipmentSlot);
+                if (!changed) return;
+                pet.battleStats = calculateDerivedStats(pet, { includeEquipment: isHaqiEquipmentEnabled(), equipmentEnhancements: getHaqiExpeditionSettlement(state.settings).equipmentEnhancements || {} });
+                await savePet(pet);
+                saveUserProfileDebounced();
+                notify();
+                showToast(equipmentId ? '装备已装配，远征属性已更新' : '装备已卸下', 'success', 1500);
+                render();
+            } catch (error) {
+                console.error('Failed to update pet equipment:', error);
+                showToast('装备保存失败，请稍后重试', 'error', 1800);
+            } finally {
+                upgrading = false;
+            }
+            return;
+        }
+        const statName = button.dataset.growthStat;
+        const materialId = getGrowthMaterialId(statName);
+        const materialKey = `expedition_material_${materialId}`;
+        const available = Math.max(0, Number(state.inventory?.[materialKey]) || 0);
+        if (available < 1) {
+            showToast(`缺少${GROWTH_MATERIAL_LABELS[materialId] || '强化材料'}`, 'info', 1600);
+            return;
+        }
+        if (!canApplyGrowthMaterial(pet, statName)) {
+            showToast(`${GROWTH_STAT_LABELS[statName]}已达到成长上限`, 'info', 1600);
+            return;
+        }
+        upgrading = true;
+        button.disabled = true;
+        const previousGrowth = pet.battle.growthStats[statName];
+        const previousInventoryValue = state.inventory[materialKey];
+        try {
+            if (!applyGrowthMaterial(pet, statName, 1)) {
+                showToast('强化未生效，请稍后重试', 'error', 1800);
+                return;
+            }
+            state.inventory[materialKey] = available - 1;
+            if (state.inventory[materialKey] <= 0) delete state.inventory[materialKey];
+            await savePet(pet);
+            saveInventoryDebounced();
+            notify();
+            showToast(`${GROWTH_STAT_LABELS[statName]} +1`, 'success', 1400);
+            render();
+        } catch (error) {
+            pet.battle.growthStats[statName] = previousGrowth;
+            pet.battleStats = calculateDerivedStats(pet);
+            if (previousInventoryValue === undefined) delete state.inventory[materialKey];
+            else state.inventory[materialKey] = previousInventoryValue;
+            console.error('Failed to apply pet growth material:', error);
+            showToast('强化保存失败，请稍后重试', 'error', 1800);
+        } finally {
+            upgrading = false;
+        }
+    });
+    document.body.appendChild(mask);
+}
 
 function _stageReachedIndex(stage) {
     const idx = ALBUM_STAGES.findIndex(s => s.id === stage);
@@ -590,9 +964,39 @@ function ensurePetListTabStyles() {
     const style = document.createElement('style');
     style.id = 'mh-pet-list-tab-styles';
     style.textContent = `
-        .mh-pet-card-title-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap; }
-        .mh-pet-card-name { color:var(--text-primary); min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .mh-pet-card-location-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+        .mh-pet-card { position:relative; display:grid; grid-template-columns:188px minmax(220px, 360px) minmax(132px, 1fr); gap:22px; align-items:center; min-height:142px; padding:16px 20px; overflow:hidden; border:0; border-radius:16px; background:#fff; box-shadow:0 4px 20px rgba(0,0,0,.06); }
+        .mh-pet-card:hover { transform:translateY(-2px); box-shadow:0 10px 28px rgba(15,23,42,.1); }
+        .mh-pet-card.mh-pet-card-current, .mh-pet-card.mh-pet-card-picked { box-shadow:0 0 0 2px var(--accent), 0 8px 24px rgba(14,165,233,.16); }
+        .mh-pet-card-identity { display:grid; grid-template-columns:88px minmax(0, 1fr); align-items:center; gap:12px; min-width:0; }
+        .mh-pet-card-avatar { position:relative; width:88px; height:88px; aspect-ratio:1 / 1; flex:0 0 88px; padding:4px; border-radius:20px; background:var(--mh-avatar-gradient, linear-gradient(135deg,#e2e8f0,#cbd5e1)); box-shadow:0 5px 14px var(--mh-quality-glow); }
+        .mh-pet-card-avatar .mh-pet-avatar-frame { width:100%; height:100%; border:0; border-radius:16px; background:rgba(255,255,255,.54); box-shadow:inset 0 1px rgba(255,255,255,.8); }
+        .mh-pet-card-identity-copy { display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-width:0; line-height:1.35; }
+        .mh-pet-card-info { width:100%; max-width:360px; min-width:0; }
+        .mh-pet-card-title-row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        .mh-pet-card-name { color:#1e293b; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:18px; font-weight:900; }
+        .mh-pet-card-location-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
+        .mh-pet-card .stage-badge { border:0; border-radius:999px; padding:4px 8px; font-size:10px; font-weight:900; }
+        .mh-pet-card .mh-pet-quality-badge { background:var(--mh-quality-color); color:#fff; box-shadow:0 3px 7px var(--mh-quality-glow); }
+        .mh-pet-card-meta { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; color:#718096; font-size:11px; line-height:1.5; }
+        .mh-pet-card-dna { overflow:hidden; margin-bottom:10px; color:#999; font-family:ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.2px; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-pet-vitals { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; max-width:400px; }
+        .mh-pet-vital { display:grid; grid-template-columns:auto minmax(0, 1fr); align-items:center; gap:5px; color:#64748b; font-size:12px; }
+        .mh-pet-vital-bar { height:9px; overflow:hidden; border-radius:999px; background:#e8eef2; box-shadow:inset 0 1px 2px rgba(15,23,42,.08); }
+        .mh-pet-vital-bar i { display:block; height:100%; border-radius:inherit; }
+        .mh-pet-vital-energy i { background:linear-gradient(90deg,#8de34f,#2dbf71); }
+        .mh-pet-vital-mood i { background:linear-gradient(90deg,#ffc24d,#ff8b48); }
+        .mh-pet-card-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-content:center; justify-self:end; gap:7px; max-width:156px; min-width:132px; }
+        .mh-pet-icon-action { display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:12px; background:#f1f7fb; color:#4d7188; font-size:17px; line-height:1; cursor:pointer; box-shadow:0 2px 5px rgba(15,23,42,.06); }
+        .mh-pet-icon-action:hover { background:#dff5ff; color:#087da9; transform:translateY(-1px); }
+        .mh-pet-primary-action { display:inline-flex; align-items:center; justify-content:center; min-width:88px; height:38px; padding:0 13px; border:0; border-radius:999px; background:linear-gradient(135deg,#22b8e6,#2587dd); color:#fff; font-size:12px; font-weight:900; cursor:pointer; box-shadow:0 5px 12px rgba(37,135,221,.25); }
+        .mh-pet-primary-action:hover { transform:translateY(-1px); box-shadow:0 8px 16px rgba(37,135,221,.32); }
+        .mh-pet-card-delete { position:absolute; top:9px; right:10px; width:25px; height:25px; border-radius:50%; font-size:16px; }
+        .mh-pet-card-dispatching .mh-pet-card-avatar, .mh-pet-card-dispatching .mh-pet-card-actions { filter:grayscale(.82); opacity:.52; }
+        .mh-pet-card-dispatching .mh-pet-card-actions { pointer-events:none; }
+        .mh-pet-dispatch-stamp { position:absolute; z-index:3; top:-8px; left:-10px; padding:5px 8px; border:2px solid #475569; border-radius:7px; background:rgba(255,255,255,.94); color:#334155; font-size:10px; font-weight:900; letter-spacing:.5px; box-shadow:0 3px 8px rgba(15,23,42,.12); transform:rotate(-8deg); white-space:nowrap; }
+        @media (min-width:768px) { .mh-pet-card { grid-template-columns:280px minmax(0,1fr) 200px; gap:24px; min-height:136px; } .mh-pet-card-identity { grid-template-columns:88px minmax(0,1fr); justify-self:start; width:100%; } .mh-pet-card-identity-copy { justify-content:center; } .mh-pet-card-title-row { align-items:center; gap:8px; } .mh-pet-card-info { justify-self:start; max-width:none; } .mh-pet-vitals { grid-template-columns:1fr; width:100%; max-width:400px; } .mh-pet-card-actions { justify-self:end; align-self:center; justify-content:flex-end; width:200px; max-width:200px; } }
+        @media (max-width:700px) { .mh-pet-card { grid-template-columns:minmax(0,1fr) auto; gap:14px; } .mh-pet-card-identity { grid-column:1; } .mh-pet-card-info { grid-column:1; grid-row:2; } .mh-pet-card-actions { grid-column:2; grid-row:1 / span 2; } }
+        @media (max-width:460px) { .mh-pet-card { grid-template-columns:minmax(0,1fr); padding:14px; } .mh-pet-card-avatar { width:76px; height:76px; border-radius:16px; } .mh-pet-card-avatar .mh-pet-avatar-frame { border-radius:12px; } .mh-pet-card-name { font-size:16px; } .mh-pet-card-actions { grid-column:1; grid-row:auto; justify-self:stretch; max-width:none; justify-content:flex-end; } .mh-pet-vitals { grid-template-columns:1fr; gap:5px; } .mh-pet-dispatch-stamp { left:42px; } }
         .mh-pet-list-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:12px; }
         .mh-pet-list-tab { height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#effaff; color:var(--text-secondary); font-size:13px; font-weight:900; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.78); }
         .mh-pet-list-tab.active { background:linear-gradient(135deg, var(--accent-light), var(--accent-dark)); color:#fff; border-color:var(--accent); text-shadow:0 1px 0 rgba(15,23,42,0.45); }
@@ -606,6 +1010,9 @@ function ensurePetListTabStyles() {
         .mh-rare-pet-card { appearance:none; font:inherit; cursor:pointer; min-height:184px; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
         .mh-rare-pet-card:hover { transform:translateY(-2px); border-color:var(--accent); }
         .mh-rare-pet-card.is-locked { filter:saturate(.75); }
+        .mh-rare-pet-card.is-locked .mh-rare-pet-portrait { position:relative; background:linear-gradient(145deg, #e5f2f7, #c5dce8); }
+        .mh-rare-pet-card.is-locked .mh-rare-pet-portrait .mh-pet-art { background-color:transparent !important; filter:brightness(0) contrast(1.2) drop-shadow(0 4px 4px rgba(15,23,42,.2)); opacity:.86; transform:scale(.9); }
+        .mh-rare-pet-card.is-locked .mh-rare-pet-portrait::after { content:'?'; position:absolute; right:7px; bottom:5px; width:22px; height:22px; display:grid; place-items:center; border:2px solid #f8fdff; border-radius:50%; background:#3d6377; color:#fff; font-size:15px; font-weight:900; line-height:1; box-shadow:0 2px 5px rgba(15,23,42,.22); }
         .mh-rare-pet-portrait { width:96px; height:96px; border-radius:16px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; box-shadow:inset 0 2px 8px rgba(14,116,144,0.16); }
         .mh-rare-pet-unknown { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:48px; font-weight:900; background:linear-gradient(135deg, #f8fafc, #dbeafe); }
         .mh-rare-pet-info { width:100%; min-width:0; display:flex; flex-direction:column; gap:6px; }
@@ -630,6 +1037,94 @@ function ensurePetListTabStyles() {
         .mh-rare-modal-actions { flex:0 0 auto; display:flex; justify-content:flex-end; gap:8px; padding-top:10px; border-top:1px dashed #d4d4d8; }
         .mh-rare-modal-actions .btn-primary { min-width:128px; }
         .mh-rare-modal-actions .hud-coin-icon { width:15px; height:15px; }
+        .mh-pet-stats-mask { zoom:1 !important; align-items:center; height:100dvh; padding:16px; overflow:hidden; }
+        .mh-pet-stats-card { position:relative; box-sizing:border-box; width:min(360px, calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:22px; overflow:hidden; display:flex; flex-direction:column; }
+        .mh-pet-stats-card .mh-rare-modal-close { position:absolute; top:10px; right:10px; }
+        .mh-pet-stats-title { color:var(--text-primary); font-size:18px; font-weight:900; padding-right:34px; }
+        .mh-pet-quality-pill, .mh-pet-quality-badge { --mh-quality-color:#94a3b8; --mh-quality-tint:#f1f5f9; --mh-quality-glow:transparent; }
+        .mh-pet-quality-pill { display:inline-flex; align-self:flex-start; margin:10px 0 14px; padding:5px 9px; border:1px solid var(--mh-quality-color); border-radius:999px; background:var(--mh-quality-tint); color:var(--mh-quality-color); font-size:12px; font-weight:900; box-shadow:0 0 0 1px rgba(255,255,255,.72) inset; }
+        .mh-pet-quality-badge { background:var(--mh-quality-tint); color:var(--mh-quality-color); border:1px solid var(--mh-quality-color); font-weight:900; }
+        .mh-quality-n { --mh-quality-color:#64748b; --mh-quality-tint:#f1f5f9; --mh-quality-glow:rgba(100,116,139,.12); --mh-avatar-gradient:linear-gradient(135deg,#e2e8f0,#cbd5e1); }
+        .mh-quality-r { --mh-quality-color:#16a34a; --mh-quality-tint:#ecfdf3; --mh-quality-glow:rgba(22,163,74,.16); --mh-avatar-gradient:linear-gradient(135deg,#bbf7d0,#4ade80); }
+        .mh-quality-sr { --mh-quality-color:#0891b2; --mh-quality-tint:#ecfeff; --mh-quality-glow:rgba(8,145,178,.18); --mh-avatar-gradient:linear-gradient(135deg,#a5f3fc,#60a5fa); }
+        .mh-quality-ssr { --mh-quality-color:#9333ea; --mh-quality-tint:#faf5ff; --mh-quality-glow:rgba(147,51,234,.22); --mh-avatar-gradient:linear-gradient(135deg,#e9d5ff,#a855f7); }
+        .mh-quality-ur { --mh-quality-color:#d97706; --mh-quality-tint:#fffbeb; --mh-quality-glow:rgba(217,119,6,.32); --mh-avatar-gradient:linear-gradient(135deg,#fef08a,#f59e0b 48%,#fb7185 75%,#a78bfa); }
+        .mh-pet-avatar-frame { border:2px solid var(--mh-quality-color); box-shadow:0 0 0 2px rgba(255,255,255,.78) inset, 0 3px 10px var(--mh-quality-glow); }
+        .mh-pet-card-quality { border-color:color-mix(in srgb, var(--mh-quality-color) 38%, var(--border-card)); }
+        .mh-pet-card.mh-pet-card-quality.mh-quality-ur { box-shadow:0 0 0 1px rgba(255,255,255,.86) inset, 0 4px 20px var(--mh-quality-glow), 0 8px 24px rgba(15,23,42,.08); }
+        .mh-pet-stats-scroll { min-height:0; max-height:min(520px, calc(100dvh - 118px)); overflow-y:auto; padding-right:2px; }
+        .mh-pet-stats-section { padding:12px 0; border-top:1px solid var(--border-card); }
+        .mh-pet-stats-section:first-child { border-top:0; padding-top:0; }
+        .mh-pet-stats-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; color:var(--text-primary); font-size:14px; font-weight:900; }
+        .mh-pet-stats-section-head b { color:var(--accent-dark); font-size:12px; }
+        .mh-pet-life-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+        .mh-pet-life-row { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center; gap:6px; padding:8px; border:1px solid var(--border-card); border-radius:8px; background:#effaff; color:var(--text-secondary); font-size:11px; }
+        .mh-pet-life-row b { color:var(--text-primary); font-size:12px; }
+        .mh-pet-life-meter { height:5px; overflow:hidden; border-radius:999px; background:#dbeafe; }
+        .mh-pet-life-meter i, .mh-pet-exp-bar i { display:block; height:100%; border-radius:inherit; background:#38bdf8; }
+        .mh-pet-readiness { display:flex; gap:6px; margin-top:9px; color:var(--text-muted); font-size:12px; }
+        .mh-pet-readiness b { color:var(--accent-dark); }
+        .mh-pet-readiness span { margin-left:auto; }
+        .mh-pet-exp-head { display:flex; justify-content:space-between; margin-bottom:5px; color:var(--text-muted); font-size:11px; }
+        .mh-pet-growth-profile { display:flex; align-items:center; gap:5px; margin:-2px 0 9px; color:var(--text-muted); font-size:11px; }
+        .mh-pet-growth-profile b { color:var(--accent-dark); }
+        .mh-pet-growth-profile span { margin-left:auto; white-space:nowrap; font-size:10px; }
+        .mh-pet-exp-bar { height:7px; overflow:hidden; border-radius:999px; background:#e0f2fe; }
+        .mh-pet-battle-grid { display:grid; gap:7px; margin-top:10px; }
+        .mh-pet-battle-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 9px; border:1px solid var(--border-card); border-radius:8px; background:#f8fafc; }
+        .mh-pet-battle-row > div:first-child { display:flex; align-items:baseline; gap:8px; color:var(--text-secondary); font-size:12px; }
+        .mh-pet-battle-row > div:first-child b { color:var(--text-primary); font-size:16px; }
+        .mh-lineage-card { display:grid; gap:9px; padding:10px; border:1px solid #bae6fd; border-radius:8px; background:#f0f9ff; }
+        .mh-lineage-card.is-mutation { border-color:#fcd34d; background:#fffbeb; box-shadow:0 2px 8px rgba(217,119,6,.12); }
+        .mh-lineage-status { display:flex; align-items:center; gap:8px; min-width:0; }
+        .mh-lineage-status-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background:#e0f2fe; color:#0e7490; font-size:17px; font-weight:900; }
+        .mh-lineage-card.is-mutation .mh-lineage-status-icon { background:#fef3c7; color:#b45309; }
+        .mh-lineage-status div { min-width:0; display:grid; gap:2px; }
+        .mh-lineage-status strong { color:var(--text-primary); font-size:12px; }
+        .mh-lineage-status small { color:var(--text-muted); font-size:10px; line-height:1.35; }
+        .mh-lineage-parent-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:7px; }
+        .mh-lineage-parent-card { min-width:0; display:grid; gap:3px; padding:8px; border:1px solid var(--mh-quality-color); border-radius:8px; background:var(--mh-quality-tint); }
+        .mh-lineage-parent-role { color:var(--text-muted); font-size:10px; font-weight:900; }
+        .mh-lineage-parent-main { min-width:0; display:flex; align-items:center; gap:5px; }
+        .mh-lineage-quality-badge { flex:0 0 auto; padding:2px 4px; border:1px solid var(--mh-quality-color); border-radius:4px; color:var(--mh-quality-color); font-size:9px; font-weight:900; }
+        .mh-lineage-parent-main strong { overflow:hidden; color:var(--text-primary); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-lineage-parent-meta, .mh-lineage-parent-trait { overflow:hidden; color:var(--text-muted); font-size:10px; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-lineage-parent-trait { color:var(--mh-quality-color); font-weight:800; }
+        .mh-lineage-archive-note { margin:0; color:var(--text-muted); font-size:10px; line-height:1.4; }
+        .mh-pet-growth-controls { display:flex; align-items:center; gap:6px; color:var(--text-muted); }
+        .mh-pet-growth-controls small { font-size:10px; }
+        .mh-pet-growth-controls button { width:25px; height:25px; padding:0; border:1px solid #38bdf8; border-radius:50%; background:#ecfeff; color:#0e7490; font-size:18px; line-height:1; cursor:pointer; }
+        .mh-pet-growth-controls button:disabled { border-color:#cbd5e1; background:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
+        .mh-pet-growth-controls em { min-width:14px; color:var(--text-primary); font-size:11px; font-style:normal; font-weight:900; text-align:right; }
+        .mh-equipment-slots { display:grid; gap:8px; margin-top:10px; }
+        .mh-equipment-slot { --mh-equipment-color:#64748b; --mh-equipment-tint:#f8fafc; display:grid; grid-template-columns:40px minmax(0, 1fr) auto auto; align-items:center; gap:8px; min-height:68px; padding:8px; border:1px solid var(--mh-equipment-color); border-radius:8px; background:var(--mh-equipment-tint); }
+        .mh-equipment-slot-icon { width:40px; height:40px; display:grid; place-items:center; border:1px solid color-mix(in srgb, var(--mh-equipment-color) 45%, #fff); border-radius:8px; background:rgba(255,255,255,.78); color:var(--mh-equipment-color); font-size:24px; font-weight:900; box-shadow:0 1px 3px rgba(15,23,42,.08); }
+        .mh-equipment-slot-icon-upgraded { position:relative; isolation:isolate; overflow:hidden; }
+        .mh-equipment-image { display:grid; place-items:center; width:1.5em; height:1.5em; vertical-align:middle; }
+        .mh-equipment-image img { display:block; width:100%; height:100%; object-fit:contain; }
+        .mh-equipment-slot-icon .mh-equipment-image { position:relative; z-index:1; width:100%; height:100%; }
+        .mh-equipment-upgrade-frame { position:absolute; z-index:2; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+        .mh-equipment-slot-copy { min-width:0; display:grid; gap:2px; }
+        .mh-equipment-slot-copy span { color:var(--text-muted); font-size:10px; font-weight:900; }
+        .mh-equipment-slot-copy b { overflow:hidden; color:var(--text-primary); font-size:13px; font-weight:900; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-equipment-slot-copy small { overflow:hidden; color:var(--mh-equipment-color); font-size:10px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-equipment-slot-level { display:grid; justify-items:center; min-width:28px; color:var(--mh-equipment-color); }
+        .mh-equipment-slot-level strong { font-size:15px; line-height:1; }
+        .mh-equipment-slot-level small { margin-top:3px; color:var(--text-muted); font-size:9px; font-weight:800; }
+        .mh-equipment-slot-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; max-width:106px; }
+        .mh-equipment-action { min-width:34px; height:25px; padding:0 6px; border:1px solid color-mix(in srgb, var(--mh-equipment-color) 48%, #fff); border-radius:6px; background:rgba(255,255,255,.78); color:var(--mh-equipment-color); font-size:10px; font-weight:900; cursor:pointer; }
+        .mh-equipment-action:disabled { border-color:#cbd5e1; background:#f1f5f9; color:#94a3b8; cursor:default; }
+        .mh-equipment-action-remove { color:#be123c; border-color:#fecdd3; }
+        .mh-equipment-action-swap { color:#0e7490; border-color:#a5f3fc; }
+        .mh-equipment-slot-empty { grid-template-columns:40px minmax(0, 1fr) auto; border-style:dashed; border-color:#cbd5e1; background:#f8fafc; }
+        .mh-equipment-slot-empty .mh-equipment-slot-icon { border-style:dashed; color:#94a3b8; }
+        .mh-equipment-slot-empty .mh-equipment-slot-copy b, .mh-equipment-slot-empty .mh-equipment-slot-copy small { color:#94a3b8; }
+        .mh-equipment-slot-empty .mh-equipment-slot-actions em { color:#94a3b8; font-size:10px; font-style:normal; font-weight:800; }
+        .mh-equipment-quality-r { --mh-equipment-color:#16a34a; --mh-equipment-tint:#f0fdf4; }
+        .mh-equipment-quality-sr { --mh-equipment-color:#0891b2; --mh-equipment-tint:#ecfeff; }
+        .mh-equipment-quality-ssr { --mh-equipment-color:#9333ea; --mh-equipment-tint:#faf5ff; }
+        .mh-equipment-quality-ur { --mh-equipment-color:#d97706; --mh-equipment-tint:#fffbeb; box-shadow:0 2px 8px rgba(217,119,6,.16); }
+        @media (max-width:420px) { .mh-equipment-slot { grid-template-columns:36px minmax(0, 1fr) auto; gap:7px; } .mh-equipment-slot-icon { width:36px; height:36px; font-size:21px; } .mh-equipment-slot-level { grid-column:2; grid-row:2; justify-items:start; display:flex; gap:4px; align-items:baseline; } .mh-equipment-slot-level small { margin:0; } .mh-equipment-slot-actions { grid-column:3; grid-row:1 / span 2; max-width:74px; } .mh-equipment-slot-empty .mh-equipment-slot-actions { grid-column:3; grid-row:auto; } .mh-lineage-parent-grid { grid-template-columns:1fr; } .mh-lineage-parent-card { grid-template-columns:auto minmax(0, 1fr); column-gap:7px; } .mh-lineage-parent-role { grid-column:1; grid-row:1 / span 3; writing-mode:vertical-rl; text-orientation:mixed; } .mh-lineage-parent-main, .mh-lineage-parent-meta, .mh-lineage-parent-trait { grid-column:2; } }
         @media (max-width:420px) { .mh-rare-album-grid { gap:12px 8px; } .mh-rare-album-photo { padding:5px; } }
     `;
     document.head.appendChild(style);
@@ -696,49 +1191,55 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
     const sheetReady = !!pet.imageSheetUrl;
     const planetName = window.MH_state?.planetName || '宠物星';
     const location = getPetLocationInfo(pet, planetName);
-    const selectable = !lazy && (isPicker || isPetSelectable(pet));
+    const dispatching = !lazy && isPetDispatching(pet.id);
+    const selectable = !lazy && !dispatching && (isPicker || isPetSelectable(pet));
     const canSelect = (allowSelect || isPicker) && selectable;
     const picked = isPicker && picker.selectedIds?.has?.(pet.id);
     const findTarget = getPetFindTarget(pet);
     const name = lazy ? t('petLazyName', { id: String(pet.id || '').slice(0, 6) }) : displayPetName(pet);
+    const qualityClass = lazy ? '' : petQualityClass(pet);
     const hint = pet.stage === 'egg'
         ? (sheetReady ? t('eggAlmostHatched') : t('eggGrowing'))
         : '';
         return `
-                <div class="card-flat fade-in ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''} ${picked ? 'mh-pet-card-picked' : ''}"
+                <div class="card-flat fade-in mh-pet-card mh-pet-card-quality ${qualityClass} ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''} ${picked ? 'mh-pet-card-picked' : ''} ${dispatching ? 'mh-pet-card-dispatching' : ''}"
                          data-pet-id="${escapeHtml(pet.id)}"
                          ${lazy ? 'data-pet-lazy="1"' : ''}
-                         data-selectable="${canSelect ? '1' : '0'}"
-                         style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};${picked ? 'box-shadow:0 0 0 2px var(--accent) inset;' : ''};opacity:${selectable ? '1' : '.88'};position:relative">
-            ${canDelete && !lazy ? `<button class="btn-secondary" data-delete-pet="${escapeHtml(pet.id)}" title="${escapeHtml(t('exilePetTitle', { name }))}" aria-label="${escapeHtml(t('exilePetTitle', { name }))}" style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;border-radius:50%;font-size:15px;line-height:1;color:#c08497;background:rgba(255,255,255,.72);border-color:rgba(244,114,182,.28);box-shadow:0 1px 3px rgba(15,23,42,.06)">×</button>` : ''}
-            <div style="width:72px;height:72px;border-radius:14px;background:var(--bg-pill);overflow:hidden;flex-shrink:0">
+                         data-selectable="${canSelect ? '1' : '0'}">
+            ${canDelete && !lazy ? `<button class="mh-pet-icon-action mh-pet-card-delete" data-delete-pet="${escapeHtml(pet.id)}" title="${escapeHtml(t('exilePetTitle', { name }))}" aria-label="${escapeHtml(t('exilePetTitle', { name }))}">×</button>` : ''}
+            <div class="mh-pet-card-identity">
+            <div class="mh-pet-card-avatar ${qualityClass}"><div class="mh-pet-avatar-frame ${qualityClass}">
                 ${lazy ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">${escapeHtml(t('petLazyLoading'))}</div>` : rawPetArtHtml(pet, displayPetName(pet))}
-            </div>
-            <div style="flex:1;min-width:0">
+            </div>${dispatching ? '<span class="mh-pet-dispatch-stamp">🔒 勘探中</span>' : ''}</div>
+            <div class="mh-pet-card-identity-copy">
                 <div class="mh-pet-card-title-row">
                     <span class="text-base font-bold mh-pet-card-name">${escapeHtml(name)}</span>
+                    ${lazy ? '' : petQualityBadgeHtml(pet)}
                     ${lazy ? `<span class="stage-badge">${escapeHtml(t('petLazyBadge'))}</span>` : `<span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>`}
                     ${isCurrent ? `<span class="stage-badge" style="background:var(--accent);color:#fff">${escapeHtml(t('currentBadge'))}</span>` : ''}
                 </div>
                 <div class="mh-pet-card-location-row">
                     <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                 </div>
-                <div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
+            </div></div>
+            <div class="mh-pet-card-info">
+                <div class="mh-pet-card-meta">
                     ${lazy ? `<span>${escapeHtml(t('petLazyHint'))}</span>` : `${escapeHtml(t('birthdayDays', { date: getPetBirthday(pet), days: getCompanionDays(pet) }))}`.split(' · ').map(text => `<span>${escapeHtml(text)}</span>`).join('')}
                 </div>
-                ${lazy || isPicker ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
+                ${lazy || isPicker ? '' : `<div class="mh-pet-card-dna">
                     DNA: ${escapeHtml(formatDna(pet.dna || ''))}
                 </div>`}
                 ${hint ? `<div style="font-size:11px;color:var(--text-faint);margin-bottom:4px">${escapeHtml(hint)}</div>` : ''}
-                ${isPicker ? '' : `<div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-secondary)">
-                        <span>⚡</span><div class="stat-bar" style="flex:1"><div style="width:${staminaBar}%;background:#84cc16"></div></div>
-                    <span>😊</span><div class="stat-bar" style="flex:1"><div style="width:${moodBar}%;background:#f59e0b"></div></div>
+                ${isPicker ? '' : `<div class="mh-pet-vitals">
+                    <div class="mh-pet-vital"><span>⚡</span><div class="mh-pet-vital-bar mh-pet-vital-energy"><i style="width:${staminaBar}%"></i></div></div>
+                    <div class="mh-pet-vital"><span>😊</span><div class="mh-pet-vital-bar mh-pet-vital-mood"><i style="width:${moodBar}%"></i></div></div>
                 </div>`}
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;align-self:center;flex-shrink:0">
-                ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${picked ? 'var(--accent)' : '#effaff'};color:${picked ? '#fff' : 'var(--text-secondary)'}">${escapeHtml(picked ? t('pickerSelected') : t('pickerSelect'))}</span>` : ''}
-                ${!isPicker && findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="${escapeHtml(t('findPetTitle', { name }))}" style="padding:7px 10px;font-size:12px">${escapeHtml(t('findPet'))}</button>` : ''}
-                ${!isPicker && !lazy ? `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="${escapeHtml(t('albumBtnTitle', { name }))}" style="padding:7px 10px;font-size:12px">${escapeHtml(t('albumBtn'))}</button>` : ''}
+            <div class="mh-pet-card-actions">
+                ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${dispatching ? '#334155' : picked ? 'var(--accent)' : '#effaff'};color:${dispatching || picked ? '#fff' : 'var(--text-secondary)'}">${escapeHtml(dispatching ? '勘探中' : picked ? t('pickerSelected') : t('pickerSelect'))}</span>` : ''}
+                ${!isPicker && findTarget ? `<button class="mh-pet-icon-action" data-find="${escapeHtml(pet.id)}" title="${escapeHtml(t('findPetTitle', { name }))}" aria-label="${escapeHtml(t('findPetTitle', { name }))}">⌖</button>` : ''}
+                ${!isPicker && !lazy ? `<button class="mh-pet-primary-action" data-pet-stats="${escapeHtml(pet.id)}" title="查看战斗属性" aria-label="查看战斗属性">详情</button><button class="mh-pet-icon-action" data-pet-rename="${escapeHtml(pet.id)}" title="${Math.max(0, Number(pet.renameCount) || 0) ? '改名需要 200 金币' : '首次改名免费'}" aria-label="${Math.max(0, Number(pet.renameCount) || 0) ? '改名需要 200 金币' : '首次改名免费'}">✎</button>` : ''}
+                ${!isPicker && !lazy ? `<button class="mh-pet-icon-action" data-album="${escapeHtml(pet.id)}" title="${escapeHtml(t('albumBtnTitle', { name }))}" aria-label="${escapeHtml(t('albumBtnTitle', { name }))}">▣</button>` : ''}
             </div>
         </div>`;
 }
@@ -784,7 +1285,7 @@ function setupLazyPetCards(panel, onLoadPet, { renderLoadedCard, onCardReady } =
     requestAnimationFrame(check);
 }
 
-export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
+export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
     ensurePetListTabStyles();
     rememberFamousPetFilterScroll(panel);
     const list = sortPetsByRecentBirthday(pets || []);
@@ -814,6 +1315,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:${isPicker && multiple ? '62px' : '0'};overflow-y:auto;padding:14px">
             ${isPicker ? '' : petListTabsHtml({ petCount: list.length, rareUnlockedCount, rareTotalCount: rareList.length })}
+            ${!isPicker && !isRareTab && typeof onResearchRelease === 'function' ? `<button class="btn-secondary" data-research-release type="button" style="width:100%;margin:0 0 10px;padding:9px 12px;font-size:12px">一键研究放归重复 N / R 伙伴</button>` : ''}
             ${isRareTab
                 ? (Array.isArray(famousPetsIndex)
                     ? (rareList.length === 0
@@ -839,24 +1341,26 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
     if (isRareTab) restoreFamousPetFilterScroll(panel);
 
     if ($('mhPetListBack')) $('mhPetListBack').onclick = () => onBack?.();
+    const researchReleaseButton = panel.querySelector('[data-research-release]');
+    if (researchReleaseButton) researchReleaseButton.onclick = () => onResearchRelease?.();
     $$('[data-pet-list-tab]', panel).forEach(el => {
         el.onclick = () => {
             const next = el.dataset.petListTab || 'mine';
             if (activePetListTab === next) return;
             activePetListTab = next;
-            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         };
     });
 
     if (!isPicker && !Array.isArray(famousPetsIndex)) {
         loadFamousPetsIndex().then(() => {
-            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         });
     }
 
     if (isRareTab && needsFamousPetFilterMetadata(famousPetsIndex) && !famousPetsFilterMetadataPromise) {
         loadFamousPetFilterMetadata().then(() => {
-            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         });
     }
 
@@ -865,14 +1369,14 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
             const next = el.dataset.famousPetFilter || 'all';
             if (activeFamousPetFilter === next) return;
             activeFamousPetFilter = FAMOUS_PET_FILTERS.some(filter => filter.id === next) ? next : 'all';
-            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         };
     });
 
     $$('#mhRarePetList [data-rare-pet-id]', panel).forEach(el => {
         el.onclick = () => {
             const entry = rareList.find(item => item.id === el.dataset.rarePetId);
-            if (entry) openRarePetModal(entry, pets || [], () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }));
+            if (entry) openRarePetModal(entry, pets || [], () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }));
         };
     });
 
@@ -893,6 +1397,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
         el.onclick = (e) => {
             if (e.target.closest('[data-find]')) return;
             if (e.target.closest('[data-album]')) return;
+            if (e.target.closest('[data-pet-rename]')) return;
             if (e.target.closest('[data-delete-pet]')) return;
             if (el.dataset.selectable !== '1') return;
             const id = el.dataset.petId;
@@ -911,15 +1416,48 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
             onSelect?.(id);
         };
         const findButton = el.querySelector('[data-find]');
-        if (findButton) findButton.onclick = (e) => {
+        if (findButton) findButton.onclick = async (e) => {
             e.stopPropagation();
-            onFind?.(findButton.dataset.find);
+            const petId = findButton.dataset.find;
+            // VIP：按钮文案为「切换」，直接切换当前宠物。
+            if (state.isPaid) {
+                if (petId === state.currentPetId) {
+                    showToast(t('vipSwitchAlreadyCurrent'), 'info', 1200);
+                    return;
+                }
+                onSelect?.(petId);
+                return;
+            }
+            // 非 VIP：弹窗说明不能切换，可寻找，或去开通会员。
+            const choice = await showVipGateDialog({
+                title: t('vipGateTitle'),
+                message: t('vipGateMessage'),
+                primaryText: t('vipGateBecomeMember'),
+                secondaryText: t('vipGateFindInstead'),
+            });
+            if (choice === 'secondary') onFind?.(petId);
+            else if (choice === 'vip') onBecomeMember?.();
         };
         const albumButton = el.querySelector('[data-album]');
         if (albumButton) albumButton.onclick = (e) => {
             e.stopPropagation();
             const pet = petById.get(albumButton.dataset.album);
             if (pet) openMemoryAlbum(pet);
+        };
+        const statsButton = el.querySelector('[data-pet-stats]');
+        if (statsButton) statsButton.onclick = (e) => {
+            e.stopPropagation();
+            const pet = petById.get(statsButton.dataset.petStats);
+            if (pet) {
+                openPetStatsModal(pet);
+                onInspectPetStats?.(pet);
+            }
+        };
+        const renameButton = el.querySelector('[data-pet-rename]');
+        if (renameButton) renameButton.onclick = async (e) => {
+            e.stopPropagation();
+            const pet = petById.get(renameButton.dataset.petRename);
+            if (pet) await renamePet(pet, () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onResearchRelease, onLoadPet, onBecomeMember, onInspectPetStats, onFirstPetRenamed, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }), onFirstPetRenamed);
         };
         const deleteButton = el.querySelector('[data-delete-pet]');
         if (deleteButton) deleteButton.onclick = (e) => {
