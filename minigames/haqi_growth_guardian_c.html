@@ -582,6 +582,7 @@ art_assets = [];
   let schoolReceiptSyncError = '';
   let publishingSchoolReceipts = false;
   let lastAwardNotificationId = '';
+  let stateWriteConflict = false;
 
   async function loadAwardNotifications(link) {
     if (!link?.sitePath || !link?.studentId || !guardianSdk?.loadPage) return [];
@@ -622,6 +623,9 @@ art_assets = [];
     const childId = `child_${Date.now()}`;
     return {
       version: 2,
+      syncRevision: 0,
+      syncBaseRevision: 0,
+      syncWriterDeviceId: '',
       activeChildId: childId,
       children: [{ id: childId, name: '小小守护者', petName: '哈奇', energy: game_config.initialEnergy, lifetimeStars: 0, createdAt: Date.now(), dailyEnergy: { date: localDateKey(), baseline: game_config.initialEnergy } }],
       petProgress: {},
@@ -639,6 +643,9 @@ art_assets = [];
 
   function normalizeState(parsed) {
     if (!parsed?.children?.length || !Array.isArray(parsed.metrics) || !Array.isArray(parsed.ledger)) return null;
+    parsed.syncRevision = Math.max(0, Number(parsed.syncRevision) || 0);
+    parsed.syncBaseRevision = Math.max(0, Number(parsed.syncBaseRevision) || 0);
+    parsed.syncWriterDeviceId = String(parsed.syncWriterDeviceId || '');
     if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
     if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
     if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
@@ -692,14 +699,50 @@ art_assets = [];
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = 0;
-      queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+      queueStateWrite();
     }, 500);
   }
 
   function persistStateNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    return queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+    return queueStateWrite();
+  }
+
+  function queueStateWrite() {
+    if (stateWriteConflict) {
+      const conflictError = new Error('本设备存在未解决的数据冲突，请刷新页面后重试');
+      toast(`Keepwork 保存失败：${conflictError.message}`);
+      const rejectedWrite = Promise.reject(conflictError);
+      rejectedWrite.catch(() => undefined);
+      return rejectedWrite;
+    }
+    const baseRevision = Math.max(0, Number(state.syncRevision) || 0);
+    state.syncBaseRevision = baseRevision;
+    state.syncRevision = baseRevision + 1;
+    state.syncWriterDeviceId = deviceId;
+    const snapshot = JSON.stringify(state);
+    saveQueue = saveQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const remoteText = await readCloudFile(CLOUD_STATE_PATH);
+        let remoteRevision = 0;
+        try { remoteRevision = Math.max(0, Number(JSON.parse(remoteText || 'null')?.syncRevision) || 0); } catch (_) {}
+        if (remoteRevision > baseRevision) {
+          stateWriteConflict = true;
+          throw new Error('检测到另一设备已更新成长数据，请刷新页面后重试本次操作');
+        }
+        await guardianStore.createFile(CLOUD_STATE_PATH, snapshot);
+        const verifiedText = await readCloudFile(CLOUD_STATE_PATH);
+        let verified = null;
+        try { verified = JSON.parse(verifiedText || 'null'); } catch (_) {}
+        if (Number(verified?.syncRevision) !== baseRevision + 1 || verified?.syncWriterDeviceId !== deviceId) {
+          stateWriteConflict = true;
+          throw new Error('成长数据发生并发写入，当前操作未安全保存，请刷新页面确认');
+        }
+      });
+    saveQueue.catch(error => toast(`Keepwork 保存失败：${error?.message || error}`));
+    return saveQueue;
   }
 
   function queueCloudWrite(path, content) {
@@ -727,6 +770,7 @@ art_assets = [];
       if (!cloudState || !Array.isArray(cloudState.children)) return;
       if (JSON.stringify(cloudState) === JSON.stringify(state)) return;
       state = cloudState;
+      stateWriteConflict = false;
       syncCurrentPetArt();
       if (!focusSession) render();
     } catch (error) {
@@ -977,6 +1021,8 @@ art_assets = [];
         .map(item => ({
           id: String(item?.id || '').trim(),
           name: String(item?.name || item?.id || '').trim(),
+          dna: String(item?.dna || '').trim(),
+          traits: item?.traits && typeof item.traits === 'object' ? item.traits : {},
           imageSheetUrl: String(item?.imageSheetUrl || item?.imageUrl || '').trim()
         }))
         .filter(item => item.id);
@@ -1259,14 +1305,6 @@ art_assets = [];
     return `${schoolStudentRoot(link)}/student-profile.json`;
   }
 
-  function schoolReceiptPath(eventId, link = state.schoolLink) {
-    return `${schoolStudentRoot(link)}/receipts/${safeCloudPart(eventId)}.json`;
-  }
-
-  function schoolActionPath(eventId, link = state.schoolLink) {
-    return `${schoolStudentRoot(link)}/actions/${safeCloudPart(eventId)}.json`;
-  }
-
   function personalGrowthPath(teacher, studentId, recordType, recordId) {
     return `growth-link/v3/schools/${safeCloudPart(teacher)}/students/${safeCloudPart(studentId)}/${recordType}/${safeCloudPart(recordId)}.json`;
   }
@@ -1318,12 +1356,15 @@ art_assets = [];
     const classId = String(params.get('guardianClass') || '').trim();
     const studentId = String(params.get('guardianStudent') || '').trim();
     if (!validSchoolSitePath(sitePath) || !classId || !studentId) return null;
+    const siteOwner = safeCloudPart(sitePath.split('/')[0]);
+    const requestedTeacher = safeCloudPart(params.get('guardianTeacher'));
+    if (requestedTeacher && requestedTeacher !== siteOwner) return null;
     return {
       sitePath,
       classId,
       studentId,
       studentName: String(params.get('guardianName') || '').trim(),
-      teacherUsername: String(params.get('guardianTeacher') || '').trim()
+      teacherUsername: siteOwner
     };
   }
 
@@ -1351,10 +1392,15 @@ art_assets = [];
     if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
     if (!policy || typeof policy !== 'object' || policy.version !== 3 || policy.privacyScope !== 'student') return '该学生目录尚未发布授权策略。请让教师在学校共享站点中发布该学生的云端授权';
     if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
+    const siteOwner = safeCloudPart(String(link.sitePath || '').split('/')[0]);
+    const linkedTeacher = safeCloudPart(link.teacherUsername);
+    const policyTeacher = safeCloudPart(policy.teacherUsername);
+    if (!siteOwner || !linkedTeacher || policyTeacher !== linkedTeacher || policyTeacher !== siteOwner) return '教师账号与共享站点所有者不一致';
     const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
     if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该学生目录不包含当前学生的授权记录';
+    const classCreator = policyTeacher;
     const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
-    if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
+    if (account !== classCreator && !allowlist.includes(account)) return `当前账号 ${account} 不是班级创建老师，也不在该学生的家长白名单中`;
     return '';
   }
 
@@ -1377,15 +1423,9 @@ art_assets = [];
       const policy = JSON.parse(await readSchoolSharedPage(link, schoolPolicyPath(link)) || 'null');
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
-      link.teacherUsername = safeCloudPart(policy.teacherUsername || link.teacherUsername);
       for (const receipt of [...link.pendingReceipts]) {
         const receiptPath = personalGrowthPath(link.teacherUsername, link.studentId, 'receipts', receipt.eventId);
         await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
-        try {
-          await guardianSdk?.savePage?.({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
-        } catch (error) {
-          console.warn('共享站点兼容回执写入失败，个人空间回执已保存', error);
-        }
         link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
         await persistStateNow();
       }
@@ -1409,11 +1449,6 @@ art_assets = [];
       try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
-      const policyTeacherUsername = safeCloudPart(policy.teacherUsername);
-      if (policyTeacherUsername && link.teacherUsername !== policyTeacherUsername) {
-        link.teacherUsername = policyTeacherUsername;
-        saveState();
-      }
       publishPendingSchoolReceipts();
       try {
         const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
@@ -1447,8 +1482,7 @@ art_assets = [];
           const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
           const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
           const actionPath = personalGrowthPath(policy?.teacherUsername || link.teacherUsername, link.studentId, 'actions', event.id);
-          let action = expectedStudentUsername ? await readPersonalGrowthRecord(expectedStudentUsername, actionPath) : null;
-          if (!action) action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
+          const action = expectedStudentUsername ? await readPersonalGrowthRecord(expectedStudentUsername, actionPath) : null;
           if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
             event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
           }
@@ -1824,7 +1858,7 @@ art_assets = [];
   }
 
   function settingsView() {
-    return `<div class="settings-grid"><section class="panel setting-card"><h3>当前家长账号</h3><p>${escapeHtml(guardianLoginName() || 'KeepWork 用户')} · 已通过 KeepWork 验证。孩子端需要退出后使用孩子账号登录。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
+    return `<div class="settings-grid"><section class="panel setting-card"><h3>当前家长账号</h3><p>${escapeHtml(guardianLoginName() || 'KeepWork 用户')} · 已通过 KeepWork 验证。孩子端需要退出后使用孩子账号登录。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>重新开始</h3><p>清除 Keepwork 中的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除云端数据</button></section></div>`;
   }
 
   function bindGlobal() {
@@ -1957,10 +1991,9 @@ art_assets = [];
   function showPinModal(forceChange = false) {
     const hasPin = Boolean(parentPinHash);
     const setup = forceChange || !hasPin;
-    const forgotPinButton = setup ? '' : '<button type="button" class="btn btn-soft" id="forgotPinBtn">忘记 PIN</button>';
-    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions">${forgotPinButton}<button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
+    const forgotPinHint = setup ? '' : '<p class="section-desc">忘记 PIN 时，请退出当前会话并重新使用家长账号登录。</p>';
+    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p>${forgotPinHint}<form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
-    document.getElementById('forgotPinBtn')?.addEventListener('click', () => showPinResetModal());
     document.getElementById('pinForm').addEventListener('submit', async event => {
       event.preventDefault();
       const pin = document.getElementById('pinInput').value;
@@ -1980,28 +2013,6 @@ art_assets = [];
       render();
     });
     setTimeout(() => document.getElementById('pinInput')?.focus(), 0);
-  }
-
-  function showPinResetModal() {
-    const accountName = guardianLoginName();
-    modal(`<h2>重置家长 PIN</h2><p>请输入当前 Keepwork 账号名称确认身份，然后设置新的 4–8 位数字 PIN。</p><form id="pinResetForm"><div class="field"><label>Keepwork 账号</label><input class="input" id="accountConfirm" maxlength="80" required autocomplete="username" placeholder="${escapeHtml(accountName)}"></div><div class="field"><label>新 PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div><div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">重置 PIN</button></div></form>`);
-    document.getElementById('cancelModal').addEventListener('click', closeModal);
-    document.getElementById('pinResetForm').addEventListener('submit', async event => {
-      event.preventDefault();
-      if (!accountName) return toast('当前账号信息不可用，无法重置 PIN');
-      const inputAccount = document.getElementById('accountConfirm').value.trim();
-      if (inputAccount.toLowerCase() !== accountName.toLowerCase()) return toast('Keepwork 账号不匹配，无法重置 PIN');
-      const pin = document.getElementById('pinInput').value;
-      if (pin !== document.getElementById('pinConfirm').value) return toast('两次输入的 PIN 不一致');
-      parentPinHash = await hashPin(pin);
-      await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
-      parentUnlocked = true;
-      closeModal();
-      mode = 'parent';
-      toast('家长 PIN 已重置');
-      render();
-    });
-    setTimeout(() => document.getElementById('accountConfirm')?.focus(), 0);
   }
 
   function showScoreModal(metricId) {
@@ -2037,11 +2048,12 @@ art_assets = [];
 
   function saveSchoolLink(event) {
     event.preventDefault();
-    const teacherUsername = document.getElementById('schoolTeacherUsername').value.trim();
+    const teacherUsername = safeCloudPart(document.getElementById('schoolTeacherUsername').value);
     const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
     const classId = document.getElementById('schoolClassId').value.trim();
     const studentId = document.getElementById('schoolStudentId').value.trim();
-    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return toast('请填写有效的共享站点路径、班级编号和学生编号');
+    if (!validSchoolSitePath(sitePath) || !teacherUsername || !classId || !studentId) return toast('请填写有效的共享站点路径、教师账号、班级编号和学生编号');
+    if (safeCloudPart(sitePath.split('/')[0]) !== teacherUsername) return toast('教师账号必须与共享站点所有者一致');
     const targetChanged = state.schoolLink.sitePath !== sitePath
       || state.schoolLink.classId !== classId
       || state.schoolLink.studentId !== studentId;

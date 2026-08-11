@@ -553,8 +553,6 @@
       const growthPolicyPath = studentId => `${growthStudentRoot(studentId)}/access-policy.json`;
       const growthEventBasePath = studentId => `${growthStudentRoot(studentId)}/events`;
       const growthStudentProfilePath = studentId => `${growthStudentRoot(studentId)}/student-profile.json`;
-      const growthReceiptPath = (studentId, eventId) => `${growthStudentRoot(studentId)}/receipts/${safeCloudPart(eventId)}.json`;
-      const growthActionPath = (studentId, eventId) => `${growthStudentRoot(studentId)}/actions/${safeCloudPart(eventId)}.json`;
       const growthNotificationPath = (studentId, notificationId) => `${growthStudentRoot(studentId)}/notifications/${safeCloudPart(notificationId)}.json`;
       const growthNotificationIndexPath = studentId => `${growthStudentRoot(studentId)}/notifications/index.json`;
       const normalizeKeepworkUsername = value => String(value || '').trim().toLowerCase();
@@ -745,16 +743,25 @@
         }
       }
       async function upsertFamilyIndex(sitePath, pagePath, entry, limit, commitMessage) {
-        for (let attempt = 0; attempt < 2; attempt += 1) {
+        const observedEntries = new Map([[entry.id, entry]]);
+        for (let attempt = 0; attempt < 4; attempt += 1) {
           const current = await readFamilyPageIfExists(sitePath, pagePath);
           if (current !== null && !Array.isArray(current)) throw new Error(`共享索引格式错误（${pagePath}）`);
-          const index = Array.isArray(current) ? current : [];
-          const existing = index.find(item => item?.id === entry.id);
-          if (existing) Object.assign(existing, entry);
-          else index.unshift(entry);
+          (Array.isArray(current) ? current : []).forEach(item => {
+            if (item?.id && !observedEntries.has(item.id)) observedEntries.set(item.id, item);
+          });
+          observedEntries.set(entry.id, entry);
+          const index = [...observedEntries.values()]
+            .sort((left, right) => Number(right.createdAt || right.notifiedAt || 0) - Number(left.createdAt || left.notifiedAt || 0))
+            .slice(0, limit);
           await saveFamilyPage(sitePath, pagePath, index.slice(0, limit), commitMessage);
           const verified = await readFamilyPage(sitePath, pagePath);
-          if (Array.isArray(verified) && verified.some(item => item?.id === entry.id)) return verified;
+          if (!Array.isArray(verified)) continue;
+          verified.forEach(item => {
+            if (item?.id && !observedEntries.has(item.id)) observedEntries.set(item.id, item);
+          });
+          const requiredIds = index.map(item => item.id);
+          if (requiredIds.every(id => verified.some(item => item?.id === id))) return verified;
         }
         throw new Error(`共享索引并发更新冲突（${pagePath}），请重试`);
       }
@@ -824,19 +831,10 @@
           ).slice(0, 20);
           studentGrowthTasks = await Promise.all(pendingEvents.map(async event => {
             let action = null;
-            let receipt = null;
             try {
               action = await readPersonalGrowthRecord(authenticatedUsername, personalGrowthPath(student.teacherUsername, student.id, 'actions', event.id));
             } catch (_) {}
-            for (const guardianUsername of student.guardianAllowlist) {
-              try {
-                receipt = await readPersonalGrowthRecord(guardianUsername, personalGrowthPath(student.teacherUsername, student.id, 'receipts', event.id));
-                if (receipt) break;
-              } catch (_) {}
-            }
-            if (!receipt) {
-              try { receipt = await readFamilyPage(student.schoolSitePath, growthReceiptPath(student.id, event.id)); } catch (_) {}
-            }
+            const receipt = await latestAuthorizedReceipt(student, event.id, student.teacherUsername);
             const studentUsername = authenticatedUsername;
             const validAction = action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === student.id && action.status === 'submitted' && normalizeKeepworkUsername(action.studentUsername) === studentUsername ? action : null;
             const handled = validGuardianReceipt(receipt, event.id, student) && ['approved', 'ignored'].includes(receipt.decision);
@@ -1044,30 +1042,32 @@
         if (!eventIds.length || !validFamilySitePath(schoolSitePath())) return;
         try {
           for (const eventId of eventIds) {
-            for (const guardianUsername of student.guardianAllowlist) {
-              try {
-                const receipt = await readPersonalGrowthRecord(guardianUsername, personalGrowthPath(teacherUsername(), student.id, 'receipts', eventId));
-                if (validGuardianReceipt(receipt, eventId, student)) {
-                  schoolReceiptCache.set(eventId, receipt);
-                  break;
-                }
-              } catch (_) {}
-            }
-            if (!schoolReceiptCache.has(eventId)) {
-              try {
-                const receipt = await readFamilyPage(schoolSitePath(), growthReceiptPath(student.id, eventId));
-                if (validGuardianReceipt(receipt, eventId, student)) schoolReceiptCache.set(eventId, receipt);
-              } catch (_) {}
-            }
+            const latestReceipt = await latestAuthorizedReceipt(student, eventId, teacherUsername());
+            if (latestReceipt) schoolReceiptCache.set(eventId, latestReceipt);
+            else schoolReceiptCache.delete(eventId);
           }
           render();
           const pointPanel = document.getElementById('studentFormScreen');
           if (pointPanel && !pointPanel.classList.contains('hidden')) openPointPanel(currentStudent());
         } catch (_) {}
       }
+      function authorizedReceiptUsernames(student) {
+        const classCreator = normalizeKeepworkUsername(student?.teacherUsername || teacherUsername());
+        const guardians = Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist.map(normalizeKeepworkUsername) : [];
+        return [...new Set([classCreator, ...guardians].filter(Boolean))];
+      }
+      async function latestAuthorizedReceipt(student, eventId, receiptTeacherUsername) {
+        const validReceipts = [];
+        for (const guardianUsername of authorizedReceiptUsernames(student)) {
+          try {
+            const receipt = await readPersonalGrowthRecord(guardianUsername, personalGrowthPath(receiptTeacherUsername, student.id, 'receipts', eventId));
+            if (validGuardianReceipt(receipt, eventId, student)) validReceipts.push(receipt);
+          } catch (_) {}
+        }
+        return validReceipts.sort((left, right) => Number(right.decidedAt || 0) - Number(left.decidedAt || 0))[0] || null;
+      }
       function validGuardianReceipt(receipt, eventId, student) {
         const guardian = normalizeKeepworkUsername(receipt?.guardianUsername);
-        const allowlist = Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist.map(normalizeKeepworkUsername) : [];
         return receipt?.version === 3
           && receipt?.privacyScope === 'student'
           && receipt.eventId === eventId
@@ -1075,15 +1075,12 @@
           && receipt.studentId === student?.id
           && ['approved', 'ignored', 'revoked'].includes(receipt.decision)
           && guardian
-          && allowlist.includes(guardian);
+          && authorizedReceiptUsernames(student).includes(guardian);
       }
       async function cancelPublishedSchoolAward(student, eventId) {
         if (!validFamilySitePath(schoolSitePath()) || !eventId) return;
         try {
-          try {
-            const latestReceipt = await readFamilyPage(schoolSitePath(), growthReceiptPath(student.id, eventId));
-            if (validGuardianReceipt(latestReceipt, eventId, student)) schoolReceiptCache.set(eventId, latestReceipt);
-          } catch (_) {}
+          await refreshSchoolReceipts();
           if (['approved', 'ignored'].includes(schoolReceiptCache.get(eventId)?.decision)) throw new Error('家长已处理该奖励，不能撤销');
           const event = await readFamilyPage(schoolSitePath(), `${growthEventBasePath(student.id)}/${safeCloudPart(eventId)}.json`);
           if (!event || event.eventType !== 'school_award' || event.studentId !== student.id || event.classId !== classId()) throw new Error('奖励记录不匹配');
