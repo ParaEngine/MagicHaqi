@@ -1,0 +1,20 @@
+<view class="share-page">
+  <view class="card">
+    <image wx:if="{{imageUrl}}" class="cover" src="{{imageUrl}}" mode="aspectFill"></image>
+    <view wx:else class="icon-badge">
+      <text class="icon-emoji">{{icon}}</text>
+    </view>
+
+    <view class="brand">分享小游戏</view>
+    <view class="game-name">{{title}}</view>
+    <view class="desc">{{desc}}</view>
+
+    <button class="share-btn" open-type="share" hover-class="share-btn-hover">分享给好友</button>
+    <view class="tip">也可点右上角「···」转发到群或朋友圈</view>
+  </view>
+
+  <view class="back" bindtap="onBack">返回游戏</view>
+
+  <!-- 离屏 canvas：用于生成分享卡片封面图（不显示给用户） -->
+  <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
+</view>

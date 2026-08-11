@@ -16,6 +16,7 @@ Page({
     icon: '🎮',
     gameFrom: '',
     game: '',
+    msg: '',
     imageUrl: ''
   },
 
@@ -29,6 +30,7 @@ Page({
       icon: decode(options.icon) || this.data.icon,
       gameFrom: decode(options.gameFrom),
       game: decode(options.game),
+      msg: decode(options.msg),
       imageUrl: decode(options.imageUrl)
     })
     // 允许从右上角菜单转发
@@ -79,12 +81,39 @@ Page({
       // 标题（最多两行，超出省略）
       ctx.fillStyle = '#ffffff'
       ctx.font = 'bold 34px sans-serif'
-      this._drawWrappedText(ctx, this.data.title, W / 2, 250, W - 80, 44, 2)
+      this._drawWrappedText(ctx, this.data.title, W / 2, 220, W - 80, 44, 2)
 
-      // 品牌行
-      ctx.fillStyle = '#8e9bc4'
-      ctx.font = '20px sans-serif'
-      ctx.fillText('蛋蛋星球 · 小游戏', W / 2, H - 40)
+      // 来源信息（gameFrom）
+      let infoY = 310
+      if (this.data.gameFrom) {
+        ctx.fillStyle = '#a8b4d8'
+        ctx.font = '22px sans-serif'
+        ctx.fillText(this.data.gameFrom + ' 给你分享了一个小游戏', W / 2, infoY)
+        infoY += 36
+      }
+
+      // 游戏名称（game）
+      if (this.data.game) {
+        ctx.fillStyle = '#f9a826'
+        ctx.font = 'bold 20px sans-serif'
+        const gameLabel = '🎮 ' + this.data.game.replace('.html', '').replace('game-', '')
+        ctx.fillText(gameLabel, W / 2, infoY)
+        infoY += 32
+      }
+
+      // 留言（msg）
+      if (this.data.msg) {
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'
+        ctx.font = '24px sans-serif'
+        // 圆角气泡背景
+        const msgW = Math.min(ctx.measureText(this.data.msg).width + 40, W - 100)
+        const msgX = W / 2 - msgW / 2
+        this._roundRect(ctx, msgX, infoY + 8, msgW, 38, 10)
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'
+        ctx.fill()
+        ctx.fillStyle = '#ffffff'
+        ctx.fillText(this.data.msg, W / 2, infoY + 30)
+      }
 
       wx.canvasToTempFilePath({
         canvas,
@@ -136,6 +165,7 @@ Page({
     const params = []
     if (this.data.gameFrom) params.push('gameFrom=' + encodeURIComponent(this.data.gameFrom))
     if (this.data.game) params.push('game=' + encodeURIComponent(this.data.game))
+    if (this.data.msg) params.push('msg=' + encodeURIComponent(this.data.msg))
     const query = params.length ? '?' + params.join('&') : ''
     return 'pages/game/game' + query
   },
@@ -145,7 +175,8 @@ Page({
     return {
       title: this.data.title,
       path: this._buildSharePath(),
-      imageUrl: this._shareImagePath || this.data.imageUrl || undefined
+      imageUrl: this._shareImagePath || this.data.imageUrl || undefined,
+      desc: this.data.desc
     }
   },
 

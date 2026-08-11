@@ -3,7 +3,7 @@
 把网页游戏 `MagicHaqi` 用微信小程序的 `web-view` 组件封装。
 
 游戏地址：
-`https://keepwork.com/api/raw/maisi/maisi/webgames/MagicHaqi/MagicHaqi.html`
+`https://keepwork.com/api/raw/maisi/maisi/webgames/MagicHaqi/release/MagicHaqi_v1.html`
 
 ## 目录结构
 

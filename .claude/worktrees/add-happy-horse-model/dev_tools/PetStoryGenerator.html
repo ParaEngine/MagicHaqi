@@ -1,0 +1,1694 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pet Story Generator</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      textarea { @apply resize-y leading-normal; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
+    }
+    @layer components {
+      .app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:grid-cols-[280px_minmax(320px,1fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[280px_340px_minmax(560px,1fr)]; }
+      .panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+      .panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+      .panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+      .section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700; }
+      .warning { @apply border-amber-300 bg-amber-50 text-amber-800; }
+      .row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+      .row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
+      .toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+      .toggle-line input { @apply min-h-0 h-4 w-4; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .records-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-item.checked { @apply border-sky-500 bg-sky-50; }
+      .record-item.missing { @apply border-amber-300 bg-amber-50/60; }
+      .record-item.done { @apply border-emerald-200; }
+      .record-select { @apply grid h-[18px] w-[18px] place-items-center; }
+      .record-select input { @apply h-4 min-h-0 w-4 p-0 accent-sky-600; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-actions { @apply flex gap-1.5; }
+      .record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+      .story-grid { @apply grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(420px,1fr)]; }
+      .story-grid-wide { @apply xl:grid-cols-[minmax(320px,.86fr)_minmax(360px,1fr)_minmax(420px,1fr)]; }
+      .stack { @apply flex min-w-0 flex-col gap-3; }
+      .output { @apply min-h-60 overflow-auto whitespace-pre-wrap font-mono text-xs leading-normal; }
+      .prompt-box { @apply min-h-[150px] text-xs; }
+      .actor-grid { @apply flex gap-2 overflow-x-auto pb-1; }
+      .actor-card { @apply relative flex w-[126px] flex-none cursor-pointer flex-col gap-1.5 rounded-xl border border-slate-300 bg-white p-2 text-center; }
+      .actor-card-main { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .actor-add-card { @apply min-h-[142px] items-center justify-center border-dashed border-sky-300 bg-sky-50 text-sky-700; }
+      .actor-add-card span { @apply grid h-9 w-9 place-items-center rounded-full border border-dashed border-sky-500 bg-white text-2xl font-black leading-none; }
+      .actor-delete { @apply absolute right-1.5 top-1.5 z-[2] grid h-6 w-6 min-h-6 place-items-center rounded-full border-red-200 bg-red-50 p-0 text-base font-black leading-none text-red-700; }
+      .actor-main-badge { @apply pointer-events-none absolute left-1.5 top-1.5 z-[2] rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-black text-white; }
+      .actor-thumb { @apply mx-auto h-[76px] w-[76px] flex-none overflow-hidden rounded-xl border border-slate-200 bg-sky-50; }
+      .actor-thumb img, .actor-thumb .sprite-cell { @apply h-full w-full; }
+      .actor-thumb img { @apply object-cover; object-position: 66.667% 33.333%; }
+      .sprite-cell { background-repeat: no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .actor-name-input { @apply h-7 min-h-7 rounded-lg border-transparent bg-sky-50 px-1.5 py-0.5 text-center text-xs font-black; }
+      .actor-meta { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .pet-picker-body { @apply flex min-h-0 flex-1 flex-col overflow-hidden p-0; }
+      .pet-picker-toolbar { @apply z-10 grid flex-none gap-2 border-b border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur md:grid-cols-[minmax(180px,1fr)_auto]; }
+      .pet-picker-scroll { @apply min-h-0 flex-1 overflow-auto p-3; }
+      .picker-filter-row { @apply flex flex-wrap gap-1.5; }
+      .picker-filter { @apply min-h-7 rounded-full px-2.5 text-xs font-bold; }
+      .picker-filter.active { @apply border-sky-600 bg-sky-50 text-sky-800; }
+      .pet-picker-grid { @apply grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5; }
+      .pet-picker-card { @apply relative flex min-h-[142px] flex-col items-center gap-1.5 rounded-xl border border-slate-300 bg-white p-2 text-center hover:border-sky-400 hover:bg-sky-50; }
+      .pet-picker-card.selected { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .pet-picker-card.main { @apply border-amber-400 bg-amber-50; }
+      .pet-picker-check { @apply absolute left-1.5 top-1.5 z-[2] grid h-6 w-6 place-items-center rounded-full border border-white bg-sky-600 text-xs font-black text-white shadow; }
+      .pet-picker-main { @apply absolute right-1.5 top-1.5 z-[2] rounded-full border border-white bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-amber-950 shadow; }
+      .pet-picker-name { @apply w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs font-black text-slate-900; }
+      .pet-picker-meta { @apply w-full overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-slate-500; }
+      .json-tabs { @apply flex flex-wrap gap-2; }
+      .json-tabs button.active { @apply border-sky-600 bg-sky-50 font-bold text-sky-800; }
+      .scene-card { @apply rounded-md border border-slate-300 bg-white p-2.5; }
+      .timeline-list { @apply mt-2 flex flex-col gap-1.5; }
+      .timeline-item { @apply rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs; }
+      .timeline-item.activity { @apply border-amber-200 bg-amber-50; }
+      .batch-progress { @apply min-h-[180px] max-h-[320px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+      .modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
+      .workspace-overlay { @apply fixed inset-0 z-[1000] flex bg-slate-950/60 p-[18px]; }
+      .modal-window { @apply m-auto flex max-h-full flex-col overflow-hidden rounded-lg bg-white shadow-2xl; width: min(1040px, 100%); height: min(780px, 100%); }
+      .workspace-window { @apply m-auto flex flex-col overflow-hidden rounded-lg bg-white shadow-2xl; width: min(1180px, 100%); height: min(780px, 100%); }
+      .workspace-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+      .workspace-host { @apply min-h-0 flex-1; }
+      .pet-picker-window { width: min(1040px, 100%); height: min(840px, 100%); }
+      .modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+      .modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
+      .summary-list { @apply grid gap-2; }
+      .summary-card { @apply rounded-md border border-slate-300 bg-white p-2.5; }
+      .summary-card.done { @apply border-emerald-300 bg-emerald-50; }
+      .summary-card.error { @apply border-red-300 bg-red-50; }
+      .outline-progress { @apply min-h-[150px] max-h-[240px] overflow-auto whitespace-pre-wrap rounded-md border border-slate-300 bg-white p-2.5 font-mono text-xs; }
+    }
+    @media (max-width: 760px) {
+      .modal-overlay, .workspace-overlay { @apply p-0; }
+      .modal-window, .workspace-window { @apply h-full w-full rounded-none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel sidebar">
+      <div class="panel-head">
+        <div>
+          <h1>Pet Story Generator</h1>
+          <h3>开发者批量故事生成器</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <h2>账号与工具</h2>
+          <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+          <div class="toolbar"><button id="btnLocalApi" type="button">本地 API Key</button></div>
+        </section>
+
+        <section class="section">
+          <h2>文本模型</h2>
+          <label>模型
+            <select id="textModelSelect"></select>
+          </label>
+          <label>温度
+            <input id="temperature" type="number" min="0" max="1.5" step="0.05" value="0.82">
+          </label>
+          <label class="toggle-line"><input id="streamOutput" type="checkbox" checked>流式输出</label>
+        </section>
+
+      </div>
+    </aside>
+
+    <section class="panel records">
+      <div class="panel-head">
+        <div>
+          <h2>pet-story/_story_index.json</h2>
+          <h3>只保存 id / title / 主角 id</h3>
+        </div>
+        <span id="recordCount" class="pill">0</span>
+      </div>
+      <div class="records-toolbar">
+        <input id="recordSearch" placeholder="搜索 id / title / mainPetId">
+        <button id="btnBatch" class="primary" type="button">批量生成</button>
+        <button id="btnNewStory" type="button">新建</button>
+        <button id="btnOpenStoryIndex" type="button">打开</button>
+        <button id="btnDeleteSelected" class="danger" type="button">删除选中(0)</button>
+        <button id="btnImportExport" type="button">导入导出</button>
+      </div>
+      <div class="border-b border-slate-300 bg-white px-3 py-2.5">
+        <label class="toggle-line"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
+      </div>
+      <div id="recordList" class="record-list"><div class="hint p-2.5">加载 SDK 后会读取 pet-story/_story_index.json。</div></div>
+    </section>
+
+    <section class="panel editor">
+      <div class="panel-head">
+        <div>
+          <h2 id="editorTitle">新建故事</h2>
+          <h3 id="editorSubtitle">pet-story/*.json</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnOutline" type="button">生成梗概</button>
+          <button id="btnGenerateFull" class="primary" type="button">生成完整故事</button>
+          <button id="btnTweak" type="button">按要求修改</button>
+          <button id="btnSaveStory" class="success" type="button">保存</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="runStatus" class="status">准备就绪。选择宠物和主题后，可先生成梗概，再生成完整故事。</div>
+        <div class="story-grid story-grid-wide">
+          <div class="stack">
+            <section class="section">
+              <h2>Story Properties</h2>
+              <div class="row">
+                <label>ID
+                  <input id="storyId" maxlength="80" placeholder="story_star_song">
+                </label>
+                <label>标题
+                  <input id="storyTitle" maxlength="80" placeholder="星光水晶的歌">
+                </label>
+              </div>
+              <label>故事梗概
+                <textarea id="storyOutline" class="prompt-box" placeholder="先生成或手写故事梗概。完整故事会基于这里展开。"></textarea>
+              </label>
+              <label>单个故事提示 / 修改要求
+                <textarea id="singlePrompt" class="prompt-box" style="min-height:92px" placeholder="例如：让故事更温暖，加入一次照顾宠物的互动和一个小游戏。"></textarea>
+              </label>
+            </section>
+
+            <section class="section">
+              <div class="flex items-center justify-between gap-2">
+                <h2>演员（来自 famous-pets/_pet_index.json）</h2>
+                <div class="toolbar"><button id="btnRandomActors" type="button">随机演员</button><button id="btnReloadPets" type="button">刷新宠物</button></div>
+              </div>
+              <div class="hint">这里只显示已选演员。点击大 + 按钮打开宠物列表弹窗；点击演员卡片设为主角。</div>
+              <div id="actorList" class="actor-grid"><div class="hint">加载宠物列表中...</div></div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="section">
+              <div class="flex items-center justify-between gap-2">
+                <h2>完整故事 AI Prompt</h2>
+                <button id="btnRefreshStoryPrompt" type="button">按当前故事刷新</button>
+              </div>
+              <div class="hint">这里使用和 view_story_maker 相同的 buildStoryPrompt。生成完整故事前可修改。</div>
+              <textarea id="fullStoryPrompt" class="prompt-box" style="min-height:520px" spellcheck="false"></textarea>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="section">
+              <div class="flex items-center justify-between gap-2">
+                <h2>预览 / JSON</h2>
+                <div class="json-tabs"><button id="tabPreview" class="active" type="button">预览</button><button id="tabJson" type="button">JSON</button></div>
+              </div>
+              <div id="storyPreview" class="output rounded-md border border-slate-300 bg-white p-2.5"></div>
+              <textarea id="storyJson" class="output rounded-md border border-slate-300 bg-white p-2.5 hidden" spellcheck="false"></textarea>
+            </section>
+            <section class="section">
+              <h2>实时输出</h2>
+              <div id="streamPreview" class="output min-h-[180px] rounded-md border border-slate-300 bg-white p-2.5 text-slate-600">等待模型输出...</div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { buildStoryPrompt } from '../js/generationPrompts.js';
+    import { CONFIG } from '../js/config.js';
+
+    const WORKSPACE = 'MagicHaqi';
+    const PET_INDEX_PATH = 'famous-pets/_pet_index.json';
+    const LOCAL_PET_INDEX_URL = '../famous-pets/_pet_index.json';
+    const STORY_DIR = 'pet-story';
+    const STORY_INDEX_PATH = `${STORY_DIR}/_story_index.json`;
+    const LOCAL_STORY_INDEX_URL = `../${STORY_INDEX_PATH}`;
+    const MINIGAME_INDEX_PATH = 'minigames/_minigame_index.json';
+    const LOCAL_MINIGAME_INDEX_URL = `../${MINIGAME_INDEX_PATH}`;
+    const SETTINGS_STORAGE_KEY = 'MagicHaqi.PetStoryGenerator.generationSettings';
+    const MAX_FILE_READ = 999999;
+    const STAGES = [
+      { id: 'baby', name: '幼年' },
+      { id: 'teen', name: '青年' },
+      { id: 'adult', name: '成年' },
+      { id: 'elder', name: '长老' },
+    ];
+    const ANIMS = [
+      { id: 'idle', name: '待机' },
+      { id: 'happy', name: '开心' },
+      { id: 'sad', name: '伤心' },
+      { id: 'sleep', name: '睡觉' },
+    ];
+    const ELEMENT_EMOJI = { '陆地': '🌱', '水系': '🌊', '天空': '☁️' };
+    const ATTRIBUTE_ORDER = ['自然', '火', '冰', '生命', '暗', '雷'];
+    const DEFAULT_MINIGAME_ID = 'pet_tower_defense';
+    // 小游戏清单以 minigames/_minigame_index.json 为唯一数据源，按需加载一次后缓存。
+    let MINIGAMES = [];
+    let minigameIndexPromise = null;
+    function loadMinigameIndex() {
+      if (minigameIndexPromise) return minigameIndexPromise;
+      minigameIndexPromise = (async () => {
+        let data = [];
+        if ((state.sdk || window.keepwork)?.personalPageStore) {
+          try { data = JSON.parse(await readFile(MINIGAME_INDEX_PATH) || '[]'); } catch (_) { data = []; }
+        }
+        if (!Array.isArray(data) || !data.length) data = await readLocalJson(LOCAL_MINIGAME_INDEX_URL, []);
+        MINIGAMES = (Array.isArray(data) ? data : []).map(item => ({ id: item?.id, title: item?.title || item?.id }));
+        return MINIGAMES;
+      })().catch((e) => { console.error('加载小游戏清单失败', e); minigameIndexPromise = null; MINIGAMES = []; return MINIGAMES; });
+      return minigameIndexPromise;
+    }
+    const SCENE_TAG_PROMPT_HINT = 'indoor, outdoor, land, sky, ocean, playground, bathroom, living room, shop, school, spring, winter, seaside, haqi, townhall, forest, sand, hospital, mountain, dream, farm, library';
+    const DEFAULT_SCENE_BG_COLORS = ['#bae6fd', '#fde68a', '#bbf7d0', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e0e7ff'];
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      sdk: null,
+      workspaceViewer: null,
+      pets: [],
+      records: [],
+      selectedRecordIds: new Set(),
+      selectedStoryId: '',
+      currentStory: null,
+      selectedPetIds: new Set(),
+      mainPetId: '',
+      actorNames: new Map(),
+      activeTab: 'preview',
+      busy: false,
+      lastTextModel: '',
+      picker: { query: '', category: 'all', stage: 'adult', anim: 'idle' },
+      settings: {
+        sceneCount: 5,
+        batchCount: 3,
+        actorCount: 2,
+        mainActorMode: 'random',
+        storyTheme: '',
+        saveAfterGenerate: true,
+        skipExistingIds: true,
+      },
+      outlinePromptActors: null,
+      fullStoryPromptDirty: false,
+    };
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+
+    function safeId(value, fallback = '') {
+      return String(value || '').trim().toLowerCase()
+        .replace(/\.json$/i, '')
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80) || fallback || `story_${Date.now()}`;
+    }
+
+    function normalizeElement(value) {
+      const raw = String(value || '').trim();
+      const lower = raw.toLowerCase();
+      if (!raw) return '';
+      if (lower === 'sky' || raw.includes('天空')) return '天空';
+      if (lower === 'land' || raw.includes('陆地')) return '陆地';
+      if (lower === 'water' || lower === 'ocean' || raw.includes('水') || raw.includes('海')) return '水系';
+      return raw;
+    }
+
+    function normalizeTraits(source) {
+      const traits = source && typeof source === 'object' ? source : {};
+      return {
+        element: normalizeElement(traits.element || traits.habitat || traits.category || traits.field),
+        species: String(traits.species || '').trim(),
+        color: String(traits.color || '').trim(),
+        eyes: String(traits.eyes || '').trim(),
+        accessory: String(traits.accessory || '').trim(),
+        elementalAttribute: String(traits.elementalAttribute || traits.attribute || '').trim(),
+      };
+    }
+
+    function traitText(pet) {
+      const t = pet?.traits || {};
+      return [pet?.name, pet?.id, pet?.dna, t.element, t.species, t.color, t.eyes, t.accessory, t.elementalAttribute].filter(Boolean).join(' ').toLowerCase();
+    }
+
+    function petBackground(pet) {
+      const attribute = pet?.traits?.elementalAttribute || '';
+      if (attribute === '火') return '#fed7aa';
+      if (attribute === '冰') return '#bae6fd';
+      if (attribute === '生命') return '#bbf7d0';
+      if (attribute === '暗') return '#ddd6fe';
+      if (attribute === '雷') return '#fef08a';
+      return '#d9f99d';
+    }
+
+    function spriteFrame(pet, stageId = 'adult', animId = 'idle') {
+      const row = Math.max(0, STAGES.findIndex(stage => stage.id === stageId));
+      const col = Math.max(0, ANIMS.findIndex(anim => anim.id === animId));
+      const url = pet?.imageSheetUrl || pet?.imageUrl || '';
+      if (pet?.imageSheetUrl) {
+        return { url, backgroundSize: '400% 400%', backgroundPosition: `${(col * 100 / 3).toFixed(3)}% ${(row * 100 / 3).toFixed(3)}%`, backgroundColor: petBackground(pet) };
+      }
+      return { url, backgroundSize: 'contain', backgroundPosition: 'center', backgroundColor: petBackground(pet) };
+    }
+
+    function spriteHtml(pet, stageId = 'adult', animId = 'idle') {
+      const frame = spriteFrame(pet, stageId, animId);
+      if (!frame.url) return '';
+      return `<div class="sprite-cell" style="background-color:${escapeHtml(frame.backgroundColor)};background-image:url('${String(frame.url).replace(/'/g, '%27')}');background-size:${escapeHtml(frame.backgroundSize)};background-position:${escapeHtml(frame.backgroundPosition)}"></div>`;
+    }
+
+    function rememberActorNamesFromDom() {
+      document.querySelectorAll('[data-actor-name-pet]').forEach(input => {
+        const petId = input.dataset.actorNamePet;
+        if (petId) state.actorNames.set(petId, input.value.trim());
+      });
+    }
+
+    function setStatus(el, text, kind = '') {
+      el.textContent = text;
+      el.classList.toggle('error', kind === 'error');
+      el.classList.toggle('ok', kind === 'ok');
+    }
+
+    function setRunStatus(text, kind = '') { setStatus($('runStatus'), text, kind); }
+
+    function setBusy(busy) {
+      state.busy = !!busy;
+      ['btnOutline', 'btnGenerateFull', 'btnTweak', 'btnSaveStory', 'btnBatch'].forEach(id => { const btn = $(id); if (btn) btn.disabled = state.busy; });
+    }
+
+    function clampNumber(value, min, max, fallback) {
+      const number = Number(value);
+      return Math.max(min, Math.min(max, Number.isFinite(number) ? number : fallback));
+    }
+
+    function getSceneCount() { return clampNumber(state.settings.sceneCount, 1, 12, 5); }
+    function getBatchCount() { return clampNumber(state.settings.batchCount, 1, 100, 3); }
+    function getActorCount() { return clampNumber(state.settings.actorCount, 1, 5, 2); }
+
+    function readLocalGenerationSettings() {
+      try { return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+
+    function getSelectedTextModel() {
+      const value = $('textModelSelect')?.value?.trim() || state.lastTextModel || '';
+      if (value) state.lastTextModel = value;
+      return value;
+    }
+
+    function saveLocalGenerationSettings() {
+      try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+          lastTextModel: getSelectedTextModel(),
+          updatedAt: new Date().toISOString(),
+        }));
+      } catch (_) {}
+    }
+
+    async function populateModelDropdown() {
+      const sdk = state.sdk || window.keepwork;
+      const select = $('textModelSelect');
+      if (!select) return;
+      if (!sdk?.localAPIKeySettings) {
+        const current = select.value;
+        select.innerHTML = '<option value="keepwork-pro">keepwork-pro</option><option value="keepwork-flash">keepwork-flash</option>';
+        const remembered = state.lastTextModel || readLocalGenerationSettings().lastTextModel || current;
+        if ([...select.options].some(option => option.value === remembered)) select.value = remembered;
+        else if ([...select.options].some(option => option.value === current)) select.value = current;
+        state.lastTextModel = select.value || state.lastTextModel;
+        saveLocalGenerationSettings();
+        return;
+      }
+      await sdk.localAPIKeySettings.load?.();
+      const current = select.value;
+      const models = sdk.localAPIKeySettings.listModels('Chat').filter(model => model.enabled !== false);
+      select.innerHTML = models.length
+        ? models.map(model => {
+            const value = model.name || model.modelId || '';
+            const label = model.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+          }).join('')
+        : '<option value="keepwork-pro">keepwork-pro</option><option value="keepwork-flash">keepwork-flash</option>';
+      const remembered = state.lastTextModel || readLocalGenerationSettings().lastTextModel || current;
+      if ([...select.options].some(option => option.value === remembered)) select.value = remembered;
+      else if ([...select.options].some(option => option.value === current)) select.value = current;
+      else if ([...select.options].some(option => option.value === 'keepwork-pro')) select.value = 'keepwork-pro';
+      state.lastTextModel = select.value || remembered || state.lastTextModel;
+      saveLocalGenerationSettings();
+    }
+
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(script => script.src === src);
+        if (existing) {
+          existing.addEventListener('load', resolve, { once: true });
+          existing.addEventListener('error', reject, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
+    function shouldLoadSdkAsModule(src) { return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src); }
+
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const hostname = window.location.hostname;
+      const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
+      const deployedCandidates = [SDK_CDN_URL];
+      return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
+    }
+
+    async function loadSdk() {
+      const candidates = getSdkCandidates();
+      let lastError = null;
+      for (const url of candidates) {
+        try {
+          if (shouldLoadSdkAsModule(url)) await importRuntimeModule(url);
+          else await loadScript(url);
+          if (window.keepwork) {
+            state.sdk = window.keepwork;
+            await state.sdk.localAPIKeySettings?.load?.();
+            $('sdkState').textContent = 'SDK ready';
+            await populateModelDropdown();
+            await refreshLoginState();
+            await loadAllData();
+            return;
+          }
+        } catch (e) { lastError = e; }
+      }
+      $('sdkState').textContent = 'SDK failed';
+      setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+      await loadLocalFallbacks();
+    }
+
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || sdk.user?.username || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('error', false);
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.innerHTML = sdk.token
+        ? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+        : '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+      $('btnProfile').onclick = openLoginOrProfile;
+    }
+
+    async function openLoginOrProfile() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        const refreshAfterLogin = async () => {
+          await refreshLoginState();
+          await loadAllData();
+        };
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshAfterLogin }).then?.(refreshAfterLogin).catch?.(() => {});
+        else if (sdk.login) await sdk.login();
+        setTimeout(refreshAfterLogin, 600);
+        return;
+      }
+      if (typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
+      else if (sdk.profileWindow?.show) await sdk.profileWindow.show();
+      else setStatus($('loginState'), '当前 SDK 不支持 ProfileWindow。', 'error');
+      await refreshLoginState();
+    }
+
+    function getWorkspaceStore() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+      return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+    }
+
+    async function readFile(path) {
+      const store = getWorkspaceStore();
+      try { return await store.readFile(path, 1, MAX_FILE_READ) || ''; }
+      catch (_) { return await store.readFile(path) || ''; }
+    }
+
+    async function writeFile(path, content) {
+      await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
+    }
+
+    async function readLocalJson(url, fallback) {
+      try {
+        const res = await fetch(url, { cache: 'no-cache' });
+        if (!res.ok) return fallback;
+        const text = await res.text();
+        if (!text.trim()) return fallback;
+        return JSON.parse(text);
+      } catch (_) { return fallback; }
+    }
+
+    function normalizePets(data) {
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+      const seen = new Set();
+      return list.map((pet, index) => {
+        const id = safeId(pet?.id, `pet_${index + 1}`);
+        return {
+          ...(pet || {}),
+          id,
+          name: String(pet?.name || id || `宠物 ${index + 1}`).trim(),
+          dna: String(pet?.dna || '').trim(),
+          imageSheetUrl: String(pet?.imageSheetUrl || '').trim(),
+          imageUrl: String(pet?.imageUrl || '').trim(),
+          rarity: Math.max(0, Math.round(Number(pet?.rarity) || 0)),
+          traits: normalizeTraits(pet?.traits || pet || {}),
+        };
+      }).filter(pet => pet.id && !seen.has(pet.id) && seen.add(pet.id))
+        .sort((a, b) => (b.rarity || 0) - (a.rarity || 0) || String(a.name).localeCompare(String(b.name), 'zh-CN'));
+    }
+
+    function normalizeStoryIndex(data) {
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.stories) ? data.stories : []);
+      const seen = new Set();
+      return list.map((record) => {
+        const id = safeId(record?.id || record?.path || record?.title, '');
+        if (!id || seen.has(id)) return null;
+        seen.add(id);
+        const mainPetId = String(record?.mainPetId || record?.mainActorId || record?.petId || record?.coverActor?.sourcePetId || '').trim();
+        return {
+          id,
+          title: String(record?.title || id).slice(0, 80),
+          mainPetId,
+          outline: String(record?.outline || record?.summary || record?.description || '').trim(),
+          generated: record?.generated === true || record?.hasStory === true,
+        };
+      }).filter(Boolean);
+    }
+
+    async function loadAllData() {
+      await Promise.all([loadPets(), loadRecords(), loadMinigameIndex()]);
+      renderActorList();
+      renderRecords();
+      refreshFullStoryPrompt();
+    }
+
+    async function loadLocalFallbacks() {
+      state.pets = normalizePets(await readLocalJson(LOCAL_PET_INDEX_URL, []));
+      state.records = normalizeStoryIndex(await readLocalJson(LOCAL_STORY_INDEX_URL, []));
+      await loadMinigameIndex();
+      renderActorList();
+      renderRecords();
+      refreshFullStoryPrompt();
+    }
+
+    async function loadPets() {
+      let workspaceData = [];
+      if ((state.sdk || window.keepwork)?.personalPageStore) {
+        try { workspaceData = JSON.parse(await readFile(PET_INDEX_PATH) || '[]'); } catch (_) { workspaceData = []; }
+      }
+      const localData = await readLocalJson(LOCAL_PET_INDEX_URL, []);
+      const byId = new Map();
+      normalizePets(localData).forEach(pet => byId.set(pet.id, pet));
+      normalizePets(workspaceData).forEach(pet => byId.set(pet.id, pet));
+      state.pets = [...byId.values()];
+      if (!state.selectedPetIds.size && state.pets[0]) {
+        state.selectedPetIds.add(state.pets[0].id);
+        if (state.pets[1]) state.selectedPetIds.add(state.pets[1].id);
+        state.mainPetId = state.pets[0].id;
+      }
+    }
+
+    async function loadRecords() {
+      let data = [];
+      if ((state.sdk || window.keepwork)?.personalPageStore) {
+        try { data = JSON.parse(await readFile(STORY_INDEX_PATH) || '[]'); } catch (_) { data = []; }
+      } else {
+        data = await readLocalJson(LOCAL_STORY_INDEX_URL, []);
+      }
+      state.records = normalizeStoryIndex(data);
+      await refreshRecordGeneratedFlags(state.records);
+      renderRecords();
+    }
+
+    async function saveStoryIndex() {
+      await writeFile(STORY_INDEX_PATH, JSON.stringify(state.records.map(({ id, title, mainPetId, outline, generated }) => {
+        const record = { id, title, mainPetId };
+        if (outline) record.outline = outline;
+        if (generated) record.generated = true;
+        return record;
+      }), null, 2));
+    }
+
+    function closeWorkspaceViewer() {
+      try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+      state.workspaceViewer = null;
+      document.getElementById('workspaceOverlay')?.remove();
+    }
+
+    function openWorkspaceViewer(file = STORY_INDEX_PATH) {
+      if (typeof window.createWorkspaceViewer !== 'function') {
+        setRunStatus('WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
+        return;
+      }
+      closeWorkspaceViewer();
+      const overlay = document.createElement('div');
+      overlay.className = 'workspace-overlay';
+      overlay.id = 'workspaceOverlay';
+      overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(file)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+      document.getElementById('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+      state.workspaceViewer = window.createWorkspaceViewer({ container: document.getElementById('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: '', file, compact: true, hideUserInfo: true });
+      setRunStatus(`已打开 ${file}`, 'ok');
+    }
+
+    async function storyFileExists(id) {
+      if (!(state.sdk || window.keepwork)?.personalPageStore) return false;
+      try {
+        const text = await readFile(storyPath(id));
+        return !!String(text || '').trim();
+      } catch (_) { return false; }
+    }
+
+    async function refreshRecordGeneratedFlags(records = state.records) {
+      if (!(state.sdk || window.keepwork)?.personalPageStore) return records;
+      await Promise.all(records.map(async (record) => {
+        if (!record?.id || record.generated) return;
+        record.generated = await storyFileExists(record.id);
+      }));
+      return records;
+    }
+
+    function missingStoryRecords() {
+      return state.records.filter(record => !record.generated || state.selectedRecordIds.has(record.id));
+    }
+
+    function upsertOutlineRecords(summaries = []) {
+      const existingIds = new Set(state.records.map(record => record.id));
+      const newRecords = [];
+      summaries.forEach((item, index) => {
+        const id = safeId(item.id || item.title || item.outline, `story_${Date.now()}_${index + 1}`);
+        if (!id || existingIds.has(id)) return;
+        existingIds.add(id);
+        newRecords.push({ id, title: String(item.title || id).slice(0, 80), mainPetId: item.mainPetId || '', outline: String(item.outline || '').trim(), generated: false });
+      });
+      state.records = [...newRecords, ...state.records];
+      newRecords.forEach(record => state.selectedRecordIds.add(record.id));
+      renderRecords();
+      return newRecords;
+    }
+
+    function storyPath(id) { return `${STORY_DIR}/${safeId(id)}.json`; }
+
+    function actorFromPet(pet, isMain = false) {
+      return {
+        id: `actor_${pet.id}`,
+        name: state.actorNames.get(pet.id) || pet.name || pet.id,
+        sourcePetId: pet.id,
+        allowUserSelection: false,
+        isMainActor: !!isMain,
+        petTemplate: {
+          id: pet.id,
+          name: pet.name || pet.id,
+          dna: pet.dna || '',
+          imageSheetUrl: pet.imageSheetUrl || '',
+          traits: pet.traits || {},
+          stage: pet.stage || 'adult',
+        },
+      };
+    }
+
+    function selectedActors() {
+      rememberActorNamesFromDom();
+      const pets = [...state.selectedPetIds].map(id => state.pets.find(pet => pet.id === id)).filter(Boolean);
+      const mainId = state.mainPetId || pets[0]?.id || '';
+      return pets.map(pet => actorFromPet(pet, pet.id === mainId));
+    }
+
+    function storyStats(story) {
+      const scenes = Array.isArray(story?.scenes) ? story.scenes : [];
+      let lines = 0, activities = 0, minigames = 0;
+      scenes.forEach(scene => (scene.timeline || []).forEach(item => {
+        if (item?.kind === 'activity' || item?.type) { activities++; if (item.type === 'minigame') minigames++; }
+        else if (String(item?.text || item?.say || '').trim()) lines++;
+      }));
+      return { scenes: scenes.length, actors: story?.actors?.length || 0, lines, activities, minigames };
+    }
+
+    function normalizeActivity(activity = {}) {
+      const rawType = String(activity.type || '').trim().toLowerCase();
+      const type = rawType === 'clean' ? 'bath' : ['feed', 'bath', 'tap', 'minigame'].includes(rawType) ? rawType : 'tap';
+      const result = { kind: 'activity', type, title: activity.title || activity.gameTitle || '互动', count: Math.max(1, Number(activity.count ?? activity.times ?? 1) || 1), successText: activity.successText || '' };
+      if (type === 'minigame') {
+        const game = MINIGAMES.find(item => item.id === (activity.gameId || DEFAULT_MINIGAME_ID)) || MINIGAMES[0] || { id: DEFAULT_MINIGAME_ID, title: DEFAULT_MINIGAME_ID };
+        result.gameId = game.id;
+        result.gameTitle = activity.gameTitle || game.title;
+      } else if (activity.target || activity.actor || activity.actorId) {
+        result.target = activity.target || activity.actor || activity.actorId;
+      }
+      return result;
+    }
+
+    function sceneBg(index = 0, value = null) {
+      const color = (value && typeof value === 'object' ? value.color : value) || DEFAULT_SCENE_BG_COLORS[index % DEFAULT_SCENE_BG_COLORS.length];
+      return { type: value?.type || 'color', color, imageUrl: value?.imageUrl || '' };
+    }
+
+    function sceneFromTimeline(scene = {}, index = 0) {
+      const timeline = Array.isArray(scene.timeline) ? scene.timeline : [
+        ...(Array.isArray(scene.lines) ? scene.lines.map(line => ({ kind: 'line', actor: line.actor || '$selected', text: line.text || line.say || '' })) : []),
+        ...(Array.isArray(scene.activities) ? scene.activities.map(normalizeActivity) : []),
+      ];
+      const normalizedTimeline = timeline.map(item => item?.kind === 'activity' || item?.type ? normalizeActivity(item) : { kind: 'line', actor: item?.actor || '$selected', text: item?.text || item?.say || '' })
+        .filter(item => item.kind === 'activity' || String(item.text || '').trim());
+      return {
+        id: scene.id || `scene_${index + 1}`,
+        subtitle: '',
+        sceneTags: Array.isArray(scene.sceneTags) ? scene.sceneTags : (Array.isArray(scene.tags) ? scene.tags : []),
+        background: sceneBg(index, scene.background || scene.bgColor),
+        particles: Array.isArray(scene.particles) ? scene.particles : [],
+        bgMusic: scene.bgMusic || scene.background?.bgMusic || '',
+        timeline: normalizedTimeline,
+        lines: normalizedTimeline.filter(item => item.kind === 'line').map(({ actor, text }) => ({ actor, text })),
+        activities: normalizedTimeline.filter(item => item.kind === 'activity').map(({ kind, ...activity }) => activity),
+        nextSceneId: scene.nextSceneId || undefined,
+      };
+    }
+
+    function normalizeStory(story, actors = selectedActors()) {
+      const scenes = Array.isArray(story?.scenes) ? story.scenes : [];
+      const storyActors = Array.isArray(story?.actors) && story.actors.length ? story.actors : actors;
+      const mergedActors = storyActors.map((actor, index) => {
+        const sourcePetId = actor.sourcePetId || actor.petTemplate?.id || actor.pet?.id || actors[index]?.sourcePetId || '';
+        const pet = state.pets.find(item => item.id === sourcePetId) || null;
+        return { ...(actors[index] || {}), ...(actor || {}), id: actor.id || actors[index]?.id || `actor_${index + 1}`, name: actor.name || actors[index]?.name || `角色${index + 1}`, sourcePetId, petTemplate: actor.petTemplate || actor.pet || (pet ? actorFromPet(pet).petTemplate : actors[index]?.petTemplate) };
+      });
+      if (!mergedActors.some(actor => actor.isMainActor) && mergedActors[0]) mergedActors[0].isMainActor = true;
+      return {
+        id: safeId(story?.id || $('storyId')?.value || story?.title, `story_${Date.now()}`),
+        title: String(story?.title || $('storyTitle')?.value || '我的宠物故事').slice(0, 80),
+        version: 1,
+        selectionPrompt: story?.selectionPrompt || '选择一位主角进入故事。',
+        actors: mergedActors,
+        startSceneId: story?.startSceneId || scenes[0]?.id || 'scene_1',
+        scenes: scenes.map(sceneFromTimeline),
+        ending: story?.ending || { subtitle: '故事完成。', text: '新的故事已经可以分享。' },
+      };
+    }
+
+    function extractJson(text) {
+      const raw = String(text || '').trim();
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (_) {}
+      const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+      if (!match) return null;
+      try { return JSON.parse(match[1]); } catch (_) { return null; }
+    }
+
+    function extractAssistantText(result) {
+      if (typeof result === 'string') return result;
+      if (!result || typeof result !== 'object') return '';
+      return result.text || result.result || result.content || result.message?.content || result.choices?.[0]?.message?.content || result.choices?.[0]?.delta?.content || '';
+    }
+
+    function textFromStream(value, payload) {
+      if (typeof value === 'string') return value;
+      return extractAssistantText(payload || value);
+    }
+
+    async function callChat(messages, { onStreamUpdate = null, responseFormat = 'json_object' } = {}) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
+      const model = getSelectedTextModel() || undefined;
+      saveLocalGenerationSettings();
+      const stream = $('streamOutput')?.checked !== false;
+      const temperature = Math.max(0, Math.min(1.5, Number($('temperature')?.value) || 0.82));
+      let lastText = '';
+      const handleMessage = (value, payload) => {
+        const text = textFromStream(value, payload);
+        if (text) lastText = text;
+        onStreamUpdate?.(lastText || text || '');
+      };
+      const options = { messages, model, stream, temperature, onMessage: handleMessage };
+      if (responseFormat) options.responseFormat = responseFormat;
+      let result;
+      if (sdk.aiGenerators?.chat) {
+        try { result = await sdk.aiGenerators.chat(options); }
+        catch (error) {
+          if (!responseFormat || !/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+          const { responseFormat: _unused, ...retryOptions } = options;
+          result = await sdk.aiGenerators.chat(retryOptions);
+        }
+      } else {
+        const { responseFormat: _unused, ...chatOptions } = options;
+        result = await sdk.aiChat.chat(chatOptions);
+      }
+      return extractAssistantText(result) || lastText;
+    }
+
+    function buildOutlinePrompt({ theme, count, actors }) {
+      return [
+        '你是儿童互动故事策划。请先生成故事梗概 JSON，只返回合法 JSON，不要 markdown。',
+        `需要 ${count} 个故事梗概。`,
+        `通用主题/约束：${theme || '温暖、合作、适合儿童和手机快速游玩。'}`,
+        `可用主角宠物：${JSON.stringify(actors.map(actor => ({ id: actor.sourcePetId, name: actor.name, traits: actor.petTemplate?.traits || {} })))}`,
+        '返回格式：{"summaries":[{"id":"ascii_story_id","title":"中文标题","mainPetId":"pet_id","outline":"120字以内故事梗概，包含开端、问题、互动、结尾寓意"}]}。',
+        'id 只能用小写英文字母、数字、下划线或连字符。mainPetId 必须来自可用主角宠物 id。title 要短、童话感、儿童友好。',
+      ].join('\n');
+    }
+
+    function shuffleItems(items = []) {
+      const list = [...items];
+      for (let index = list.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [list[index], list[swapIndex]] = [list[swapIndex], list[index]];
+      }
+      return list;
+    }
+
+    function storyIndexPetIds() {
+      return new Set(state.records.map(record => record.mainPetId).filter(Boolean));
+    }
+
+    function pickPromptCandidatePets(count) {
+      const used = storyIndexPetIds();
+      const unusedPets = state.pets.filter(pet => !used.has(pet.id));
+      const usedPets = state.pets.filter(pet => used.has(pet.id));
+      return [...shuffleItems(unusedPets), ...shuffleItems(usedPets)].slice(0, Math.min(count, state.pets.length));
+    }
+
+    function getOutlineActorsForPrompt(batch = true) {
+      if (!batch) return selectedActors();
+      if (Array.isArray(state.outlinePromptActors) && state.outlinePromptActors.length) return state.outlinePromptActors;
+      const count = Math.max(1, getBatchCount() * 2);
+      state.outlinePromptActors = pickPromptCandidatePets(count).map((pet, index) => actorFromPet(pet, index === 0));
+      return state.outlinePromptActors;
+    }
+
+    function buildCurrentOutlinePrompt({ batch = true } = {}) {
+      const actors = getOutlineActorsForPrompt(batch);
+      const count = batch ? getBatchCount() : 1;
+      return buildOutlinePrompt({ theme: state.settings.storyTheme || $('singlePrompt')?.value || '', count, actors });
+    }
+
+    async function generateOutline({ batch = false, onStreamUpdate = null, promptOverride = '' } = {}) {
+      const actors = getOutlineActorsForPrompt(batch);
+      if (!actors.length) throw new Error('请至少选择一个宠物演员');
+      const count = batch ? getBatchCount() : 1;
+      $('streamPreview').textContent = '正在生成故事梗概...';
+      onStreamUpdate?.('正在生成故事梗概...');
+      const text = await callChat([
+        { role: 'system', content: 'You generate strict JSON only. No markdown, no commentary.' },
+        { role: 'user', content: promptOverride || buildOutlinePrompt({ theme: state.settings.storyTheme || $('singlePrompt')?.value || '', count, actors }) },
+      ], { onStreamUpdate: text => { $('streamPreview').textContent = text || '等待模型输出...'; onStreamUpdate?.(text || '等待模型输出...'); } });
+      const payload = extractJson(text);
+      const list = Array.isArray(payload) ? payload : (Array.isArray(payload?.summaries) ? payload.summaries : []);
+      if (!list.length) throw new Error('AI 未返回有效梗概 JSON');
+      return list.slice(0, count).map((item, index) => ({ id: safeId(item.id || item.title || item.outline, `story_${Date.now()}_${index + 1}`), title: String(item.title || item.id || `故事${index + 1}`).slice(0, 80), mainPetId: item.mainPetId || actors[index % actors.length]?.sourcePetId || '', outline: String(item.outline || item.summary || item.description || '').trim() }));
+    }
+
+    function buildFullStoryUserPrompt(outline, actors, tweakText = '') {
+      const sceneCount = getSceneCount();
+      const baseTheme = state.settings.storyTheme || '';
+      const singlePrompt = $('singlePrompt')?.value || '';
+      const prompt = [
+        baseTheme,
+        outline?.outline || $('storyOutline')?.value || singlePrompt || '温暖的宠物冒险',
+        singlePrompt ? `额外要求：${singlePrompt}` : '',
+        tweakText ? `修改要求：${tweakText}` : '',
+      ].filter(Boolean).join('\n');
+      return buildStoryPrompt(prompt, sceneCount, actors, { sceneTagPromptHint: SCENE_TAG_PROMPT_HINT, bgMusicKeys: Object.keys(CONFIG.assets?.bgSounds || {}), minigames: MINIGAMES });
+    }
+
+    function currentOutlineForFullStory() {
+      return {
+        id: $('storyId')?.value || '',
+        title: $('storyTitle')?.value || '',
+        outline: $('storyOutline')?.value || $('singlePrompt')?.value || state.settings.storyTheme || '',
+      };
+    }
+
+    function refreshFullStoryPrompt({ force = false } = {}) {
+      const promptEl = $('fullStoryPrompt');
+      if (!promptEl) return;
+      if (state.fullStoryPromptDirty && !force) return;
+      try {
+        promptEl.value = buildFullStoryUserPrompt(currentOutlineForFullStory(), selectedActors());
+        state.fullStoryPromptDirty = false;
+      } catch (_) {}
+    }
+
+    async function generateFullStory(outline = null, tweakText = '', promptOverride = '') {
+      const actors = selectedActors();
+      if (!actors.length) throw new Error('请至少选择一个宠物演员');
+      $('streamPreview').textContent = '正在生成完整故事 JSON...';
+      const userPrompt = promptOverride || $('fullStoryPrompt')?.value?.trim() || buildFullStoryUserPrompt(outline, actors, tweakText);
+      const text = await callChat([
+        { role: 'system', content: 'You generate strict JSON only. No markdown, no commentary.' },
+        { role: 'user', content: userPrompt },
+      ], { onStreamUpdate: text => { $('streamPreview').textContent = text || '等待模型输出...'; } });
+      const payload = extractJson(text);
+      if (!payload) throw new Error('AI 返回内容不是有效 JSON');
+      const story = normalizeStory({ ...payload, id: outline?.id || payload.id, title: outline?.title || payload.title }, actors);
+      state.currentStory = story;
+      fillStoryForm(story, outline?.outline || $('storyOutline')?.value || '');
+      return story;
+    }
+
+    function fillStoryForm(story, outline = '') {
+      $('storyId').value = story?.id || '';
+      $('storyTitle').value = story?.title || '';
+      if (outline) $('storyOutline').value = outline;
+      $('storyJson').value = story ? JSON.stringify(story, null, 2) : '';
+      refreshFullStoryPrompt();
+      renderStoryPreview();
+    }
+
+    function readStoryFromEditor() {
+      const text = $('storyJson')?.value || '';
+      let story = state.currentStory;
+      if (state.activeTab === 'json' || text.trim()) {
+        const parsed = extractJson(text);
+        if (parsed) story = parsed;
+      }
+      if (!story) return null;
+      story.id = safeId($('storyId')?.value || story.id || story.title);
+      story.title = $('storyTitle')?.value || story.title || '我的宠物故事';
+      return normalizeStory(story, selectedActors());
+    }
+
+    function storyIndexRecord(story) {
+      const actor = story?.actors?.find(item => item.isMainActor) || story?.actors?.[0] || null;
+      const existing = state.records.find(record => record.id === safeId(story?.id));
+      const record = { id: safeId(story?.id), title: String(story?.title || story?.id || '我的宠物故事').slice(0, 80), mainPetId: actor?.sourcePetId || actor?.petTemplate?.id || '', generated: true };
+      if (existing?.outline) record.outline = existing.outline;
+      return record;
+    }
+
+    async function saveCurrentStory() {
+      const story = readStoryFromEditor();
+      if (!story) { setRunStatus('没有可保存的故事 JSON。', 'error'); return null; }
+      const path = storyPath(story.id);
+      await writeFile(path, JSON.stringify({ ...story, savedAt: Date.now() }, null, 2));
+      upsertStoryRecord(storyIndexRecord(story));
+      await saveStoryIndex();
+      setRunStatus(`已保存 ${path}，并更新 ${STORY_INDEX_PATH}`, 'ok');
+      return story;
+    }
+
+    function upsertStoryRecord(record) {
+      if (!record?.id) return;
+      state.records = [record, ...state.records.filter(item => item.id !== record.id)];
+      renderRecords();
+    }
+
+    async function loadStoryById(id) {
+      const cleanId = safeId(id);
+      const text = await readFile(storyPath(cleanId));
+      const story = extractJson(text);
+      if (!story) throw new Error(`无法读取 ${storyPath(cleanId)}`);
+      state.currentStory = normalizeStory(story, story.actors || selectedActors());
+      upsertStoryRecord({ ...(state.records.find(record => record.id === cleanId) || {}), ...storyIndexRecord(state.currentStory), generated: true });
+      state.actorNames = new Map((state.currentStory.actors || []).map(actor => [actor.sourcePetId || actor.petTemplate?.id || '', actor.name || '']).filter(([id]) => id));
+      const mainPetId = storyIndexRecord(state.currentStory).mainPetId;
+      if (mainPetId) state.mainPetId = mainPetId;
+      state.selectedPetIds = new Set((state.currentStory.actors || []).map(actor => actor.sourcePetId || actor.petTemplate?.id).filter(Boolean));
+      if (!state.selectedPetIds.size && mainPetId) state.selectedPetIds.add(mainPetId);
+      fillStoryForm(state.currentStory, '');
+      renderActorList();
+      setRunStatus(`已加载 ${storyPath(cleanId)}`, 'ok');
+    }
+
+    function loadOutlineRecord(record) {
+      if (!record) return;
+      state.selectedStoryId = record.id;
+      state.currentStory = null;
+      $('storyId').value = record.id || '';
+      $('storyTitle').value = record.title || '';
+      $('storyOutline').value = record.outline || '';
+      $('storyJson').value = '';
+      const mainPetId = record.mainPetId || '';
+      if (mainPetId && state.pets.some(pet => pet.id === mainPetId)) {
+        const pets = pickRandomPets(getActorCount(), mainPetId);
+        setActorsFromPets(pets, mainPetId);
+      }
+      refreshFullStoryPrompt({ force: true });
+      renderStoryPreview();
+      renderRecords();
+      setRunStatus(`已打开待生成故事梗概：${record.id}`, 'ok');
+    }
+
+    function renderRecords() {
+      const query = String($('recordSearch')?.value || '').trim().toLowerCase();
+      const list = state.records.filter(record => !query || [record.id, record.title, record.mainPetId].join(' ').toLowerCase().includes(query));
+      $('recordCount').textContent = String(state.records.length);
+      $('btnDeleteSelected').textContent = `删除选中(${state.selectedRecordIds.size})`;
+      const missingCount = state.records.filter(record => !record.generated).length;
+      $('btnBatch').textContent = `批量生成(${state.selectedRecordIds.size || missingCount})`;
+      $('recordSelectAllLabel').textContent = `全选当前列表（${list.length}）`;
+      const allChecked = list.length > 0 && list.every(record => state.selectedRecordIds.has(record.id));
+      $('recordSelectAll').checked = allChecked;
+      $('recordList').innerHTML = list.length ? list.map(record => `
+        <div class="record-item ${state.selectedStoryId === record.id ? 'active' : ''} ${state.selectedRecordIds.has(record.id) ? 'checked' : ''} ${record.generated ? 'done' : 'missing'}" data-record-id="${escapeHtml(record.id)}">
+          <label class="record-select"><input type="checkbox" data-record-check="${escapeHtml(record.id)}" ${state.selectedRecordIds.has(record.id) ? 'checked' : ''}></label>
+          <button class="record-main" type="button" data-open-record="${escapeHtml(record.id)}">
+            <span class="record-title">${escapeHtml(record.title || record.id)}</span>
+            <span class="record-meta">${record.generated ? '已生成' : '待生成'} · ${escapeHtml(record.id)} · 主角 ${escapeHtml(record.mainPetId || '未指定')}${record.outline ? ` · ${escapeHtml(record.outline.slice(0, 36))}` : ''}</span>
+          </button>
+          <div class="record-actions"><button type="button" data-open-record="${escapeHtml(record.id)}">编辑</button></div>
+        </div>`).join('') : '<div class="hint p-2.5">没有故事记录。可新建或批量生成。</div>';
+    }
+
+    function renderActorList() {
+      rememberActorNamesFromDom();
+      const selectedLimit = getActorCount();
+      const selectedPets = [...state.selectedPetIds].map(id => state.pets.find(pet => pet.id === id)).filter(Boolean).slice(0, selectedLimit);
+      state.selectedPetIds = new Set(selectedPets.map(pet => pet.id));
+      if (!state.mainPetId || !state.selectedPetIds.has(state.mainPetId)) state.mainPetId = selectedPets[0]?.id || '';
+      const cards = selectedPets.map(pet => {
+        const isMain = state.mainPetId === pet.id;
+        const actorName = state.actorNames.get(pet.id) || pet.name || pet.id;
+        return `<div class="actor-card ${isMain ? 'actor-card-main' : ''}" data-selected-actor-pet="${escapeHtml(pet.id)}">
+          <button class="actor-delete" type="button" data-remove-actor="${escapeHtml(pet.id)}" aria-label="删除演员" title="删除演员">×</button>
+          <span class="actor-main-badge" style="display:${isMain ? 'block' : 'none'}">主角</span>
+          <div class="actor-thumb">${spriteHtml(pet, 'adult', 'idle')}</div>
+          <input class="actor-name-input" data-actor-name-pet="${escapeHtml(pet.id)}" value="${escapeHtml(actorName)}" maxlength="24" aria-label="演员名字">
+          <div class="actor-meta">${escapeHtml(pet.id)}</div>
+        </div>`;
+      }).join('');
+      $('actorList').innerHTML = `${cards}
+        <button type="button" class="actor-card actor-add-card" data-open-actor-picker aria-label="添加演员" title="添加演员">
+          <span>+</span>
+          <b>添加演员</b>
+          <small class="actor-meta">${selectedPets.length}/${selectedLimit}</small>
+        </button>`;
+    }
+
+    function renderStoryPreview() {
+      const story = readStoryFromEditor() || state.currentStory;
+      $('tabPreview').classList.toggle('active', state.activeTab === 'preview');
+      $('tabJson').classList.toggle('active', state.activeTab === 'json');
+      $('storyPreview').classList.toggle('hidden', state.activeTab !== 'preview');
+      $('storyJson').classList.toggle('hidden', state.activeTab !== 'json');
+      if (!story) {
+        const outline = $('storyOutline')?.value?.trim() || '';
+        const id = $('storyId')?.value?.trim() || '';
+        const title = $('storyTitle')?.value?.trim() || '';
+        $('storyPreview').innerHTML = outline || id || title
+          ? `<div class="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-sm"><b>${escapeHtml(title || id || '待生成故事')}</b><br><span class="text-xs text-slate-600">${escapeHtml(id || '未设置 ID')} · 待生成完整故事</span><div class="mt-2 text-xs leading-normal text-slate-700">${escapeHtml(outline || '暂无梗概')}</div></div>`
+          : '<div class="hint">暂无故事。先生成梗概或完整故事。</div>';
+        return;
+      }
+      const stats = storyStats(story);
+      $('storyPreview').innerHTML = `
+        <div class="rounded-md border border-sky-200 bg-sky-50 p-2.5 text-sm">
+          <b>${escapeHtml(story.title || story.id)}</b><br>
+          <span class="text-xs text-slate-600">${escapeHtml(story.id)} · ${stats.scenes} 幕 · ${stats.actors} 演员 · ${stats.lines} 对白 · ${stats.activities} 互动 · ${stats.minigames} 小游戏</span>
+        </div>
+        <div class="mt-2 grid gap-2">
+          ${(story.scenes || []).map((scene, index) => `<div class="scene-card">
+            <b>第${index + 1}幕 ${escapeHtml(scene.id || '')}</b>
+            <div class="hint">tags: ${escapeHtml((scene.sceneTags || []).join(', '))} · music: ${escapeHtml(scene.bgMusic || '')}</div>
+            <div class="timeline-list">${(scene.timeline || []).map(item => item.kind === 'activity'
+              ? `<div class="timeline-item activity">互动：${escapeHtml(item.title || item.type)} × ${escapeHtml(item.count || 1)} ${item.gameId ? `· ${escapeHtml(item.gameId)}` : ''}</div>`
+              : `<div class="timeline-item">${escapeHtml(item.actor || '')}：${escapeHtml(item.text || '')}</div>`).join('')}</div>
+          </div>`).join('')}
+        </div>`;
+    }
+
+    function pickRandomPets(count, forcedMainId = '') {
+      const pool = [...state.pets];
+      const picked = [];
+      const push = (pet) => { if (pet && !picked.some(item => item.id === pet.id)) picked.push(pet); };
+      if (forcedMainId) push(pool.find(pet => pet.id === forcedMainId));
+      while (picked.length < count && pool.length) {
+        const index = Math.floor(Math.random() * pool.length);
+        const [pet] = pool.splice(index, 1);
+        push(pet);
+      }
+      return picked;
+    }
+
+    function setActorsFromPets(pets, mainPetId = '') {
+      rememberActorNamesFromDom();
+      state.selectedPetIds = new Set(pets.map(pet => pet.id));
+      state.mainPetId = mainPetId || pets[0]?.id || '';
+      renderActorList();
+      refreshFullStoryPrompt();
+    }
+
+    function pickerCategories() {
+      const pets = state.pets;
+      return [
+        { id: 'all', label: '全部', count: pets.length },
+        ...['陆地', '水系', '天空'].map(value => ({ id: `element:${value}`, label: value === '水系' ? '海洋' : value, count: pets.filter(pet => pet.traits?.element === value).length })),
+        ...ATTRIBUTE_ORDER.map(value => ({ id: `attribute:${value}`, label: value, count: pets.filter(pet => pet.traits?.elementalAttribute === value).length })),
+      ];
+    }
+
+    function filteredPickerPets() {
+      const query = state.picker.query.trim().toLowerCase();
+      return state.pets.filter(pet => {
+        if (state.picker.category.startsWith('element:') && pet.traits?.element !== state.picker.category.slice(8)) return false;
+        if (state.picker.category.startsWith('attribute:') && pet.traits?.elementalAttribute !== state.picker.category.slice(10)) return false;
+        if (query && !traitText(pet).includes(query)) return false;
+        return true;
+      });
+    }
+
+    function renderActorPicker(overlay) {
+      const selectedLimit = getActorCount();
+      const pets = filteredPickerPets();
+      const body = overlay.querySelector('[data-picker-body]');
+      const categories = pickerCategories();
+      const stageButtons = STAGES.map(stage => `<button class="picker-filter ${state.picker.stage === stage.id ? 'active' : ''}" type="button" data-picker-stage="${stage.id}">${escapeHtml(stage.name)}</button>`).join('');
+      const animButtons = ANIMS.map(anim => `<button class="picker-filter ${state.picker.anim === anim.id ? 'active' : ''}" type="button" data-picker-anim="${anim.id}">${escapeHtml(anim.name)}</button>`).join('');
+      body.innerHTML = `
+        <div class="pet-picker-toolbar">
+          <input data-picker-search value="${escapeHtml(state.picker.query)}" placeholder="搜索名字、种类、颜色、属性或 DNA">
+          <div class="hint self-center">已选 ${state.selectedPetIds.size}/${selectedLimit}</div>
+          <div class="picker-filter-row md:col-span-2">
+            ${categories.map(item => `<button class="picker-filter ${state.picker.category === item.id ? 'active' : ''}" type="button" data-picker-category="${escapeHtml(item.id)}">${escapeHtml(item.label)} ${item.count}</button>`).join('')}
+          </div>
+          <div class="picker-filter-row md:col-span-2">${stageButtons}${animButtons}</div>
+        </div>
+        <div class="pet-picker-scroll">
+          <div class="pet-picker-grid">
+            ${pets.length ? pets.map(pet => petPickerCardHtml(pet)).join('') : '<div class="hint rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-center md:col-span-4">没有匹配的宠物。</div>'}
+          </div>
+        </div>`;
+      const input = body.querySelector('[data-picker-search]');
+      input?.focus?.();
+      input?.setSelectionRange?.(input.value.length, input.value.length);
+    }
+
+    function petPickerCardHtml(pet) {
+      const selected = state.selectedPetIds.has(pet.id);
+      const isMain = state.mainPetId === pet.id;
+      const t = pet.traits || {};
+      return `<button type="button" class="pet-picker-card ${selected ? 'selected' : ''} ${isMain ? 'main' : ''}" data-picker-pet="${escapeHtml(pet.id)}">
+        ${selected ? '<span class="pet-picker-check">✓</span>' : ''}
+        ${isMain ? '<span class="pet-picker-main">主角</span>' : ''}
+        <div class="actor-thumb">${spriteHtml(pet, state.picker.stage, state.picker.anim)}</div>
+        <div class="pet-picker-name">${escapeHtml(pet.name || pet.id)} ${escapeHtml(ELEMENT_EMOJI[t.element] || '✨')}</div>
+        <div class="pet-picker-meta">${escapeHtml([t.element, t.elementalAttribute, t.species].filter(Boolean).join(' · ') || pet.id)}</div>
+      </button>`;
+    }
+
+    function openActorPicker() {
+      rememberActorNamesFromDom();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window pet-picker-window">
+          <div class="modal-titlebar">
+            <div><strong>选择故事演员</strong><div class="hint">单击宠物选择/取消；已选宠物再次单击可设为主角。</div></div>
+            <div class="toolbar"><button type="button" data-picker-random>随机</button><button type="button" class="primary" data-close-modal>完成</button></div>
+          </div>
+          <div class="modal-body pet-picker-body" data-picker-body></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      renderActorPicker(overlay);
+      overlay.addEventListener('input', (e) => {
+        const search = e.target.closest?.('[data-picker-search]');
+        if (!search) return;
+        state.picker.query = search.value || '';
+        renderActorPicker(overlay);
+      });
+      overlay.addEventListener('click', (e) => {
+        if (e.target.closest?.('[data-close-modal]') || e.target === overlay) {
+          overlay.remove();
+          renderActorList();
+          refreshFullStoryPrompt();
+          return;
+        }
+        const category = e.target.closest?.('[data-picker-category]');
+        if (category) { state.picker.category = category.dataset.pickerCategory || 'all'; renderActorPicker(overlay); return; }
+        const stage = e.target.closest?.('[data-picker-stage]');
+        if (stage) { state.picker.stage = stage.dataset.pickerStage || 'adult'; renderActorPicker(overlay); return; }
+        const anim = e.target.closest?.('[data-picker-anim]');
+        if (anim) { state.picker.anim = anim.dataset.pickerAnim || 'idle'; renderActorPicker(overlay); return; }
+        if (e.target.closest?.('[data-picker-random]')) {
+          setActorsFromPets(pickRandomPets(getActorCount()));
+          renderActorPicker(overlay);
+          return;
+        }
+        const petBtn = e.target.closest?.('[data-picker-pet]');
+        if (!petBtn) return;
+        const petId = petBtn.dataset.pickerPet;
+        const selectedLimit = getActorCount();
+        if (state.selectedPetIds.has(petId)) {
+          if (state.mainPetId !== petId) state.mainPetId = petId;
+          else if (state.selectedPetIds.size > 1) {
+            state.selectedPetIds.delete(petId);
+            state.actorNames.delete(petId);
+            state.mainPetId = [...state.selectedPetIds][0] || '';
+          }
+        } else if (state.selectedPetIds.size < selectedLimit) {
+          state.selectedPetIds.add(petId);
+          if (!state.mainPetId) state.mainPetId = petId;
+        } else {
+          setRunStatus(`最多选择 ${selectedLimit} 位演员，可先调大“每个故事演员数”或取消其他演员。`, 'error');
+        }
+        renderActorPicker(overlay);
+      });
+    }
+
+    async function runOutline() {
+      try {
+        setBusy(true);
+        const [outline] = await generateOutline({ batch: false });
+        $('storyId').value = outline.id;
+        $('storyTitle').value = outline.title;
+        $('storyOutline').value = outline.outline;
+        if (outline.mainPetId && state.pets.some(pet => pet.id === outline.mainPetId)) state.mainPetId = outline.mainPetId;
+        renderActorList();
+        setRunStatus('已生成故事梗概。', 'ok');
+      } catch (e) { setRunStatus(`生成梗概失败：${e?.message || e}`, 'error'); }
+      finally { setBusy(false); }
+    }
+
+    async function runGenerateFull() {
+      try {
+        setBusy(true);
+        const outline = currentOutlineForFullStory();
+        const story = await generateFullStory(outline, '', $('fullStoryPrompt')?.value?.trim() || '');
+        if (state.settings.saveAfterGenerate) await saveCurrentStory();
+        else setRunStatus(`已生成 ${story.scenes.length} 幕完整故事。`, 'ok');
+      } catch (e) { setRunStatus(`生成完整故事失败：${e?.message || e}`, 'error'); }
+      finally { setBusy(false); }
+    }
+
+    async function runTweak() {
+      try {
+        const current = readStoryFromEditor();
+        if (!current) throw new Error('请先生成或粘贴故事 JSON');
+        setBusy(true);
+        const tweakText = $('singlePrompt')?.value || '优化故事节奏和互动。';
+        const outline = { id: current.id, title: current.title, outline: `${$('storyOutline')?.value || ''}\n当前故事 JSON：${JSON.stringify(current)}\n请保留演员 sourcePetId 和 story maker 支持的所有字段。` };
+        const story = await generateFullStory(outline, tweakText, $('fullStoryPrompt')?.value?.trim() || '');
+        if (state.settings.saveAfterGenerate) await saveCurrentStory();
+        else setRunStatus(`已按要求修改 ${story.title}。`, 'ok');
+      } catch (e) { setRunStatus(`修改失败：${e?.message || e}`, 'error'); }
+      finally { setBusy(false); }
+    }
+
+    function showBatchModal() {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const targets = missingStoryRecords();
+      overlay.innerHTML = `
+        <div class="modal-window">
+          <div class="modal-titlebar"><strong>批量故事生成</strong><button type="button" data-close-modal>关闭</button></div>
+          <div class="modal-body">
+            <div class="toolbar"><button id="btnStartBatch" class="primary" type="button">生成待选故事内容</button></div>
+            <div id="batchStatus" class="status">将逐个生成 ${targets.length} 个已选或待生成故事。没有勾选时默认处理所有待生成记录。</div>
+            <div id="batchSummaries" class="summary-list"></div>
+            <div id="batchProgress" class="batch-progress rounded-md border border-slate-300 bg-white p-2.5">等待开始...</div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      renderBatchSummaries(overlay, targets.map(record => ({ id: record.id, title: record.title, mainPetId: record.mainPetId, outline: record.outline })), {});
+      overlay.addEventListener('click', (e) => { if (e.target.closest('[data-close-modal]') || e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#btnStartBatch').onclick = () => runBatch({ overlay });
+    }
+
+    function renderBatchSummaries(overlay, summaries, statuses = {}) {
+      const host = overlay.querySelector('#batchSummaries');
+      host.innerHTML = summaries.map((item, index) => `<div class="summary-card ${statuses[item.id] || ''}">
+        <b>${index + 1}. ${escapeHtml(item.title || item.id)}</b>
+        <div class="hint">${escapeHtml(item.id)} · 主角 ${escapeHtml(item.mainPetId || '')}</div>
+        <div class="text-xs leading-normal text-slate-700">${escapeHtml(item.outline || '')}</div>
+      </div>`).join('');
+    }
+
+    function renderNewStoryOutlineList(overlay, summaries = [], statuses = {}) {
+      const host = overlay.querySelector('#newStoryOutlineList');
+      if (!host) return;
+      host.innerHTML = summaries.length ? summaries.map((item, index) => `<div class="summary-card ${statuses[item.id] || ''}">
+        <b>${index + 1}. ${escapeHtml(item.title || item.id)}</b>
+        <div class="hint">${escapeHtml(item.id)} · 主角 ${escapeHtml(item.mainPetId || '')}</div>
+        <div class="text-xs leading-normal text-slate-700">${escapeHtml(item.outline || '')}</div>
+      </div>`).join('') : '<div class="hint rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center">点击“生成故事梗概”后会在这里列出 id、标题和摘要。</div>';
+    }
+
+    async function runBatch({ overlay }) {
+      const progress = overlay.querySelector('#batchProgress');
+      const status = overlay.querySelector('#batchStatus');
+      const log = (line) => { progress.textContent += `${progress.textContent ? '\n' : ''}${line}`; progress.scrollTop = progress.scrollHeight; };
+      const statuses = {};
+      try {
+        setBusy(true);
+        progress.textContent = '';
+        status.textContent = '正在准备待生成故事...';
+        const actorCount = getActorCount();
+        const originalActors = { ids: new Set(state.selectedPetIds), mainPetId: state.mainPetId };
+        const allMainActors = state.pets.length ? state.pets : [];
+        if (!allMainActors.length) throw new Error('没有可用宠物，请先加载 famous-pets/_pet_index.json');
+        const mode = state.settings.mainActorMode || 'random';
+        const targetRecords = missingStoryRecords();
+        if (!targetRecords.length) throw new Error('没有待生成故事。请先点击“新建”生成故事梗概，或勾选要重新生成的故事。');
+        renderBatchSummaries(overlay, targetRecords.map(record => ({ id: record.id, title: record.title, mainPetId: record.mainPetId, outline: record.outline })), statuses);
+        log(`待生成：${targetRecords.length} 个`);
+        for (let i = 0; i < targetRecords.length; i++) {
+          const record = targetRecords[i];
+          const forcedMain = mode === 'selected' ? originalActors.mainPetId : mode === 'roundRobin' ? allMainActors[i % allMainActors.length].id : (record.mainPetId || allMainActors[Math.floor(Math.random() * allMainActors.length)].id);
+          const pets = pickRandomPets(actorCount, forcedMain);
+          setActorsFromPets(pets, forcedMain);
+          $('storyId').value = record.id;
+          $('storyTitle').value = record.title;
+          $('storyOutline').value = record.outline || '';
+          status.textContent = `正在生成 ${i + 1}/${targetRecords.length}：${record.title}`;
+          log(`开始 ${i + 1}/${targetRecords.length}: ${record.id} (${forcedMain})`);
+          try {
+            refreshFullStoryPrompt({ force: true });
+            const story = await generateFullStory(record, '', $('fullStoryPrompt')?.value?.trim() || '');
+            await saveCurrentStory();
+            state.selectedRecordIds.delete(story.id);
+            statuses[record.id] = 'done';
+            log(`完成：${story.id}`);
+          } catch (e) {
+            statuses[record.id] = 'error';
+            log(`失败：${record.id} - ${e?.message || e}`);
+          }
+          renderBatchSummaries(overlay, targetRecords.map(item => ({ id: item.id, title: item.title, mainPetId: item.mainPetId, outline: item.outline })), statuses);
+        }
+        setActorsFromPets([...originalActors.ids].map(id => state.pets.find(pet => pet.id === id)).filter(Boolean), originalActors.mainPetId);
+        await loadRecords();
+        status.textContent = '批量生成完成。';
+      } catch (e) {
+        status.textContent = `批量失败：${e?.message || e}`;
+        status.classList.add('error');
+      } finally { setBusy(false); }
+    }
+
+    function showImportExport() {
+      const overlay = document.createElement('div');
+      const text = JSON.stringify(state.records.map(({ id, title, mainPetId }) => ({ id, title, mainPetId })), null, 2);
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window">
+          <div class="modal-titlebar"><strong>导入 / 导出 _story_index.json</strong><button type="button" data-close-modal>关闭</button></div>
+          <div class="modal-body flex flex-col gap-3">
+            <div class="hint">这里只处理 pet-story/_story_index.json。每条记录只包含 id、title、mainPetId。</div>
+            <textarea id="importExportText" class="output min-h-0 flex-1" spellcheck="false">${escapeHtml(text)}</textarea>
+            <div class="toolbar justify-end"><button id="btnImportIndex" type="button">导入并保存</button><button id="btnCopyIndex" type="button">复制</button><button id="btnDownloadIndex" class="primary" type="button">下载</button></div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => { if (e.target.closest('[data-close-modal]') || e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#btnCopyIndex').onclick = async () => navigator.clipboard?.writeText(overlay.querySelector('#importExportText').value);
+      overlay.querySelector('#btnDownloadIndex').onclick = () => {
+        const blob = new Blob([overlay.querySelector('#importExportText').value], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '_story_index.json';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      };
+      overlay.querySelector('#btnImportIndex').onclick = async () => {
+        const parsed = extractJson(overlay.querySelector('#importExportText').value);
+        state.records = normalizeStoryIndex(parsed);
+        await saveStoryIndex();
+        renderRecords();
+        overlay.remove();
+      };
+    }
+
+    function showNewStoryModal() {
+      const settings = state.settings;
+      const overlay = document.createElement('div');
+      let outlinePromptDirty = false;
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window">
+          <div class="modal-titlebar"><strong>新建故事 / 生成设置</strong><button type="button" data-close-modal>关闭</button></div>
+          <div class="modal-body flex flex-col gap-3">
+            <div class="status">这些设置用于新建、单个生成、批量生成和演员选择。保存后会保留在当前页面状态中。</div>
+            <section class="section">
+              <h2>基础设置</h2>
+              <div class="row">
+                <label>场景数
+                  <input id="modalSceneCount" type="number" min="1" max="12" value="${escapeHtml(getSceneCount())}">
+                </label>
+                <label>批量数量
+                  <input id="modalBatchCount" type="number" min="1" max="100" value="${escapeHtml(getBatchCount())}">
+                </label>
+              </div>
+              <div class="row">
+                <label>每个故事演员数
+                  <input id="modalActorCount" type="number" min="1" max="5" value="${escapeHtml(getActorCount())}">
+                </label>
+                <label>主角策略
+                  <select id="modalMainActorMode">
+                    <option value="random" ${settings.mainActorMode === 'random' ? 'selected' : ''}>从 _pet_index 随机</option>
+                    <option value="selected" ${settings.mainActorMode === 'selected' ? 'selected' : ''}>使用当前选中宠物</option>
+                    <option value="roundRobin" ${settings.mainActorMode === 'roundRobin' ? 'selected' : ''}>按列表轮换</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+            <section class="section">
+              <h2>提示词</h2>
+              <label>通用主题 / 修改要求
+                <textarea id="modalStoryTheme" class="prompt-box" placeholder="例如：温暖、合作、适合手机快速游玩；每个故事都要有清晰寓意。">${escapeHtml(settings.storyTheme || '')}</textarea>
+              </label>
+            </section>
+            <section class="section">
+              <h2>保存策略</h2>
+              <label class="toggle-line"><input id="modalSaveAfterGenerate" type="checkbox" ${settings.saveAfterGenerate ? 'checked' : ''}>生成完整故事后自动保存并更新 pet-story/_story_index.json</label>
+              <label class="toggle-line"><input id="modalSkipExistingIds" type="checkbox" ${settings.skipExistingIds ? 'checked' : ''}>批量保存时跳过重复 story id</label>
+            </section>
+            <section class="section">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <h2>完整 AI Prompt（可编辑）</h2>
+                <button id="btnRefreshOutlinePrompt" type="button">按设置刷新</button>
+              </div>
+              <div class="hint">这里是实际发送给 AI 的 user prompt。可以先修改，再点击“生成故事梗概”。如果上面的设置改了，点“按设置刷新”会重新生成提示词。</div>
+              <textarea id="modalOutlinePrompt" class="prompt-box" style="min-height:260px" spellcheck="false">${escapeHtml(buildCurrentOutlinePrompt({ batch: true }))}</textarea>
+            </section>
+            <section class="section">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <h2>故事梗概</h2>
+                <button id="btnGenerateStoryOutlines" class="primary" type="button">生成故事梗概</button>
+              </div>
+              <div id="newStoryModalStatus" class="status">生成后会立即添加到 pet-story/_story_index.json，并自动勾选为待批量生成。</div>
+              <div id="newStoryOutlineProgress" class="outline-progress">等待生成...</div>
+              <div id="newStoryOutlineList" class="summary-list"></div>
+            </section>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const applySettings = () => {
+        state.settings = {
+          sceneCount: clampNumber(overlay.querySelector('#modalSceneCount')?.value, 1, 12, 5),
+          batchCount: clampNumber(overlay.querySelector('#modalBatchCount')?.value, 1, 100, 3),
+          actorCount: clampNumber(overlay.querySelector('#modalActorCount')?.value, 1, 5, 2),
+          mainActorMode: overlay.querySelector('#modalMainActorMode')?.value || 'random',
+          storyTheme: overlay.querySelector('#modalStoryTheme')?.value || '',
+          saveAfterGenerate: !!overlay.querySelector('#modalSaveAfterGenerate')?.checked,
+          skipExistingIds: !!overlay.querySelector('#modalSkipExistingIds')?.checked,
+        };
+        state.outlinePromptActors = null;
+        renderActorList();
+      };
+      const refreshOutlinePrompt = () => {
+        applySettings();
+        state.outlinePromptActors = null;
+        const promptEl = overlay.querySelector('#modalOutlinePrompt');
+        if (promptEl) promptEl.value = buildCurrentOutlinePrompt({ batch: true });
+        outlinePromptDirty = false;
+      };
+      const autoRefreshOutlinePrompt = () => {
+        if (outlinePromptDirty) return;
+        refreshOutlinePrompt();
+      };
+      const generateOutlinesInModal = async () => {
+        applySettings();
+        const statusEl = overlay.querySelector('#newStoryModalStatus');
+        const progressEl = overlay.querySelector('#newStoryOutlineProgress');
+        const button = overlay.querySelector('#btnGenerateStoryOutlines');
+        const promptText = overlay.querySelector('#modalOutlinePrompt')?.value?.trim() || buildCurrentOutlinePrompt({ batch: true });
+        button.disabled = true;
+        progressEl.textContent = '正在生成故事 ID、标题和摘要...';
+        setStatus(statusEl, '正在调用模型生成故事梗概...', '');
+        try {
+          const summaries = await generateOutline({ batch: true, promptOverride: promptText, onStreamUpdate: text => { progressEl.textContent = text || '等待模型输出...'; } });
+          const added = upsertOutlineRecords(summaries);
+          await saveStoryIndex();
+          renderNewStoryOutlineList(overlay, added.map(record => ({ id: record.id, title: record.title, mainPetId: record.mainPetId, outline: record.outline })), {});
+          progressEl.textContent = JSON.stringify(added, null, 2);
+          setStatus(statusEl, `已生成并加入 index：${added.length} 个。它们已自动勾选，点击主界面“批量生成”会逐个生成完整故事内容。`, 'ok');
+          setRunStatus(`已生成 ${added.length} 个故事梗概并加入 ${STORY_INDEX_PATH}。`, 'ok');
+        } catch (e) {
+          setStatus(statusEl, `生成失败：${e?.message || e}`, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      };
+      overlay.addEventListener('click', (e) => {
+        if (e.target.closest?.('[data-close-modal]') || e.target === overlay) overlay.remove();
+      });
+      renderNewStoryOutlineList(overlay, []);
+      ['modalSceneCount', 'modalBatchCount', 'modalActorCount', 'modalMainActorMode', 'modalStoryTheme'].forEach(id => {
+        const el = overlay.querySelector(`#${id}`);
+        el?.addEventListener('input', autoRefreshOutlinePrompt);
+        el?.addEventListener('change', autoRefreshOutlinePrompt);
+      });
+      overlay.querySelector('#modalOutlinePrompt')?.addEventListener('input', () => { outlinePromptDirty = true; });
+      overlay.querySelector('#btnRefreshOutlinePrompt').onclick = refreshOutlinePrompt;
+      overlay.querySelector('#btnGenerateStoryOutlines').onclick = generateOutlinesInModal;
+    }
+
+    function newStory() {
+      state.currentStory = null;
+      state.selectedStoryId = '';
+      state.actorNames = new Map();
+      $('storyId').value = '';
+      $('storyTitle').value = '';
+      $('storyOutline').value = '';
+      $('singlePrompt').value = '';
+      $('storyJson').value = '';
+      $('streamPreview').textContent = '等待模型输出...';
+      state.fullStoryPromptDirty = false;
+      refreshFullStoryPrompt({ force: true });
+      renderStoryPreview();
+      renderRecords();
+      setRunStatus('已新建空故事。');
+    }
+
+    function bindEvents() {
+      $('btnLocalApi').onclick = async () => {
+        const sdk = state.sdk || window.keepwork;
+        if (sdk?.localAPIKeySettings?.show) await sdk.localAPIKeySettings.show({
+          title: '本地 API Key 设置',
+          fullscreen: true,
+          onSave: async () => { await populateModelDropdown(); await refreshLoginState(); },
+        });
+        await populateModelDropdown();
+        await refreshLoginState();
+      };
+      $('textModelSelect').onchange = () => { state.lastTextModel = $('textModelSelect').value; saveLocalGenerationSettings(); };
+      $('btnOpenStoryIndex').onclick = () => openWorkspaceViewer(STORY_INDEX_PATH);
+      $('btnReloadPets').onclick = async () => { await loadPets(); renderActorList(); };
+      $('btnNewStory').onclick = showNewStoryModal;
+      $('btnOutline').onclick = runOutline;
+      $('btnGenerateFull').onclick = runGenerateFull;
+      $('btnTweak').onclick = runTweak;
+      $('btnSaveStory').onclick = saveCurrentStory;
+      $('btnRefreshStoryPrompt').onclick = () => refreshFullStoryPrompt({ force: true });
+      $('fullStoryPrompt').addEventListener('input', () => { state.fullStoryPromptDirty = true; });
+      $('btnBatch').onclick = showBatchModal;
+      $('btnImportExport').onclick = showImportExport;
+      $('btnRandomActors').onclick = () => setActorsFromPets(pickRandomPets(getActorCount()));
+      $('recordSearch').oninput = renderRecords;
+      $('tabPreview').onclick = () => { state.activeTab = 'preview'; renderStoryPreview(); };
+      $('tabJson').onclick = () => { state.activeTab = 'json'; renderStoryPreview(); };
+      $('storyJson').addEventListener('input', () => { try { state.currentStory = normalizeStory(extractJson($('storyJson').value) || state.currentStory); } catch (_) {} });
+      ['storyId', 'storyTitle', 'storyOutline', 'singlePrompt'].forEach(id => {
+        $(id)?.addEventListener('input', () => { refreshFullStoryPrompt(); renderStoryPreview(); });
+        $(id)?.addEventListener('change', () => { refreshFullStoryPrompt(); renderStoryPreview(); });
+      });
+      $('recordSelectAll').onchange = () => {
+        const query = String($('recordSearch')?.value || '').trim().toLowerCase();
+        const list = state.records.filter(record => !query || [record.id, record.title, record.mainPetId].join(' ').toLowerCase().includes(query));
+        if ($('recordSelectAll').checked) list.forEach(record => state.selectedRecordIds.add(record.id));
+        else list.forEach(record => state.selectedRecordIds.delete(record.id));
+        renderRecords();
+      };
+      $('btnDeleteSelected').onclick = async () => {
+        if (!state.selectedRecordIds.size) return;
+        if (!confirm(`从 _story_index.json 删除 ${state.selectedRecordIds.size} 条记录？不会删除故事 JSON 文件。`)) return;
+        state.records = state.records.filter(record => !state.selectedRecordIds.has(record.id));
+        state.selectedRecordIds.clear();
+        await saveStoryIndex();
+        renderRecords();
+      };
+      document.addEventListener('change', (e) => {
+        if (e.target.closest?.('[data-actor-name-pet]')) { rememberActorNamesFromDom(); return; }
+        const recordCheck = e.target.closest?.('[data-record-check]');
+        if (recordCheck) {
+          const id = recordCheck.dataset.recordCheck;
+          if (recordCheck.checked) state.selectedRecordIds.add(id);
+          else state.selectedRecordIds.delete(id);
+          renderRecords();
+        }
+      });
+      document.addEventListener('click', async (e) => {
+        if (e.target.closest?.('[data-open-actor-picker]')) { openActorPicker(); return; }
+        const removeActor = e.target.closest?.('[data-remove-actor]');
+        if (removeActor) {
+          const petId = removeActor.dataset.removeActor;
+          state.selectedPetIds.delete(petId);
+          state.actorNames.delete(petId);
+          if (state.mainPetId === petId) state.mainPetId = [...state.selectedPetIds][0] || '';
+          renderActorList();
+          refreshFullStoryPrompt();
+          return;
+        }
+        const selectedActor = e.target.closest?.('[data-selected-actor-pet]');
+        if (selectedActor && !e.target.closest?.('input,button')) {
+          state.mainPetId = selectedActor.dataset.selectedActorPet;
+          renderActorList();
+          refreshFullStoryPrompt();
+          return;
+        }
+        const openRecord = e.target.closest?.('[data-open-record]');
+        if (openRecord) {
+          const id = openRecord.dataset.openRecord;
+          state.selectedStoryId = id;
+          renderRecords();
+          const record = state.records.find(item => item.id === id);
+          try { record?.generated ? await loadStoryById(id) : loadOutlineRecord(record); }
+          catch (err) { setRunStatus(`加载故事失败：${err?.message || err}`, 'error'); }
+        }
+      });
+    }
+
+    function init() {
+      const localSettings = readLocalGenerationSettings();
+      state.lastTextModel = String(localSettings.lastTextModel || '').trim();
+      bindEvents();
+      loadSdk();
+    }
+
+    init();
+  </script>
+</body>
+</html>

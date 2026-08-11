@@ -1,0 +1,2817 @@
+// 宠物渲染与动画统一入口。
+//
+// 设计参考：HelloWorld 的 genGeoCultureGridImage / _generateGridImage 模式，
+// 用一次 LLM 调用生成 4×4 拼图，然后在浏览器端去除背景色，得到带透明通道的精灵图，
+// 用作站立 / 待机动画（cycling 同一行的 4 列变体）。
+//
+// 职责：
+//   1. 形象 HTML：petArtHtml() 输出占位 div（含 data-mh-pet），蛋阶段直接 inline SVG
+//   2. 生成 + 缓存：按 DNA 复用 sprite sheet URL（localStorage 持久化 + 内存 in-flight 去重）
+//   3. 透明化：把背景按格子去除，输出可渲染 URL，避免每次重新处理
+//   4. 渲染 + 动画：扫描所有 [data-mh-pet="<petId>"] 元素，挂载精灵图并按帧循环列
+//
+// 使用：视图层调用 petArtHtml(pet) 输出占位 HTML；本模块订阅 state，每次 notify
+// 之后扫描并接管渲染。已经处于目标状态的元素不会被重建，避免动画重置。
+
+import { state, subscribe, notify, setCurrentPet } from './state.js';
+import { loadPet, savePet, savePetDebounced, setCurrentPetPersisted } from './storage.js';
+import { biasDnaForDiet, biasDnaForElementalAttribute, biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, displayPetName, dnaDietPreference, dnaRarity, dnaToName, randomDna } from './dna.js';
+import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
+import { applyStage, defaultPermanentTrauma, defaultStats, eggStats, defaultTraits, gainTrait, markPetCared } from './petTick.js';
+import { getRuntimePetStats, markPetReleased } from './petLifecycle.js';
+import { clamp, escapeHtml, randId } from './utils.js';
+import { t } from './i18n.js';
+import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
+
+// 4 行 × 4 列：行=阶段（baby/teen/adult/elder），列=情绪（idle/happy/sad/sleep）
+export const SHEET_COLS = 4;
+export const SHEET_ROWS = 4;
+
+const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
+// 列 = 情绪动作（与 api.js 里的 sprite sheet prompt 严格对齐）
+export const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
+export const DEFAULT_ANIM = 'idle';
+
+// ============================================================================
+// 按需读取宠物详情（pet.json 是宠物所有信息的唯一来源）
+// ----------------------------------------------------------------------------
+// getPet(idOrPet) 是获取任意宠物对象的统一入口：
+//   - 已在内存（state.pets）中 → 同步返回。
+//   - 尚未加载 → 同步返回 null，并在后台按需读取 pet.json，加载完成后触发 notify()，
+//     视图随即重渲染并显示完整信息（精灵图、属性等）。
+// 渲染层（同步构建 HTML）可直接调用 getPet(id)：未加载时 petArtHtml 会先渲染蛋占位，
+// pet.json 到位后自动替换为真正形象——无需占位 DOM、无需 IntersectionObserver。
+//
+// 用法：
+//   const pet = getPet(id);                         // 对象 或 null
+//   const name = getPetInfo(id, 'name', '伙伴');     // 任意字段，未加载时返回 fallback
+//   await getPetAsync(id);                           // 需要"一定拿到数据"时才用 await
+// ============================================================================
+
+const _petLoadInFlight = new Map(); // petId -> Promise
+
+function _petIdOf(idOrPet) {
+    return typeof idOrPet === 'string' ? idOrPet : idOrPet?.id || '';
+}
+
+/**
+ * 后台按需加载 pet.json（去重），加载完成后触发一次重渲染。
+ * @param {string} petId
+ * @returns {Promise<object|null>}
+ */
+export function ensurePetLoaded(petId) {
+    if (!petId) return Promise.resolve(null);
+    if (state.pets[petId]) return Promise.resolve(state.pets[petId]);
+    if (_petLoadInFlight.has(petId)) return _petLoadInFlight.get(petId);
+    const promise = loadPet(petId)
+        .then((pet) => {
+            if (pet) notify();
+            return pet;
+        })
+        .catch((e) => {
+            console.warn('按需加载宠物失败', petId, e);
+            return null;
+        })
+        .finally(() => { _petLoadInFlight.delete(petId); });
+    _petLoadInFlight.set(petId, promise);
+    return promise;
+}
+
+/**
+ * 获取宠物对象（唯一入口）。已加载则同步返回，否则返回 null 并在后台按需加载。
+ * @param {string|object} idOrPet 宠物 id 或宠物对象。
+ * @param {{ load?: boolean }} [opts] load=false 时不触发后台加载（纯查询缓存）。
+ * @returns {object|null}
+ */
+export function getPet(idOrPet, opts = {}) {
+    if (idOrPet && typeof idOrPet === 'object') return idOrPet;
+    const petId = _petIdOf(idOrPet);
+    if (!petId) return null;
+    const cached = state.pets[petId];
+    if (cached) return cached;
+    if (opts.load !== false) ensurePetLoaded(petId);
+    return null;
+}
+
+/**
+ * 异步获取宠物对象（确保拿到 pet.json 后再使用时调用）。
+ * @param {string|object} idOrPet
+ * @returns {Promise<object|null>}
+ */
+export function getPetAsync(idOrPet) {
+    if (idOrPet && typeof idOrPet === 'object') return Promise.resolve(idOrPet);
+    return ensurePetLoaded(_petIdOf(idOrPet));
+}
+
+/**
+ * 读取宠物的单个字段（支持点号路径，如 'stats.bond'）。未加载时返回 fallback 并后台加载。
+ * @param {string|object} idOrPet
+ * @param {string} key 字段名或点号路径。
+ * @param {*} [fallback]
+ * @returns {*}
+ */
+export function getPetInfo(idOrPet, key, fallback = undefined) {
+    const pet = getPet(idOrPet);
+    if (!pet || !key) return fallback;
+    if (key.indexOf('.') === -1) return pet[key] !== undefined ? pet[key] : fallback;
+    let cursor = pet;
+    for (const part of key.split('.')) {
+        if (cursor == null) return fallback;
+        cursor = cursor[part];
+    }
+    return cursor !== undefined ? cursor : fallback;
+}
+
+const NIGHT_SLEEP_START_HOUR = 22;
+const MORNING_WAKE_HOUR = 6;
+const DAY_SLEEP_ENERGY_INTERVAL_MS = 10 * 1000;
+const DAY_SLEEP_ENERGY_PER_INTERVAL = 10;
+const DAY_SLEEP_ENERGY_CAP_RATIO = 0.5;
+const DAY_SLEEP_REJECT_TEXT = '我睡不着了';
+
+const _animResetTimers = new Map(); // petId -> timeoutId
+const EGG_HATCH_VISIBLE_DELAY_MS = 2000;
+const DECIDED_EGG_HATCH_DELAY_MS = 5000;
+const _readyEggHatchTimers = new Map(); // petId -> timeoutId
+const EGG_HATCH_PENDING_EMOJIS = ['✨', '💫', '🌟', '🎇', '🎆', '🧬', '🌈', '💖', '🔮', '⚡'];
+const _pendingEggEffectTimers = new Map(); // petId -> intervalId
+const LOW_MOOD_FOOD_BONUS_THRESHOLD = 30;
+const LOW_MOOD_FOOD_BONUS = 10;
+
+function getSharedAudioEngine() {
+    return window.keepwork?.audioEngine
+        || window.KeepworkSDK?.getSharedAudioEngine?.()
+        || window.AudioEngine?.getShared?.()
+        || null;
+}
+
+function getSharedAudioContext() {
+    const engine = getSharedAudioEngine();
+    if (!engine?.isSupported?.()) return null;
+    try { return engine.getContext(); } catch (_) { return null; }
+}
+
+function getSharedAudioDestination(ctx) {
+    const engine = getSharedAudioEngine();
+    try { return engine?.getDestination?.() || engine?.getOutputNode?.() || ctx.destination; } catch (_) { return ctx.destination; }
+}
+
+function _animCol(name) {
+    const c = ANIM_COL[name];
+    return (c == null) ? ANIM_COL[DEFAULT_ANIM] : c;
+}
+
+function localHour(now = Date.now()) {
+    return new Date(now).getHours();
+}
+
+export function isNightSleepTime(now = Date.now()) {
+    const hour = localHour(now);
+    return hour >= NIGHT_SLEEP_START_HOUR || hour < MORNING_WAKE_HOUR;
+}
+
+function localDateKey(now = Date.now()) {
+    const date = new Date(now);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+export function nextMorningWakeAt(now = Date.now()) {
+    const date = new Date(now);
+    if (date.getHours() >= NIGHT_SLEEP_START_HOUR) date.setDate(date.getDate() + 1);
+    date.setHours(MORNING_WAKE_HOUR, 0, 0, 0);
+    return date.getTime();
+}
+
+export function isPetSleeping(pet) {
+    return pet?.anim === 'sleep';
+}
+
+export function startPetSleep(pet, now = Date.now()) {
+    if (!pet) return { sleeping: false, reason: 'missingPet' };
+    const cap = sleepEnergyCap(pet);
+    const isNight = isNightSleepTime(now);
+    const currentEnergy = Number(pet.stats?.hunger) || 0;
+    if (!isNight && currentEnergy > cap) {
+        pet.anim = DEFAULT_ANIM;
+        delete pet.sleepStartedAt;
+        delete pet.sleepLockedUntil;
+        delete pet.sleepEnergyRecoveredAt;
+        delete pet.sleepSessionEnergyCap;
+        return { sleeping: false, wokeImmediately: true, reason: 'tooMuchEnergy', message: DAY_SLEEP_REJECT_TEXT };
+    }
+    pet.anim = 'sleep';
+    pet.sleepStartedAt = now;
+    pet.sleepEnergyRecoveredAt = now;
+    delete pet.sleepSessionEnergyCap;
+    if (isNight) {
+        pet.sleepLockedUntil = nextMorningWakeAt(now);
+    } else {
+        delete pet.sleepLockedUntil;
+        if (canRecoverEnergyFromSleep(pet)) {
+            const dateKey = localDateKey(now);
+            if (pet.daySleepRecoveryDate !== dateKey) {
+                if (pet.stats) pet.stats.hunger = clamp(Math.max(currentEnergy, cap), CONFIG.statMin, CONFIG.statMax);
+                pet.daySleepRecoveryDate = dateKey;
+            } else {
+                pet.sleepSessionEnergyCap = Math.min(cap, currentEnergy + DAY_SLEEP_ENERGY_PER_INTERVAL);
+            }
+        }
+    }
+    return { sleeping: true, lockedUntil: pet.sleepLockedUntil || null };
+}
+
+export function canRecoverEnergyFromSleep(pet) {
+    return ['teen', 'adult', 'elder'].includes(pet?.stage);
+}
+
+export function sleepEnergyCap() {
+    return CONFIG.statMax * DAY_SLEEP_ENERGY_CAP_RATIO;
+}
+
+export function recoverEnergyDuringSleep(pet, now = Date.now()) {
+    if (!pet?.stats || !isPetSleeping(pet) || !canRecoverEnergyFromSleep(pet)) return false;
+    if (!isNightSleepTime(now) && (Number(pet.stats.hunger) || 0) > sleepEnergyCap(pet)) {
+        wakePet(pet, now, { skipRecover: true });
+        return true;
+    }
+    const lastRecoveredAt = Number(pet.sleepEnergyRecoveredAt || pet.sleepStartedAt || now) || now;
+    const intervals = Math.floor(Math.max(0, now - lastRecoveredAt) / DAY_SLEEP_ENERGY_INTERVAL_MS);
+    if (intervals <= 0) return false;
+    pet.sleepEnergyRecoveredAt = lastRecoveredAt + intervals * DAY_SLEEP_ENERGY_INTERVAL_MS;
+    const before = Number(pet.stats.hunger) || 0;
+    const cap = Math.min(sleepEnergyCap(pet), Number(pet.sleepSessionEnergyCap) || sleepEnergyCap(pet));
+    if (before >= cap) return false;
+    pet.stats.hunger = clamp(Math.min(cap, before + intervals * DAY_SLEEP_ENERGY_PER_INTERVAL), CONFIG.statMin, CONFIG.statMax);
+    return pet.stats.hunger !== before;
+}
+
+export function recoverEnergyAfterSleep(pet, now = Date.now()) {
+    return recoverEnergyDuringSleep(pet, now);
+}
+
+export function shouldRejectDaySleep(pet, now = Date.now()) {
+    return !!pet && !isNightSleepTime(now) && (Number(pet.stats?.hunger) || 0) > sleepEnergyCap(pet);
+}
+
+export function daySleepRejectText() {
+    return DAY_SLEEP_REJECT_TEXT;
+}
+
+export function wakePet(pet, now = Date.now(), options = {}) {
+    if (!pet) return false;
+    if (!options.skipRecover) recoverEnergyAfterSleep(pet, now);
+    pet.anim = DEFAULT_ANIM;
+    delete pet.sleepStartedAt;
+    delete pet.sleepLockedUntil;
+    delete pet.sleepEnergyRecoveredAt;
+    delete pet.sleepSessionEnergyCap;
+    return true;
+}
+
+export function wakePetForPlay(pet, now = Date.now()) {
+    return wakePet(pet, now);
+}
+
+export function normalizePetSleepState(pet, now = Date.now()) {
+    if (pet?.id && pet.id !== state.currentPetId) return false;
+    if (!isPetSleeping(pet)) return false;
+    if (!isNightSleepTime(now) && (Number(pet.stats?.hunger) || 0) > sleepEnergyCap(pet)) {
+        return wakePet(pet, now, { skipRecover: true });
+    }
+    const recovered = recoverEnergyDuringSleep(pet, now);
+    const lockedUntil = Number(pet.sleepLockedUntil) || 0;
+    if (lockedUntil && now >= lockedUntil) return wakePet(pet, now) || recovered;
+    return recovered;
+}
+
+export function isPetSleepLocked(pet, now = Date.now()) {
+    if (!isPetSleeping(pet)) return false;
+    const lockedUntil = Number(pet.sleepLockedUntil) || 0;
+    return lockedUntil > now;
+}
+
+export function canWakePet(pet, now = Date.now()) {
+    return isPetSleeping(pet) && !isPetSleepLocked(pet, now);
+}
+
+export function sleepLockText(pet, now = Date.now()) {
+    if (!isPetSleepLocked(pet, now)) return '';
+    return t('sleepLockNight');
+}
+
+export function sleepingInteractionText(pet, now = Date.now()) {
+    return sleepLockText(pet, now) || t('sleepingInteract');
+}
+
+export function getPetSleepActionState(pet, now = Date.now()) {
+    const sleeping = isPetInteractionBlocked(pet, now);
+    const sleepLocked = isPetSleepLocked(pet, now);
+    return {
+        sleeping,
+        sleepLocked,
+        icon: sleeping ? '☀️' : '😴',
+        label: sleeping ? t('dockWake') : t('dockSleep'),
+        disabled: sleepLocked,
+        title: sleepLocked ? sleepingInteractionText(pet, now) : '',
+        hint: sleeping ? (canWakePet(pet, now) ? t('sleepWakeHint') : sleepingInteractionText(pet, now)) : '',
+    };
+}
+
+export function isPetInteractionBlocked(pet, now = Date.now()) {
+    normalizePetSleepState(pet, now);
+    return isPetSleeping(pet);
+}
+
+/**
+ * 设置宠物的当前动画（列）。名称：'idle' | 'happy' | 'sad' | 'sleep'。
+ * 仅修改 pet.anim 并触发重扫描，不会重新生成 sheet。
+ */
+export function setPetAnim(pet, anim) {
+    if (!pet) return;
+    const next = ANIM_COL[anim] != null ? anim : DEFAULT_ANIM;
+    if (pet.anim === next) return;
+    pet.anim = next;
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('magichaqi:pet-anim-change', {
+            detail: { petId: pet.id || state.currentPetId, anim: next },
+        }));
+    }
+    _scheduleScan();
+}
+
+function _currentPet() {
+    return state.currentPetId ? state.pets[state.currentPetId] : null;
+}
+
+function _cssEscape(value) {
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value);
+    return String(value).replace(/["\\]/g, '\\$&');
+}
+
+function _findPetHosts(petId) {
+    const id = petId || state.currentPetId;
+    if (!id) return [];
+    const root = document.getElementById('app') || document.body;
+    return root ? Array.from(root.querySelectorAll(`[data-mh-pet="${_cssEscape(id)}"]`)) : [];
+}
+
+function _showPetBubble(petId, text, duration = 4500) {
+    const message = String(text == null ? '' : text).trim();
+    if (!message) return;
+    _findPetHosts(petId).forEach((host) => {
+        _showPetBubbleAtHost(host, message, duration);
+    });
+}
+
+function _showPetBubbleAtHost(host, text, duration = 4500) {
+    const message = String(text == null ? '' : text).trim();
+    if (!message) return;
+    const anchor = _petEffectAnchor(host);
+    if (!anchor) return;
+    let bubble = anchor.querySelector(':scope > .mh-pet-talk-bubble');
+    if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'mh-pet-talk-bubble';
+        anchor.appendChild(bubble);
+    }
+    const isFlipped = String(anchor.style.transform || '').includes('scaleX(-1)');
+    bubble.style.setProperty('--mh-talk-flip', isFlipped ? '-1' : '1');
+    bubble.textContent = message;
+    bubble.classList.remove('mh-pet-talk-bubble-hide');
+    bubble.classList.remove('mh-pet-talk-bubble-pop');
+    void bubble.offsetWidth;
+    bubble.classList.add('mh-pet-talk-bubble-pop');
+    clearTimeout(bubble.__mhPetSayTimer);
+    const ms = Math.max(900, Number(duration) || 4500);
+    bubble.__mhPetSayTimer = setTimeout(() => {
+        bubble.classList.add('mh-pet-talk-bubble-hide');
+        bubble.addEventListener('animationend', () => bubble.remove(), { once: true });
+    }, ms);
+}
+
+function _randomPendingEggEmoji() {
+    return EGG_HATCH_PENDING_EMOJIS[Math.floor(Math.random() * EGG_HATCH_PENDING_EMOJIS.length)] || '✨';
+}
+
+function _isEggAwaitingSheet(pet) {
+    return !!pet && !!pet.eggHatchPending && !(_isEggSheetReadyToReveal(pet));
+}
+
+function _stopPendingEggEffect(petId) {
+    const id = petId || state.currentPetId;
+    if (!id) return;
+    const timer = _pendingEggEffectTimers.get(id);
+    if (timer) clearInterval(timer);
+    _pendingEggEffectTimers.delete(id);
+    _findPetHosts(id).forEach(el => el.classList.remove('mh-egg-hatch-pending'));
+}
+
+function _syncPendingEggEffect(pet) {
+    const id = pet?.id || state.currentPetId;
+    if (!id) return;
+    const active = _isEggAwaitingSheet(pet);
+    _findPetHosts(id).forEach(el => el.classList.toggle('mh-egg-hatch-pending', active));
+    if (!active) {
+        _stopPendingEggEffect(id);
+        return;
+    }
+    if (_pendingEggEffectTimers.has(id)) return;
+    _showPetBubble(id, _randomPendingEggEmoji(), 1700);
+    const timer = setInterval(() => {
+        const latest = state.pets?.[id] || pet;
+        if (!_isEggAwaitingSheet(latest)) {
+            _stopPendingEggEffect(id);
+            return;
+        }
+        _findPetHosts(id).forEach(el => el.classList.add('mh-egg-hatch-pending'));
+        _showPetBubble(id, _randomPendingEggEmoji(), 1700);
+    }, 2200);
+    _pendingEggEffectTimers.set(id, timer);
+}
+
+function _isElementVisibleInViewport(el) {
+    if (!el || !el.isConnected) return false;
+    const rect = el.getBoundingClientRect?.();
+    if (!rect || rect.width <= 4 || rect.height <= 4) return false;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    const vw = window.innerWidth || document.documentElement?.clientWidth || 0;
+    const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
+    return rect.right > 0 && rect.bottom > 0 && rect.left < vw && rect.top < vh;
+}
+
+function _isWatchingPetForHatch(pet) {
+    if (!pet?.id || typeof document === 'undefined') return false;
+    if (document.visibilityState === 'hidden') return false;
+    if (state.currentView !== 'home') return false;
+    if (state.currentPetId !== pet.id) return false;
+    return _findPetHosts(pet.id).some(_isElementVisibleInViewport);
+}
+
+function _isEggReadyToHatch(pet) {
+    if (!pet || (pet.stage !== 'egg' && !pet.eggHatchPending)) return false;
+    if (!pet.imageSheetUrl) return false;
+    return !!pet.eggHatchPending || !!pet.eggHatchRequestedAt || (pet.stats?.hunger ?? 0) > 0;
+}
+
+function _isEggHatchQueued(pet) {
+    return !!pet && pet.stage === 'egg' && !!pet.eggHatchQueuedAt;
+}
+
+function _isEggHatchStarted(pet) {
+    return !!pet && pet.stage === 'egg' && (!!pet.eggHatchPending || !!pet.eggHatchRequestedAt);
+}
+
+function _continueStartedEggHatch(pet) {
+    if (!_isEggHatchStarted(pet)) return false;
+    pet.eggHatchPending = true;
+    _syncPendingEggEffect(pet);
+    if (pet.imageSheetUrl) _requestReadyEggHatch(pet);
+    return true;
+}
+
+function _isEggSheetReadyToReveal(pet) {
+    if (!pet?.imageSheetUrl) return false;
+    const processed = getProcessedSheet(pet.imageSheetUrl);
+    return processed?.status === 'loaded' && !!processed.dataUrl;
+}
+
+function _finishReadyEggHatch(pet) {
+    if (!_isEggReadyToHatch(pet)) return false;
+    if (!_isWatchingPetForHatch(pet)) return false;
+    if (!_isEggSheetReadyToReveal(pet)) {
+        pet.eggHatchPending = true;
+        _syncPendingEggEffect(pet);
+        return false;
+    }
+
+    const now = Date.now();
+    pet.eggHatchedAt = now;
+    pet.bornAt = now;
+    pet.lastTickAt = now;
+    pet.lastCareAt = now;
+    pet.stage = 'baby';
+    pet.eggHatchPending = false;
+    delete pet.eggHatchPending;
+    delete pet.eggHatchQueuedAt;
+    delete pet.eggHatchRequestedAt;
+    delete pet.eggHatchRevealDelayMs;
+    _stopPendingEggEffect(pet.id || state.currentPetId);
+
+    try { applyStage(pet); } catch (_) {}
+    savePetDebounced(pet);
+
+    const playFeedback = () => {
+        try { scanAndMount(); } catch (_) {}
+        _playHatchAnimation(pet.id || state.currentPetId);
+        _playHatchSound();
+        setAnim('happy', 1800);
+        setTimeout(() => say('我长大啦！谢谢你的食物 ✨', 4200), 200);
+    };
+    const afterPaint = () => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(playFeedback);
+        else setTimeout(playFeedback, 0);
+    };
+    try { import('./state.js').then(({ notify }) => { notify(); afterPaint(); }).catch(afterPaint); }
+    catch (_) { afterPaint(); }
+    return true;
+}
+
+function _requestReadyEggHatch(pet) {
+    if (!_isEggReadyToHatch(pet)) return false;
+    const id = pet.id || state.currentPetId || '__egg__';
+    pet.eggHatchPending = true;
+    _syncPendingEggEffect(pet);
+    if (pet.imageSheetUrl) getProcessedSheet(pet.imageSheetUrl);
+
+    if (_readyEggHatchTimers.has(id)) return true;
+    if (!_isWatchingPetForHatch(pet)) return true;
+
+    const revealDelayMs = Math.max(EGG_HATCH_VISIBLE_DELAY_MS, Number(pet.eggHatchRevealDelayMs) || EGG_HATCH_VISIBLE_DELAY_MS);
+    const timer = setTimeout(() => {
+        _readyEggHatchTimers.delete(id);
+        if (!_finishReadyEggHatch(pet)) _requestReadyEggHatch(pet);
+    }, revealDelayMs);
+    _readyEggHatchTimers.set(id, timer);
+    return true;
+}
+
+function _tryReadyEggHatches() {
+    Object.values(state.pets || {}).forEach((pet) => {
+        try { _requestReadyEggHatch(pet); } catch (_) {}
+    });
+}
+
+function _petEffectAnchor(el) {
+    if (!el) return null;
+    const fieldWander = el.closest?.('.field-pet-wander')
+        || el.querySelector?.(':scope > .field-pet-wander')
+        || el.querySelector?.('.field-pet-wander');
+    if (fieldWander) return fieldWander;
+    return el.closest?.('.pet-sprite') || el;
+}
+
+function _isPetFilthy(pet) {
+    if (pet?.id && pet.id !== state.currentPetId) return false;
+    const stats = getRuntimePetStats(pet);
+    return Number(stats.clean ?? 100) <= 0;
+}
+
+const DIRTY_SMOKE_PATHS = [
+    'M18 70 C7 55 26 45 16 30 C9 19 20 12 17 2',
+    'M18 74 C8 58 28 49 17 33 C7 17 29 14 24 1',
+    'M18 72 C30 56 8 47 20 31 C30 18 15 12 18 2',
+    'M18 70 C9 56 28 43 18 29 C9 16 22 11 20 2',
+];
+
+function _dirtySmokeSvg(path) {
+    return `<svg viewBox="0 0 36 78" aria-hidden="true" focusable="false"><path d="${path}" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+}
+
+function _randomizeDirtySmokeLine(line, index) {
+    const colors = ['#4d7c0f', '#65a30d', '#3f6212', '#15803d'];
+    const left = 34 + Math.random() * 32;
+    const width = 15 + Math.random() * 10;
+    const height = 45 + Math.random() * 22;
+    const drift = -14 + Math.random() * 28;
+    const rise = 44 + Math.random() * 30;
+    const duration = 2.2 + Math.random() * 0.8;
+    const delay = index * 0.42 + Math.random() * 0.25;
+    line.style.cssText = [
+        `--mh-smoke-left:${left.toFixed(1)}%`,
+        `--mh-smoke-w:${width.toFixed(1)}%`,
+        `--mh-smoke-h:${height.toFixed(1)}%`,
+        `--mh-smoke-drift:${drift.toFixed(1)}px`,
+        `--mh-smoke-rise:${rise.toFixed(1)}px`,
+        `--mh-smoke-dur:${duration.toFixed(2)}s`,
+        `--mh-smoke-delay:${delay.toFixed(2)}s`,
+        `--mh-smoke-color:${colors[index % colors.length]}`,
+    ].join(';');
+}
+
+function _syncDirtySmokeEmitter(el, active) {
+    if (!el) return;
+    let emitter = el.querySelector(':scope > .mh-pet-smoke-emitter');
+    if (!active) {
+        emitter?.remove();
+        return;
+    }
+    if (emitter) return;
+    emitter = document.createElement('div');
+    emitter.className = 'mh-pet-smoke-emitter';
+    const count = 4;
+    for (let index = 0; index < count; index++) {
+        const line = document.createElement('span');
+        line.className = 'mh-pet-smoke-line';
+        const path = DIRTY_SMOKE_PATHS[index % DIRTY_SMOKE_PATHS.length];
+        _randomizeDirtySmokeLine(line, index);
+        line.innerHTML = _dirtySmokeSvg(path);
+        emitter.appendChild(line);
+    }
+    el.appendChild(emitter);
+}
+
+function _isSceneCompanionHost(el, pet) {
+    if (!el || !pet?.id) return false;
+    if (pet.id === state.currentPetId) return false;
+    return !!el.closest?.('.field-pet-friend, .mh-released-room-pet');
+}
+
+function _syncAnimClass(el, anim, pet = null) {
+    if (!el) return;
+    const sleeping = anim === 'sleep';
+    const filthy = _isSceneCompanionHost(el, pet) ? false : _isPetFilthy(pet);
+    el.classList.toggle('mh-egg-hatch-pending', _isEggAwaitingSheet(pet));
+    _syncPendingEggEffect(pet);
+    el.classList.toggle('mh-pet-sleeping', sleeping);
+    el.classList.toggle('mh-pet-dirty', filthy);
+    _syncDirtySmokeEmitter(el, filthy);
+    const fieldWander = el.closest?.('.field-pet-wander');
+    if (fieldWander) {
+        fieldWander.classList.toggle('mh-pet-dirty', filthy);
+        if (!filthy) _syncDirtySmokeEmitter(fieldWander, false);
+    }
+    const spriteHost = el.closest('.pet-sprite');
+    if (spriteHost) {
+        spriteHost.classList.toggle('mh-pet-sleeping', sleeping);
+        spriteHost.classList.toggle('mh-pet-dirty', filthy);
+        if (!filthy) _syncDirtySmokeEmitter(spriteHost, false);
+    }
+}
+
+/**
+ * 设置当前宠物动画。名称：'idle' | 'happy' | 'sad' | 'sleep'。
+ * duration > 0 时会在指定毫秒后恢复先前动画（或 idle）。
+ */
+export function setAnim(anim = DEFAULT_ANIM, duration = 0) {
+    const pet = _currentPet();
+    if (!pet) return;
+    const next = ANIM_COL[anim] != null ? anim : DEFAULT_ANIM;
+    const previous = pet.anim || DEFAULT_ANIM;
+    const petId = pet.id || state.currentPetId;
+    if (petId && _animResetTimers.has(petId)) {
+        clearTimeout(_animResetTimers.get(petId));
+        _animResetTimers.delete(petId);
+    }
+    setPetAnim(pet, next);
+    _findPetHosts(petId).forEach((el) => _syncAnimClass(el, next, pet));
+
+    const ms = Number(duration) || 0;
+    if (ms > 0 && petId) {
+        const timer = setTimeout(() => {
+            _animResetTimers.delete(petId);
+            if (state.pets[petId] === pet) {
+                setPetAnim(pet, previous === next ? DEFAULT_ANIM : previous);
+                _findPetHosts(petId).forEach((el) => _syncAnimClass(el, pet.anim || DEFAULT_ANIM, pet));
+            }
+        }, ms);
+        _animResetTimers.set(petId, timer);
+    }
+}
+
+/**
+ * 在当前宠物头顶显示说话气泡。duration 单位为毫秒。
+ */
+export function say(text, duration = 4500) {
+    _showPetBubble(state.currentPetId, text, Math.max(2400, Number(duration) || 4500));
+}
+
+export function sayOnPet(petEl, text, duration = 4500) {
+    if (petEl) {
+        _showPetBubbleAtHost(petEl, text, Math.max(900, Number(duration) || 4500));
+        return;
+    }
+    say(text, duration);
+}
+
+const PET_TALK_LINES = {
+    egg: ['petTalkEgg1', 'petTalkEgg2', 'petTalkEgg3', 'petTalkEgg4'],
+    sleeping: ['petTalkSleeping1', 'petTalkSleeping2', 'petTalkSleeping3', 'petTalkSleeping4'],
+    hungry: ['petTalkHungry1', 'petTalkHungry2', 'petTalkHungry3', 'petTalkHungry4'],
+    dirty: ['petTalkDirty1', 'petTalkDirty2', 'petTalkDirty3', 'petTalkDirty4'],
+    tired: ['petTalkTired1', 'petTalkTired2', 'petTalkTired3', 'petTalkTired4'],
+    sad: ['petTalkSad1', 'petTalkSad2', 'petTalkSad3', 'petTalkSad4'],
+    happy: ['petTalkHappy1', 'petTalkHappy2', 'petTalkHappy3', 'petTalkHappy4', 'petTalkHappy5'],
+    normal: ['petTalkNormal1', 'petTalkNormal2', 'petTalkNormal3', 'petTalkNormal4', 'petTalkNormal5'],
+};
+
+function _pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function _petTalkState(pet) {
+    const stats = getRuntimePetStats(pet);
+    if (pet?.stage === 'egg') return 'egg';
+    if (pet?.anim === 'sleep') return 'sleeping';
+    if ((stats.hunger ?? 100) < 22) return 'hungry';
+    if ((stats.clean ?? 100) < 22) return 'dirty';
+    if ((stats.mood ?? 100) < 28) return 'sad';
+    if ((stats.mood ?? 0) >= 76) return 'happy';
+    return 'normal';
+}
+
+export function randomPetTalk(pet) {
+    const talkState = _petTalkState(pet);
+    if (talkState === 'egg') return { state: 'egg', text: eggHungryHint(pet) };
+    return { state: talkState, text: t(_pick(PET_TALK_LINES[talkState] || PET_TALK_LINES.normal)) };
+}
+
+export function playPetClickFeedback(petEl, pet) {
+    const talk = randomPetTalk(pet);
+    playPetHappy(petEl, pet);
+    requestAnimationFrame(() => sayOnPet(petEl, talk.text, talk.state === 'sleeping' ? 2600 : 2400));
+}
+
+function playFoodTrill(wasHungry = false) {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    try {
+        if (ctx.state === 'suspended') ctx.resume?.();
+        const now = ctx.currentTime;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(wasHungry ? 0.075 : 0.052, now + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
+        gain.connect(getSharedAudioDestination(ctx));
+        const notes = wasHungry ? [660, 880, 1175, 1480] : [620, 830, 1040];
+        notes.forEach((freq, index) => {
+            const osc = ctx.createOscillator();
+            osc.type = index % 2 ? 'triangle' : 'sine';
+            const start = now + index * 0.055;
+            osc.frequency.setValueAtTime(freq, start);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.18, start + 0.05);
+            osc.connect(gain);
+            osc.start(start);
+            osc.stop(start + 0.11);
+        });
+    } catch (_) {}
+}
+
+function primeFoodAudio() {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    try {
+        if (ctx.state === 'suspended') ctx.resume?.();
+    } catch (_) {}
+}
+
+function spawnEatFoodEffects(pet, foodItem, wasHungry = false) {
+    const icon = foodItem?.emoji || '🍽️';
+    _findPetHosts(pet?.id).forEach((host) => {
+        const anchor = _petEffectAnchor(host);
+        if (!anchor) return;
+        let fx = anchor.querySelector(':scope > .mh-pet-fx');
+        if (!fx) {
+            fx = document.createElement('div');
+            fx.className = 'mh-pet-fx';
+            anchor.appendChild(fx);
+        }
+        const burst = document.createElement('span');
+        burst.className = 'mh-food-love-burst';
+        burst.textContent = wasHungry ? '😍' : '😋';
+        fx.appendChild(burst);
+        burst.addEventListener('animationend', () => burst.remove(), { once: true });
+
+        const shardCount = wasHungry ? 14 : 10;
+        for (let i = 0; i < shardCount; i++) {
+            const shard = document.createElement('span');
+            shard.className = 'mh-food-shard';
+            shard.textContent = icon;
+            const startX = Math.random() * 24 - 12;
+            const startY = Math.random() * 18 - 16;
+            const burstX = Math.random() * 120 - 60;
+            const burstY = -(16 + Math.random() * 44);
+            const fallY = 42 + Math.random() * 62;
+            const size = 10 + Math.random() * 12;
+            const rotate = Math.random() * 220 - 110;
+            const delay = Math.random() * 0.08;
+            shard.style.setProperty('--mh-food-start-x', startX.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-start-y', startY.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-burst-x', burstX.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-burst-y', burstY.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-fall-y', fallY.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-size', size.toFixed(1) + 'px');
+            shard.style.setProperty('--mh-food-rot', rotate.toFixed(1) + 'deg');
+            shard.style.setProperty('--mh-food-delay', delay.toFixed(2) + 's');
+            fx.appendChild(shard);
+            shard.addEventListener('animationend', () => shard.remove(), { once: true });
+        }
+        _spawnHappyParticles(anchor, wasHungry ? 10 : 7);
+    });
+}
+
+// ============================================================
+// 蛋孵化流程
+// ============================================================
+//
+// 蛋阶段的 DNA 可以被这些因素影响（在 createNewEgg 时初始化，孵化时统一应用）：
+//   1) 主屋所在领地（land/water/sky/fire/ice/life/dark）
+//   2) 玩家在蛋阶段喂的食物（item.trait → catLike / fishLike ...）
+//   3) 玩家在 cell 视图中"许愿"输入的提示词（pet.wishPrompt，会替换 genImage 提示）
+//
+// 第一次喂食触发孵化：DNA 最终化 → 生成精灵图 → 进入 baby 阶段，播放孵化动画与音效。
+
+function _eggBias(pet) {
+    if (!pet.eggBias) pet.eggBias = { feedTraits: {}, feedCount: 0 };
+    if (!pet.eggBias.feedTraits) pet.eggBias.feedTraits = {};
+    return pet.eggBias;
+}
+
+function _dominantFeedTrait(pet) {
+    const traits = pet.eggBias?.feedTraits || {};
+    let best = null;
+    let bestCount = 0;
+    for (const [trait, count] of Object.entries(traits)) {
+        if (count > bestCount) { best = trait; bestCount = count; }
+    }
+    return best;
+}
+
+function _shouldUseSystemHatchTarget(pet) {
+    if (!pet || pet.hatchMode === 'llm' || pet.generationMode === 'llm') return false;
+    if (pet.useSystemPet === false) return false;
+    if (typeof pet.wishPrompt === 'string' && pet.wishPrompt.trim()) return false;
+    if (typeof pet.wishReferenceImage === 'string' && pet.wishReferenceImage.trim()) return false;
+    return true;
+}
+
+function _normalizeSystemHatchTarget(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = String(entry.id || '').trim();
+    const dna = String(entry.dna || '').trim();
+    const imageSheetUrl = String(entry.imageSheetUrl || '').trim();
+    if (!id || !dna || !imageSheetUrl) return null;
+    return {
+        source: 'famous-pets',
+        id,
+        name: String(entry.name || id).trim(),
+        dna,
+        imageUrl: entry.imageUrl || null,
+        imageSheetUrl,
+        traits: entry.traits && typeof entry.traits === 'object' ? JSON.parse(JSON.stringify(entry.traits)) : decodeDna(dna),
+        rarity: Number.isFinite(Number(entry.rarity)) ? Number(entry.rarity) : dnaRarity(dna),
+        decidedAt: Date.now(),
+    };
+}
+
+function _systemPetOwnedKeys(pet = {}) {
+    const keys = [];
+    const sourcePetId = String(pet.sourcePetId || '').trim();
+    const targetId = String(pet.eggHatchTarget?.id || '').trim();
+    const targetName = String(pet.eggHatchTarget?.name || '').trim();
+    const sourceId = sourcePetId.replace(/^famous-pets\//, '');
+    if (sourceId) keys.push(`id:${sourceId}`);
+    if (targetId) keys.push(`id:${targetId}`);
+    if (targetName) keys.push(`name:${targetName}`);
+    if (pet.source === 'famous-pets') {
+        const petId = String(pet.id || '').trim();
+        const petName = String(pet.name || '').trim();
+        if (petId) keys.push(`id:${petId}`);
+        if (petName) keys.push(`name:${petName}`);
+    }
+    return keys;
+}
+
+export function systemPetOwnedKeys(pet = {}) {
+    return _systemPetOwnedKeys(pet);
+}
+
+function _getOwnedSystemPetKeySet() {
+    const owned = new Set();
+    Object.values(state.pets || {}).forEach(item => _systemPetOwnedKeys(item).forEach(key => owned.add(key)));
+    return owned;
+}
+
+async function _resolveSystemHatchTargetForEgg(pet) {
+    const existing = _normalizeSystemHatchTarget(pet?.eggHatchTarget);
+    if (existing) return existing;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载系统宠物列表失败，暂不调用 LLM 生成蛋形象', e);
+    }
+    const candidates = (Array.isArray(list) ? list : []).map(_normalizeSystemHatchTarget).filter(Boolean);
+    if (!candidates.length) return null;
+    const owned = _getOwnedSystemPetKeySet();
+    const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
+    const pool = unowned.length ? unowned : candidates;
+    return pool[Math.floor(Math.random() * pool.length)] || null;
+}
+
+const BOARDING_ELEMENT_MAP = { land: '陆地', water: '水系', sky: '天空' };
+const BOARDING_DIET_MAP = {
+    omnivore: 'both',
+    both: 'both',
+    carnivore: 'meat',
+    meat: 'meat',
+    herbivore: 'vegetables',
+    vegetables: 'vegetables',
+    veggie: 'vegetables',
+};
+
+function _boardingElement(data = {}) {
+    const raw = String(data.element || data.wishElement || '').trim().toLowerCase();
+    return BOARDING_ELEMENT_MAP[raw] || '';
+}
+
+function _boardingDietPreference(data = {}) {
+    const raw = String(data.diet || data.firstFood || '').trim().toLowerCase();
+    return BOARDING_DIET_MAP[raw] || '';
+}
+
+function _buildBoardingDna(data = {}) {
+    let dna = randomDna();
+    const element = String(data.element || data.wishElement || '').toLowerCase();
+    if (element && element !== 'random') dna = biasDnaForFieldId(dna, element, { probability: 1 });
+    if (data.elementalAttribute) dna = biasDnaForElementalAttribute(dna, data.elementalAttribute);
+    const dietPreference = _boardingDietPreference(data);
+    if (dietPreference) dna = biasDnaForDiet(dna, dietPreference);
+    return dna;
+}
+
+function _scoreBoardingTarget(target, data = {}) {
+    if (!target) return 0;
+    const traits = target.traits && typeof target.traits === 'object' ? target.traits : decodeDna(target.dna || '');
+    const wantedElement = _boardingElement(data);
+    const wantedAttribute = String(data.elementalAttribute || '').trim();
+    const wantedDiet = _boardingDietPreference(data);
+    let score = 0;
+    if (wantedElement && traits.element === wantedElement) score += 4;
+    if (wantedAttribute && traits.elementalAttribute === wantedAttribute) score += 3;
+    if (wantedDiet && target.dna && dnaDietPreference(target.dna) === wantedDiet) score += 2;
+    return score;
+}
+
+function _normalizeBoardingReturnedPet(data = {}) {
+    const source = data?.pet || data?.petInfo || data?.petConfig || data?.hatchedPet || data?.rewardPet || null;
+    const raw = source && typeof source === 'object' ? source : null;
+    if (!raw) return null;
+    const dna = String(raw.dna || raw.petDna || '').trim();
+    const imageSheetUrl = String(raw.imageSheetUrl || raw.petImageSheetUrl || raw.spriteSheetUrl || raw.spriteUrl || '').trim();
+    const imageUrl = String(raw.imageUrl || raw.petImageUrl || '').trim();
+    const name = String(raw.name || raw.petName || '').trim();
+    const id = String(raw.id || raw.petId || raw.sourcePetId || '').replace(/^famous-pets\//, '').trim();
+    const traits = raw.traits && typeof raw.traits === 'object'
+        ? JSON.parse(JSON.stringify(raw.traits))
+        : (dna ? decodeDna(dna) : null);
+    if (!dna && !imageSheetUrl && !imageUrl && !name && !traits) return null;
+    const normalizedDna = dna || _buildBoardingDna(data);
+    return {
+        source: raw.source || 'boarding',
+        id,
+        name: name || dnaToName(normalizedDna),
+        dna: normalizedDna,
+        imageUrl: imageUrl || null,
+        imageSheetUrl: imageSheetUrl || null,
+        traits: traits || decodeDna(normalizedDna),
+        rarity: Number.isFinite(Number(raw.rarity)) ? Number(raw.rarity) : dnaRarity(normalizedDna),
+        decidedAt: Date.now(),
+    };
+}
+
+function _applyBoardingChoices(pet, data = {}) {
+    if (!pet || !data) return pet;
+    const dietPreference = _boardingDietPreference(data);
+    pet.boardingChoices = {
+        planetName: data.planetName || '',
+        ownerNickname: data.ownerNickname || '',
+        personality: data.personality || '',
+        petId: data.petId || '',
+        dragonColor: data.dragon_color || data.dragonColor || '',
+        elementalAttribute: data.elementalAttribute || '',
+        diet: data.diet || '',
+        dietPreference: dietPreference || '',
+        wish: data.wish || data.wish_type || '',
+        element: data.element || data.wishElement || '',
+        firstSentence: data.firstSentence || '',
+        birthday: data.birthday || '',
+        completedAt: Date.now(),
+    };
+    if (data.diet) pet.adoptDiet = data.diet;
+    if (data.firstSentence) pet.firstSentence = data.firstSentence;
+    return pet;
+}
+
+// 按明确的 petId 从 famous-pets 索引解析孵化目标。
+// boarding 小游戏会根据用户选择（抱抱龙颜色）回传 petId（dragon_green / dragon_orange / dragon_purple）。
+// 命中时直接以该系统宠物为准：其 dna / imageSheetUrl / traits 会覆盖用户的食性 / 元素属性等选择。
+async function _resolveFamousPetById(petId) {
+    const id = String(petId || '').replace(/^famous-pets\//, '').trim();
+    if (!id) return null;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载 PetList 失败，无法按 petId 选择系统宠物', petId, e);
+        return null;
+    }
+    const entry = (Array.isArray(list) ? list : []).find(item => String(item?.id || '').trim() === id);
+    if (!entry) {
+        console.warn('[pet] 未在 famous-pets 索引中找到 petId', petId);
+        return null;
+    }
+    return _normalizeSystemHatchTarget(entry);
+}
+
+async function _resolveBoardingHatchTarget(data = {}) {
+    // 1) 优先：用户明确选择的 petId（孵化以此为准，覆盖食性 / 元素属性等其它选择）。
+    const explicitPetId = String(data.petId || '').trim();
+    if (explicitPetId) {
+        const byId = await _resolveFamousPetById(explicitPetId);
+        if (byId) return byId;
+    }
+    // 2) 其次：父级直接回传了完整宠物信息。
+    const explicit = _normalizeBoardingReturnedPet(data);
+    if (explicit) return explicit;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载 PetList 失败，无法按 boarding 选择系统宠物', e);
+    }
+    const candidates = (Array.isArray(list) ? list : []).map(_normalizeSystemHatchTarget).filter(Boolean);
+    if (!candidates.length) return null;
+    const owned = _getOwnedSystemPetKeySet();
+    const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
+    const pool = unowned.length ? unowned : candidates;
+    const scored = pool.map(target => ({ target, score: _scoreBoardingTarget(target, data) }));
+    const bestScore = Math.max(...scored.map(item => item.score));
+    const best = bestScore > 0 ? scored.filter(item => item.score === bestScore) : scored;
+    return best[Math.floor(Math.random() * best.length)]?.target || null;
+}
+
+function _clearEggRuntimeFields(pet) {
+    delete pet.hatchMode;
+    delete pet.eggDecidedAt;
+    delete pet.eggHatchTarget;
+    delete pet.eggHatchPending;
+    delete pet.eggHatchQueuedAt;
+    delete pet.eggHatchRequestedAt;
+    delete pet.eggHatchRevealDelayMs;
+    delete pet.eggBias;
+}
+
+export async function hatchPetFromBoarding(data = {}, options = {}) {
+    const now = Date.now();
+    const current = options.currentPet || (state.currentPetId ? state.pets[state.currentPetId] : null);
+    if (current && current.stage !== 'egg') {
+        markPetReleased(current, options.planetName || state.planetName || '宠物星');
+        await savePet(current);
+    }
+    const target = await _resolveBoardingHatchTarget(data || {});
+    // petId 作为基础模板：保留其外观（imageSheetUrl）与基础 DNA，
+    // 但把用户在仪式里选择的食性 / 元素属性「覆盖」到这条 DNA 上（仅改对应段位，不动外观）。
+    let dna = target?.dna || _buildBoardingDna(data || {});
+    if (target) {
+        if (data && data.elementalAttribute) dna = biasDnaForElementalAttribute(dna, data.elementalAttribute);
+        const dietPreference = _boardingDietPreference(data || {});
+        if (dietPreference) dna = biasDnaForDiet(dna, dietPreference);
+    }
+    // DNA 被覆盖后，traits 需同步：
+    // - 有 petId 模板时，保留模板原本的外观特征（species / color / element 等，例如「dragon / 绿」），
+    //   仅把被覆盖的 elementalAttribute 用新 DNA 解码出来同步上去（食性不在 traits 里，靠 DNA 决定）。
+    // - 无模板时，整体按新 DNA 解码。
+    const traits = target
+        ? {
+            ...(target.traits || {}),
+            ...(data && data.elementalAttribute
+                ? { elementalAttribute: decodeDna(dna).elementalAttribute }
+                : {}),
+        }
+        : decodeDna(dna);
+    const pet = {
+        ...(current?.stage === 'egg' ? current : {}),
+        id: current?.stage === 'egg' ? current.id : `pet_${randId(8)}`,
+        name: target?.name || dnaToName(dna),
+        dna,
+        imageUrl: target?.imageUrl || null,
+        imageSheetUrl: target?.imageSheetUrl || null,
+        traits,
+        rarity: Number.isFinite(Number(target?.rarity)) ? Number(target.rarity) : dnaRarity(dna),
+        stats: options.stage === 'egg' ? eggStats() : defaultStats(),
+        permanentTrauma: current?.permanentTrauma || defaultPermanentTrauma(),
+        bornAt: now,
+        lastTickAt: now,
+        lastCareAt: now,
+        parents: current?.stage === 'egg' ? (current.parents || null) : null,
+        stage: options.stage === 'egg' ? 'egg' : 'baby',
+        anim: options.stage === 'egg' ? 'idle' : 'happy',
+        activeRoom: current?.activeRoom || 'living',
+        source: target?.source || 'boarding',
+        sourcePetId: target?.id ? `famous-pets/${target.id}` : (target?.sourcePetId || ''),
+    };
+    _clearEggRuntimeFields(pet);
+    if (options.stage === 'egg' && target) {
+        pet.hatchMode = 'system-pet';
+        pet.eggDecidedAt = now;
+        // 蛋阶段：破壳时会用 eggHatchTarget 还原宠物。
+        // 这里必须使用「已覆盖食性 / 元素属性」后的 dna + traits，
+        // 否则破壳会把用户的选择还原回 petId 模板的原始 DNA。
+        pet.eggHatchTarget = { ...target, dna, traits, name: pet.name, rarity: pet.rarity };
+    }
+    _applyBoardingChoices(pet, data || {});
+    try { applyStage(pet); } catch (_) {}
+    await savePet(pet);
+    await setCurrentPetPersisted(pet.id);
+    setCurrentPet(pet.id);
+    notify();
+    return pet;
+}
+
+function _applySystemHatchTarget(pet, target) {
+    const normalized = _normalizeSystemHatchTarget(target);
+    if (!pet || !normalized) return false;
+    pet.hatchMode = 'system-pet';
+    pet.eggDecidedAt = pet.eggDecidedAt || normalized.decidedAt || Date.now();
+    pet.eggHatchTarget = normalized;
+    pet.dna = normalized.dna || pet.dna || '';
+    pet.traits = normalized.traits || decodeDna(pet.dna);
+    pet.rarity = Number.isFinite(Number(normalized.rarity)) ? Number(normalized.rarity) : dnaRarity(pet.dna);
+    pet.name = normalized.name || dnaToName(pet.dna);
+    pet.imageUrl = normalized.imageUrl || null;
+    pet.imageSheetUrl = normalized.imageSheetUrl;
+    pet.source = normalized.source || 'famous-pets';
+    pet.sourcePetId = `famous-pets/${normalized.id}`;
+    pet.eggHatchRequestedAt = pet.eggHatchRequestedAt || Date.now();
+    pet.lastCareAt = pet.eggHatchRequestedAt;
+    pet.lastTickAt = pet.eggHatchRequestedAt;
+    pet.eggHatchPending = true;
+    pet.eggHatchRevealDelayMs = DECIDED_EGG_HATCH_DELAY_MS;
+    delete pet.eggHatchQueuedAt;
+    _syncPendingEggEffect(pet);
+    _requestReadyEggHatch(pet);
+    savePetDebounced(pet);
+    try { import('./state.js').then(({ notify }) => notify()); } catch (_) {}
+    return true;
+}
+
+function _startSystemTargetHatch(pet) {
+    if (!_shouldUseSystemHatchTarget(pet)) return false;
+    const existing = _normalizeSystemHatchTarget(pet.eggHatchTarget);
+    if (existing) return _applySystemHatchTarget(pet, existing);
+    const now = Date.now();
+    pet.hatchMode = 'system-pet';
+    pet.eggHatchRequestedAt = pet.eggHatchRequestedAt || now;
+    pet.lastCareAt = now;
+    pet.lastTickAt = now;
+    pet.eggHatchPending = true;
+    pet.eggHatchRevealDelayMs = DECIDED_EGG_HATCH_DELAY_MS;
+    delete pet.eggHatchQueuedAt;
+    _syncPendingEggEffect(pet);
+    savePetDebounced(pet);
+    _resolveSystemHatchTargetForEgg(pet).then((target) => {
+        if (_applySystemHatchTarget(pet, target)) return;
+        say('系统宠物列表暂时没有加载好，稍后再试一次 ✨', 3200);
+    }).catch(() => {});
+    try { import('./state.js').then(({ notify }) => notify()); } catch (_) {}
+    return true;
+}
+
+function _playHatchSound() {
+    try {
+        // 复用 SoundManager 的"升级"动机作为孵化提示音（>=2 秒 MIDI 序列）。
+        import('./soundManager.js').then(mod => {
+            const sm = mod.default?.getInstance?.();
+            sm?.playBuildLevelUp?.();
+        }).catch(() => {});
+    } catch (_) {}
+}
+
+function _playHatchAnimation(petId) {
+    _findPetHosts(petId).forEach((host) => {
+        const anchor = _petEffectAnchor(host);
+        if (!anchor) return;
+        anchor.classList.remove('mh-pet-hatch-burst');
+        // 强制 reflow 让动画可重复触发
+        void anchor.offsetWidth;
+        anchor.classList.add('mh-pet-hatch-burst');
+        let fx = anchor.querySelector(':scope > .mh-pet-fx');
+        if (!fx) {
+            fx = document.createElement('div');
+            fx.className = 'mh-pet-fx';
+            anchor.appendChild(fx);
+        }
+        for (let i = 0; i < 12; i++) {
+            const star = document.createElement('span');
+            star.className = 'mh-pet-particle';
+            star.textContent = ['✨', '⭐', '💫', '🌟'][i % 4];
+            const startX = (Math.random() * 60 - 30) | 0;
+            const drift = (Math.random() * 80 - 40) | 0;
+            star.style.setProperty('--mh-x', startX + 'px');
+            star.style.setProperty('--mh-drift', drift + 'px');
+            star.style.setProperty('--mh-delay', (i * 0.04).toFixed(2) + 's');
+            star.style.setProperty('--mh-dur', '1.4s');
+            fx.appendChild(star);
+            star.addEventListener('animationend', () => star.remove(), { once: true });
+        }
+        setTimeout(() => anchor.classList.remove('mh-pet-hatch-burst'), 1400);
+    });
+}
+
+/**
+ * 对蛋应用 DNA 偏置（领地 + 主导喂食 trait），然后等待精灵图生成完成。
+ * 真正破壳会在 imageSheetUrl 就绪且玩家正在看着宠物时触发。
+ */
+export function hatchPetFromEgg(pet) {
+    if (!pet) return false;
+    if (pet.stage !== 'egg') return false;
+    if (_startSystemTargetHatch(pet)) return true;
+    if (_continueStartedEggHatch(pet)) {
+        return true;
+    }
+    let dna = pet.dna || '';
+    // 1) 领地偏置：以孵化时玩家当前最大屋所在的 field 为准
+    try {
+        const territory = findLargestHouseAcrossLayouts(state.layouts);
+        if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
+    } catch (_) {}
+    // 2) 喂食 trait 偏置
+    const dominant = _dominantFeedTrait(pet);
+    if (dominant) dna = biasDnaForTrait(dna, dominant);
+    pet.dna = dna;
+    pet.traits = decodeDna(dna);
+    pet.rarity = dnaRarity(dna);
+    pet.name = dnaToName(dna);
+
+    const now = Date.now();
+    pet.eggHatchRequestedAt = pet.eggHatchRequestedAt || now;
+    pet.lastCareAt = now;
+    pet.lastTickAt = now;
+    pet.eggHatchPending = true;
+    delete pet.eggHatchQueuedAt;
+    _syncPendingEggEffect(pet);
+
+    generatePetSheet(pet).then((url) => {
+        try {
+            if (url || pet.imageSheetUrl) _requestReadyEggHatch(pet);
+            savePetDebounced(pet);
+            import('./state.js').then(({ notify }) => notify()).catch(() => {});
+        } catch (_) {}
+    }).catch(() => {});
+
+    savePetDebounced(pet);
+    try { import('./state.js').then(({ notify }) => notify()); } catch (_) {}
+    return true;
+}
+
+/**
+ * 蛋阶段提示：按顺序循环播报，确保最重要的一句"喂我"最先出现，
+ * 然后再轮播其他风味提示。每只蛋单独计数，刷新会从第一句重新开始。
+ */
+const _eggTalkCursor = new Map(); // petId -> next index
+export function eggHungryHint(pet) {
+    const lines = PET_TALK_LINES.egg;
+    if (!lines.length) return '';
+    const key = pet?.id || '__anon__';
+    const idx = _eggTalkCursor.get(key) || 0;
+    _eggTalkCursor.set(key, (idx + 1) % lines.length);
+    return t(lines[idx]);
+}
+
+// 每只蛋的"首次进入 field"欢迎是否已经播放过（in-memory，刷新即重置）
+const _eggWelcomeShown = new Set();
+
+/**
+ * 在场景中已存在的实际蛋宠物上播放一次烟花粒子特效，并让宠物 say() 一次"好饿…"。
+ * 与旧的居中遮罩不同，本函数不会创建独立的弹窗，特效完全围绕场景里的蛋发生。
+ * 仅在 pet.stage === 'egg' 时触发。每只蛋每个 scope 在一次页面会话里只会播一次。
+ * @returns {boolean} 是否实际触发了一次特效
+ */
+export function playEggWelcomeOnce(pet, scope = 'field') {
+    if (!pet) return false;
+    if (pet.stage !== 'egg') return false;
+    const key = `${pet.id}|${scope}`;
+    if (_eggWelcomeShown.has(key)) return false;
+
+    // 必须在场景里找到该蛋的实际占位元素才算"已展示"，否则下一次进入再试
+    const hosts = _findPetHosts(pet.id);
+    if (!hosts.length) return false;
+    _eggWelcomeShown.add(key);
+
+    const line = eggHungryHint(pet);
+    hosts.forEach((host) => _spawnEggFireworks(host));
+    // 头顶气泡，持续时间更长（约 8.5 秒）
+    setTimeout(() => say(line, 8500), 120);
+    return true;
+}
+
+/** 在指定宿主上喷射 ~3 次错位烟花粒子。 */
+function _spawnEggFireworks(host) {
+    const anchor = _petEffectAnchor(host);
+    if (!anchor) return;
+    let fx = anchor.querySelector(':scope > .mh-pet-fx');
+    if (!fx) {
+        fx = document.createElement('div');
+        fx.className = 'mh-pet-fx';
+        anchor.appendChild(fx);
+    }
+    const burstTimes = [0, 320, 680]; // 三轮烟花
+    burstTimes.forEach((delay) => setTimeout(() => _spawnFireworkBurst(fx), delay));
+    // 主表情爆发 emoji（一次性）
+    const burst = document.createElement('span');
+    burst.className = 'mh-happy-burst';
+    burst.textContent = '🎆';
+    fx.appendChild(burst);
+    burst.addEventListener('animationend', () => burst.remove(), { once: true });
+}
+
+const _FIREWORK_EMOJIS = ['✨', '⭐', '💫', '🌟', '🎇', '🎆', '🩷', '💖'];
+
+function _spawnFireworkBurst(fx) {
+    const count = 14;
+    const baseAngle = Math.random() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+        const p = document.createElement('span');
+        p.className = 'mh-pet-particle mh-firework-shard';
+        p.textContent = _FIREWORK_EMOJIS[Math.floor(Math.random() * _FIREWORK_EMOJIS.length)];
+        const angle = baseAngle + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+        const dist = 40 + Math.random() * 60;
+        const x = Math.cos(angle) * dist;
+        const drift = Math.sin(angle) * dist;
+        // 借用 happy 粒子动画的 CSS 变量做径向飞溅
+        p.style.setProperty('--mh-x', x.toFixed(0) + 'px');
+        p.style.setProperty('--mh-drift', drift.toFixed(0) + 'px');
+        p.style.setProperty('--mh-rise', (60 + Math.random() * 40 | 0) + 'px');
+        p.style.setProperty('--mh-size', (12 + (Math.random() * 12 | 0)) + 'px');
+        p.style.setProperty('--mh-dur', (0.9 + Math.random() * 0.5).toFixed(2) + 's');
+        p.style.setProperty('--mh-delay', (Math.random() * 0.08).toFixed(2) + 's');
+        p.style.setProperty('--mh-r', ((Math.random() * 360) | 0) + 'deg');
+        p.style.setProperty('--mh-end-scale', (1.1 + Math.random() * 0.5).toFixed(2));
+        fx.appendChild(p);
+        p.addEventListener('animationend', () => p.remove(), { once: true });
+    }
+}
+
+// 蛋阶段定时碎碎念：每 ~12 秒在 field / pet 视图下随机说一句"好饿…"
+let _eggChatterTimer = null;
+function _startEggChatter() {
+    if (_eggChatterTimer) return;
+    _eggChatterTimer = setInterval(() => {
+        try {
+            const pet = _currentPet();
+            if (!pet || pet.stage !== 'egg') return;
+            if (state.currentView !== 'home') return;
+            const lvl = state.zoomLevel;
+            // 仅在 field (1) / pet (2) / cell (3) 视图唠叨；space (0) 不打扰
+            if (lvl !== 1 && lvl !== 2 && lvl !== 3) return;
+            // 随机跳过 ~40% 次数，避免连续刷屏
+            if (Math.random() < 0.4) return;
+            say(eggHungryHint(pet), 6500);
+        } catch (_) {}
+    }, 12000);
+}
+if (typeof window !== 'undefined') _startEggChatter();
+
+function _feedEggAndHatch(pet, foodItem, options = {}) {
+    if (_isEggHatchQueued(pet) || _isEggHatchStarted(pet)) {
+        _continueStartedEggHatch(pet);
+        say('正在孵化中，马上就破壳啦 ✨', 2400);
+        return false;
+    }
+
+    const bias = _eggBias(pet);
+    bias.feedCount = (bias.feedCount || 0) + 1;
+    if (foodItem.trait) {
+        bias.feedTraits[foodItem.trait] = (bias.feedTraits[foodItem.trait] || 0) + 1;
+    } else if (foodItem.foodKind === 'meat') {
+        bias.feedTraits.catLike = (bias.feedTraits.catLike || 0) + 1;
+    } else if (foodItem.foodKind === 'vegetables') {
+        bias.feedTraits.rabbitLike = (bias.feedTraits.rabbitLike || 0) + 1;
+    }
+
+    // 只要喂任何东西让 hunger 从 0 跳成正值，蛋就退出休眠 / 孵化。
+    if (!pet.stats) pet.stats = {};
+    const hungerGain = Math.max(1, Number(foodItem?.stat?.hunger) || 0);
+    pet.stats.hunger = clamp((pet.stats.hunger || 0) + hungerGain, CONFIG.statMin, CONFIG.statMax);
+    applyLowMoodFoodBonus(pet);
+    pet.eggHatchQueuedAt = Date.now();
+    savePetDebounced(pet);
+
+    const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
+    const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
+    const runHatch = () => { hatchPetFromEgg(pet); };
+    if (delayMs > 0) setTimeout(runHatch, delayMs);
+    else if (sayDelayMs > 0) setTimeout(runHatch, sayDelayMs);
+    else runHatch();
+    return true;
+}
+
+function applyLowMoodFoodBonus(pet, statDeltas = null) {
+    if (!pet) return 0;
+    if (!pet.stats) pet.stats = {};
+    const before = pet.stats.mood ?? 100;
+    if (before >= LOW_MOOD_FOOD_BONUS_THRESHOLD) return 0;
+    const after = clamp(before + LOW_MOOD_FOOD_BONUS, CONFIG.statMin, CONFIG.statMax);
+    pet.stats.mood = after;
+    const delta = after - before;
+    if (delta && Array.isArray(statDeltas)) statDeltas.push({ key: 'mood', delta });
+    return delta;
+}
+
+const SPECIAL_STAGE_ORDER = ['baby', 'teen', 'adult'];
+
+function stageMinHours(stageId) {
+    const def = CONFIG.stages.find(stage => stage.id === stageId);
+    return Math.max(0, Number(def?.minHours) || 0);
+}
+
+function setPetAgeForStage(pet, stageId) {
+    const now = Date.now();
+    const minHours = stageMinHours(stageId);
+    const nextStage = CONFIG.stages.find(stage => stage.id !== 'egg' && stageMinHours(stage.id) > minHours);
+    const nextMinHours = nextStage ? stageMinHours(nextStage.id) : minHours + 24;
+    const targetHours = nextStage ? minHours + Math.max(0.01, (nextMinHours - minHours) * 0.08) : minHours + 1;
+    pet.bornAt = now - targetHours * 3600 * 1000;
+    delete pet.hatchingCare;
+}
+
+function applySpecialStageFood(pet, foodItem) {
+    const effect = foodItem?.specialStageEffect;
+    if (!effect) return { handled: false };
+    const currentIndex = SPECIAL_STAGE_ORDER.indexOf(pet?.stage);
+    if (effect === 'grow') {
+        if (currentIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用成长药丸哦' : '已经不能再用成长药丸长大啦' };
+        const targetIndex = Math.min(SPECIAL_STAGE_ORDER.length - 1, currentIndex + 1);
+        if (targetIndex === currentIndex) return { handled: true, ok: false, message: '已经是成年阶段，不能再继续长大啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}快速长大到${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    if (effect === 'rejuvenate') {
+        const safeIndex = currentIndex >= 0 ? currentIndex : (pet?.stage === 'elder' ? SPECIAL_STAGE_ORDER.length : -1);
+        if (safeIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用返老还童药丸哦' : '现在不能使用返老还童药丸' };
+        const targetIndex = Math.max(0, safeIndex - 1);
+        if (targetIndex === safeIndex) return { handled: true, ok: false, message: '已经是幼年阶段，不能再变小啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}变回${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    return { handled: false };
+}
+
+export function eatFood(pet, foodItem, options = {}) {
+    if (!pet || !foodItem || foodItem.type !== 'food') return false;
+    if (pet.stage === 'egg') {
+        // 蛋阶段：hunger=0 是休眠状态，一旦喂食让 hunger > 0 就立即孵化。
+        return _feedEggAndHatch(pet, foodItem, options);
+    }
+    if (pet.anim === 'sleep') {
+        say('Zzz...醒来以后再吃吧', 2200);
+        return false;
+    }
+    const specialStage = applySpecialStageFood(pet, foodItem);
+    if (specialStage.handled) {
+        if (!specialStage.ok) {
+            say(specialStage.message, 2600);
+            setAnim('sad', 900);
+            return false;
+        }
+        if (!pet.stats) pet.stats = {};
+        const statDeltas = [];
+        for (const key of Object.keys(foodItem.stat || {})) {
+            const before = pet.stats[key] || 0;
+            const after = clamp(before + foodItem.stat[key], CONFIG.statMin, CONFIG.statMax);
+            pet.stats[key] = after;
+            const delta = after - before;
+            if (delta) statDeltas.push({ key, delta });
+        }
+        pet.lastTickAt = Date.now();
+        markPetCared(pet, pet.lastTickAt);
+        applyStage(pet);
+        savePetDebounced(pet);
+        const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
+        const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
+        const playFeedback = () => {
+            _spawnFoodStatFloaters(pet, statDeltas);
+            spawnEatFoodEffects(pet, foodItem, false);
+            setAnim('happy', 2200);
+            const waitMs = Math.max(0, sayDelayMs - delayMs);
+            if (waitMs > 0) setTimeout(() => say(specialStage.message, 4200), waitMs);
+            else say(specialStage.message, 4200);
+        };
+        if (delayMs > 0) setTimeout(playFeedback, delayMs);
+        else playFeedback();
+        return true;
+    }
+    const ignoresFoodNegatives = pet.stage === 'baby';
+    const isBasicFeed = foodItem.id === 'food_basic_feed' || foodItem.unlimited;
+    const foodKind = foodItem.foodKind || 'vegetables';
+    const preference = dnaDietPreference(pet.dna || '');
+    const matched = ignoresFoodNegatives || isBasicFeed || preference === 'both' || foodKind === 'both' || preference === foodKind;
+    if (!matched) {
+        say(`我更喜欢${dietPreferenceLabel(preference)}食物`, 2400);
+        setAnim('sad', 900);
+        return false;
+    }
+    const wasHungry = (pet.stats?.hunger ?? 100) < 35;
+    if (!pet.stats) pet.stats = {};
+    const statDeltas = [];
+    for (const key of Object.keys(foodItem.stat || {})) {
+        const before = pet.stats[key] || 0;
+        const after = clamp(before + foodItem.stat[key], CONFIG.statMin, CONFIG.statMax);
+        pet.stats[key] = after;
+        const delta = after - before;
+        if (delta) statDeltas.push({ key, delta });
+    }
+    const penaltyStages = Array.isArray(foodItem.moodPenaltyStages) ? foodItem.moodPenaltyStages : [];
+    const moodPenalty = Number(foodItem.moodPenalty) || 0;
+    const appliesMoodPenalty = !ignoresFoodNegatives && penaltyStages.includes(pet.stage) && moodPenalty < 0;
+    if (appliesMoodPenalty) {
+        const before = pet.stats.mood || 0;
+        const after = clamp(before + moodPenalty, CONFIG.statMin, CONFIG.statMax);
+        pet.stats.mood = after;
+        const delta = after - before;
+        if (delta) statDeltas.push({ key: 'mood', delta });
+    }
+    const isGoodFood = !isBasicFeed && !foodItem.moodPenalty;
+    if (isGoodFood || ignoresFoodNegatives) {
+        applyLowMoodFoodBonus(pet, statDeltas);
+    }
+    const hasBadStatDelta = statDeltas.some(item => item.delta < 0);
+    const hasFoodDislike = !ignoresFoodNegatives && !isGoodFood;
+    const hasNegativeEffect = appliesMoodPenalty || hasBadStatDelta || hasFoodDislike;
+    const hasPositiveEffect = statDeltas.some(item => item.delta > 0);
+    if (foodItem.trait) {
+        if (!pet.traits) pet.traits = defaultTraits();
+        gainTrait(pet, foodItem.trait);
+    }
+    pet.lastTickAt = Date.now();
+    markPetCared(pet, pet.lastTickAt);
+    applyStage(pet);
+    savePetDebounced(pet);
+    const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
+    const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
+    const speakAfterAnimation = (text, duration) => {
+        const waitMs = Math.max(0, sayDelayMs - delayMs);
+        if (waitMs > 0) setTimeout(() => say(text, duration), waitMs);
+        else say(text, duration);
+    };
+    const playHappyWithSpeech = (duration) => {
+        const waitMs = Math.max(0, sayDelayMs - delayMs);
+        if (waitMs > 0) setTimeout(() => setAnim('happy', duration), waitMs);
+        else setAnim('happy', duration);
+    };
+    const playEatFeedback = () => {
+        _spawnFoodStatFloaters(pet, statDeltas);
+        if (hasNegativeEffect) {
+            setAnim('sad', 1500);
+            speakAfterAnimation(
+                hasFoodDislike && !appliesMoodPenalty && !hasBadStatDelta
+                    ? `${foodItem.emoji || ''} 能吃饱，但不是很喜欢...`
+                    : `${foodItem.emoji || ''} 能吃饱，但心情有点下降...`,
+                hasFoodDislike && !appliesMoodPenalty && !hasBadStatDelta ? 4200 : 4800
+            );
+            return;
+        }
+        playFoodTrill(wasHungry);
+        spawnEatFoodEffects(pet, foodItem, wasHungry);
+        const speechDuration = wasHungry ? 4800 : 4200;
+        if (hasPositiveEffect) playHappyWithSpeech(speechDuration);
+        else setAnim('happy', 1500);
+        speakAfterAnimation(hasPositiveEffect
+            ? (wasHungry ? `${foodItem.emoji || ''} 太好吃啦！最爱你了 💖` : `${foodItem.emoji || ''} 好吃！😋`)
+            : `${foodItem.emoji || ''} 谢谢你的投喂～`,
+            speechDuration);
+    };
+    if (delayMs > 0) {
+        primeFoodAudio();
+        setTimeout(playEatFeedback, delayMs);
+    }
+    else playEatFeedback();
+    return true;
+}
+
+// === 点击宠物：开心动画 + 粒子（爱心 / 气泡 / 星星 / 音符） ===
+// 与 css/pet.css 中的 .mh-happy / .mh-pet-particle / .mh-happy-burst 协作。
+// 任意 level 视图（pet 房间、field 星球表面）点击 #mhPet 都可调用。
+const HAPPY_BURST_EMOJIS    = ['💖', '✨', '😊', '🎵', '⭐', '💫'];
+const HAPPY_PARTICLE_EMOJIS = ['💖', '💕', '❤️', '✨', '⭐', '🫧', '💫', '🎵', '🌸'];
+const FOOD_STAT_ICONS = {
+    hunger: '🍎',
+    mood: '😊',
+    clean: '🛁',
+    bond: '💛',
+};
+
+function _spawnFoodStatFloaters(pet, deltas = []) {
+    const visibleDeltas = deltas.filter(item => item && item.delta);
+    if (!visibleDeltas.length) return;
+    _findPetHosts(pet?.id).forEach((host) => {
+        const anchor = _petEffectAnchor(host);
+        if (!anchor) return;
+        let fx = anchor.querySelector(':scope > .mh-pet-fx');
+        if (!fx) {
+            fx = document.createElement('div');
+            fx.className = 'mh-pet-fx';
+            anchor.appendChild(fx);
+        }
+        visibleDeltas.slice(0, 4).forEach((item, index) => {
+            const floater = document.createElement('span');
+            floater.className = `mh-food-stat-floater ${item.delta > 0 ? 'is-positive' : 'is-negative'}`;
+            const sign = item.delta > 0 ? '+' : '';
+            const icon = FOOD_STAT_ICONS[item.key] || '✨';
+            floater.textContent = `${sign}${Math.round(item.delta)} ${icon}`;
+            const x = (index - (visibleDeltas.length - 1) / 2) * 34;
+            floater.style.setProperty('--mh-stat-x', x.toFixed(1) + 'px');
+            floater.style.setProperty('--mh-stat-delay', (index * 0.22).toFixed(2) + 's');
+            fx.appendChild(floater);
+            floater.addEventListener('animationend', () => floater.remove(), { once: true });
+        });
+    });
+}
+
+function _spawnHappyParticles(petEl, count) {
+    let fx = petEl.querySelector(':scope > .mh-pet-fx');
+    if (!fx) {
+        fx = document.createElement('div');
+        fx.className = 'mh-pet-fx';
+        petEl.appendChild(fx);
+    }
+    for (let i = 0; i < count; i++) {
+        const p = document.createElement('span');
+        p.className = 'mh-pet-particle';
+        p.textContent = HAPPY_PARTICLE_EMOJIS[Math.floor(Math.random() * HAPPY_PARTICLE_EMOJIS.length)];
+        const startX = (Math.random() * 50 - 25) | 0;          // -25 ~ 25 px
+        const drift  = (Math.random() * 50 - 25) | 0;
+        const rise   = 70 + (Math.random() * 60 | 0);          // 70 ~ 130 px
+        const size   = 14 + (Math.random() * 14 | 0);          // 14 ~ 28 px
+        const dur    = 0.9 + Math.random() * 0.6;              // 0.9 ~ 1.5 s
+        const delay  = Math.random() * 0.25;
+        const rot    = (Math.random() * 30 - 15) | 0;          // -15 ~ 15 deg
+        const endScl = (1.0 + Math.random() * 0.6).toFixed(2); // 1.0 ~ 1.6
+        p.style.setProperty('--mh-x',         startX + 'px');
+        p.style.setProperty('--mh-drift',     drift + 'px');
+        p.style.setProperty('--mh-rise',      rise + 'px');
+        p.style.setProperty('--mh-size',      size + 'px');
+        p.style.setProperty('--mh-dur',       dur + 's');
+        p.style.setProperty('--mh-delay',     delay + 's');
+        p.style.setProperty('--mh-r',         rot + 'deg');
+        p.style.setProperty('--mh-end-scale', endScl);
+        fx.appendChild(p);
+        p.addEventListener('animationend', () => p.remove(), { once: true });
+    }
+}
+
+/**
+ * 触发宠物"开心"反馈：sprite 切到 happy 列 + 史莱姆弹跳 + 粒子爆发，
+ * 约 1 秒后自动恢复为 idle。可用于任意点击宠物的场景。
+ *
+ * @param {HTMLElement} petEl  宠物 DOM 容器（通常是 #mhPet 或 .pet-sprite 节点）
+ * @param {object}      [pet]  对应 pet 数据；提供则同时切换 sprite cell 到 happy 列
+ */
+export function playPetHappy(petEl, pet, options = {}) {
+    if (!petEl) return;
+    const holdAnimMs = Math.max(0, Number(options.holdAnimMs) || 0);
+    const effectAnchor = _petEffectAnchor(petEl) || petEl;
+    // 暂停漫步 transition，避免与 CSS 动画打架
+    const prevTransition = petEl.style.transition;
+    petEl.style.transition = 'none';
+    petEl.classList.remove('mh-happy');
+    void petEl.offsetWidth; // 强制 reflow 以重新触发动画
+    petEl.classList.add('mh-happy');
+
+    // 切换 sprite 到 happy 列（若可用）
+    const prevAnim = pet?.anim;
+    const petId = pet?.id || state.currentPetId;
+    if (pet) {
+        if (holdAnimMs > 0 && petId) {
+            if (_animResetTimers.has(petId)) clearTimeout(_animResetTimers.get(petId));
+            setPetAnim(pet, 'happy');
+            const timer = setTimeout(() => {
+                _animResetTimers.delete(petId);
+                if (state.pets[petId] === pet) setPetAnim(pet, prevAnim || DEFAULT_ANIM);
+            }, holdAnimMs);
+            _animResetTimers.set(petId, timer);
+        } else {
+            setPetAnim(pet, 'happy');
+        }
+    }
+
+    // 顶部主表情爆发
+    const burst = document.createElement('div');
+    burst.className = 'mh-happy-burst';
+    burst.textContent = HAPPY_BURST_EMOJIS[Math.floor(Math.random() * HAPPY_BURST_EMOJIS.length)];
+    effectAnchor.appendChild(burst);
+    burst.addEventListener('animationend', () => burst.remove(), { once: true });
+
+    // 周围粒子（爱心 / 气泡 / 星星 / 音符）
+    _spawnHappyParticles(effectAnchor, 6 + (Math.random() * 4 | 0));
+
+    const cleanup = () => {
+        petEl.classList.remove('mh-happy');
+        petEl.style.transition = prevTransition || '';
+        if (pet && holdAnimMs <= 0) setPetAnim(pet, prevAnim || DEFAULT_ANIM);
+    };
+    // 兜底：弹跳约 0.9s，1.1s 后强制恢复
+    const fallback = setTimeout(cleanup, 1100);
+    const sprite = petEl.querySelector('.mh-pet-art-sprite');
+    if (sprite) {
+        sprite.addEventListener('animationend', () => {
+            clearTimeout(fallback);
+            cleanup();
+        }, { once: true });
+    }
+}
+
+// === 蛋蛋形象（"蛋阶段"宠物：圆滚滚的小动物，颜色 / 眼睛 / 纹身由 DNA 决定） ===
+// 16 种 DNA 颜色 → 蛋身配色（light / mid / dark / 描边）
+const EGG_BODY_PALETTE = {
+    '雪白色':   { light: '#ffffff', mid: '#f1f5f9', dark: '#cbd5e1', stroke: '#64748b' },
+    '奶白色':   { light: '#fffaf0', mid: '#fde9c8', dark: '#f4d3a0', stroke: '#a87246' },
+    '金黄色':   { light: '#fff8e1', mid: '#fde68a', dark: '#f59e0b', stroke: '#b45309' },
+    '焦糖色':   { light: '#fef3c7', mid: '#fbbf24', dark: '#d97706', stroke: '#92400e' },
+    '巧克力色': { light: '#f5deb3', mid: '#c89060', dark: '#7c4a1e', stroke: '#4b2410' },
+    '粉色':     { light: '#ffe4ec', mid: '#fbcfe8', dark: '#f472b6', stroke: '#be185d' },
+    '薄荷绿':   { light: '#ecfdf5', mid: '#a7f3d0', dark: '#34d399', stroke: '#047857' },
+    '天蓝色':   { light: '#e0f2fe', mid: '#bae6fd', dark: '#38bdf8', stroke: '#0369a1' },
+    '薰衣草紫': { light: '#ede9fe', mid: '#c4b5fd', dark: '#a78bfa', stroke: '#5b21b6' },
+    '玫瑰红':   { light: '#ffe4e6', mid: '#fda4af', dark: '#f43f5e', stroke: '#9f1239' },
+    '彩虹色':   { light: '#ffe4ec', mid: '#bae6fd', dark: '#a7f3d0', stroke: '#7c3aed', rainbow: true },
+    '渐变色':   { light: '#fff7ed', mid: '#fbcfe8', dark: '#a7f3d0', stroke: '#7c3aed', rainbow: true },
+    '银灰色':   { light: '#f8fafc', mid: '#d1d5db', dark: '#9ca3af', stroke: '#374151' },
+    '黑色':     { light: '#9ca3af', mid: '#4b5563', dark: '#1f2937', stroke: '#0f172a' },
+    '橘色':     { light: '#ffedd5', mid: '#fdba74', dark: '#f97316', stroke: '#9a3412' },
+    '杏色':     { light: '#fff7ed', mid: '#fed7aa', dark: '#fb923c', stroke: '#9a3412' },
+};
+const DEFAULT_EGG_PALETTE = EGG_BODY_PALETTE['金黄色'];
+
+// 16 种 DNA 眼睛 → 眼睛样式 + 虹膜颜色
+const EGG_EYE_STYLE = {
+    '圆圆的大眼睛':   { style: 'round',   iris: '#1f2937' },
+    '星星眼':         { style: 'star',    iris: '#facc15' },
+    '月牙眼':         { style: 'crescent',iris: '#1f2937' },
+    '蓝宝石眼睛':     { style: 'round',   iris: '#1d4ed8' },
+    '翡翠绿眼睛':     { style: 'round',   iris: '#059669' },
+    '紫水晶眼睛':     { style: 'round',   iris: '#7c3aed' },
+    '金色眼睛':       { style: 'round',   iris: '#d97706' },
+    '异色瞳':         { style: 'hetero',  iris: '#1d4ed8', iris2: '#d97706' },
+    '小眯眯眼':       { style: 'squint',  iris: '#1f2937' },
+    '亮晶晶的眼睛':   { style: 'sparkle', iris: '#0ea5e9' },
+    '琥珀色眼睛':     { style: 'round',   iris: '#b45309' },
+    '彩虹色眼睛':     { style: 'rainbow', iris: '#7c3aed' },
+    '小桃心眼':       { style: 'heart',   iris: '#ef4444' },
+    '黑曜石眼睛':     { style: 'round',   iris: '#111827' },
+    '蜂蜜色眼睛':     { style: 'round',   iris: '#ca8a04' },
+    '冰蓝眼睛':       { style: 'round',   iris: '#0ea5e9' },
+};
+
+function _eggHashFromDna(dna) {
+    const s = String(dna || '');
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = (h * 16777619) >>> 0;
+    }
+    return h;
+}
+
+// 一对眼睛（左右镜像位置）。color 是虹膜色。
+// 参考 chibi 软体生物：又大又圆的瞳孔 + 双层闪亮高光，超治愈。
+function _renderEyes(traits, stroke) {
+    const eye = EGG_EYE_STYLE[traits.eyes] || EGG_EYE_STYLE['圆圆的大眼睛'];
+    const lx = 41, rx = 79, ey = 72;
+    const renderOne = (cx, iris) => {
+        if (eye.style === 'crescent') {
+            // 弯弯的笑眼（^ ^）
+            return `<path d="M${cx - 13} ${ey + 4} Q${cx} ${ey - 13} ${cx + 13} ${ey + 4}" fill="none" stroke="${stroke}" stroke-width="3.6" stroke-linecap="round"/>`;
+        }
+        if (eye.style === 'squint') {
+            return `<path d="M${cx - 12} ${ey} Q${cx} ${ey + 3} ${cx + 12} ${ey}" fill="none" stroke="${stroke}" stroke-width="3.6" stroke-linecap="round"/>`;
+        }
+        if (eye.style === 'star') {
+            const pts = [];
+            for (let i = 0; i < 10; i++) {
+                const r = i % 2 === 0 ? 12 : 5.5;
+                const a = -Math.PI / 2 + (i * Math.PI) / 5;
+                pts.push(`${(cx + Math.cos(a) * r).toFixed(1)},${(ey + Math.sin(a) * r).toFixed(1)}`);
+            }
+            return `<polygon points="${pts.join(' ')}" fill="${iris}" stroke="${stroke}" stroke-width="1.2"/>`;
+        }
+        if (eye.style === 'heart') {
+            return `<path d="M${cx} ${ey + 11} C${cx - 15} ${ey - 3} ${cx - 13} ${ey - 14} ${cx - 4} ${ey - 11} Q${cx} ${ey - 8} ${cx + 4} ${ey - 11} C${cx + 13} ${ey - 14} ${cx + 15} ${ey - 3} ${cx} ${ey + 11} Z" fill="${iris}" stroke="${stroke}" stroke-width="1.2"/>`;
+        }
+        // round / sparkle / rainbow / hetero 都基于"实心大瞳孔 + 双高光"——这是 chibi 生物最萌的关键。
+        const irisFill = eye.style === 'rainbow' ? 'url(#mhEggIrisRainbow)' : iris;
+        const extraSparkle = eye.style === 'sparkle'
+            ? `<circle cx="${cx + 6}" cy="${ey + 6}" r="1.5" fill="#ffffff" opacity="0.85"/>`
+            : '';
+        return `
+            <!-- 瞳孔外圈细描边，让大眼更立体 -->
+            <ellipse cx="${cx}" cy="${ey}" rx="11.5" ry="13.5" fill="${irisFill}" stroke="${stroke}" stroke-width="1.6"/>
+            <!-- 大块主高光（左上）+ 小高光（右下），双高光是萌点 -->
+            <ellipse cx="${cx - 3.5}" cy="${ey - 4}" rx="4.4" ry="5.2" fill="#ffffff"/>
+            <circle cx="${cx + 4}" cy="${ey + 4.5}" r="2.2" fill="#ffffff" opacity="0.92"/>
+            ${extraSparkle}`;
+    };
+    if (eye.style === 'hetero') {
+        return renderOne(lx, eye.iris) + renderOne(rx, eye.iris2 || eye.iris);
+    }
+    return renderOne(lx, eye.iris) + renderOne(rx, eye.iris);
+}
+
+// 嘴巴：默认就是 chibi 生物标志性的"大张嘴笑"，又圆又开心；眯眯眼用小弧嘴。
+function _renderMouth(traits, stroke) {
+    const eye = EGG_EYE_STYLE[traits.eyes] || EGG_EYE_STYLE['圆圆的大眼睛'];
+    // 大张嘴开心笑：上缘平、下缘圆，里面一小块舌头。位于眼睛正下方居中。
+    const openHappyMouth = `
+        <path d="M50 90 Q60 90 70 90 Q70 104 60 105 Q50 104 50 90 Z"
+              fill="#9d2b3a" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M53 98 Q60 95 67 98 Q66 104 60 104.5 Q54 104 53 98 Z" fill="#fb7185"/>
+        <path d="M50 90 Q60 92 70 90" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.5"/>`;
+    if (eye.style === 'squint') {
+        // 眯眯眼配一个软软的小微笑
+        return `<path d="M53 93 Q60 99 67 93" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    return openHappyMouth;
+}
+
+// 元素属性 → 蛋身上的小纹身（左右各一个）
+function _renderTattoos(traits, stroke) {
+    const attr = traits.elementalAttribute;
+    const color = stroke;
+    const opacity = 0.7;
+    // 左右两侧纹身锚点
+    const L = { x: 30, y: 110 };
+    const R = { x: 90, y: 110 };
+    const glyph = (cx, cy) => {
+        if (attr === '火') {
+            return `<path d="M${cx} ${cy - 6} q4 4 2 8 q-2 -1 -3 -3 q-1 3 -3 3 q-3 -3 0 -8 q1 2 2 3 q1 -1 2 -3 Z" fill="${color}" opacity="${opacity}"/>`;
+        }
+        if (attr === '冰') {
+            return `<g stroke="${color}" stroke-width="1.4" stroke-linecap="round" opacity="${opacity}">
+                <line x1="${cx}" y1="${cy - 6}" x2="${cx}" y2="${cy + 6}"/>
+                <line x1="${cx - 6}" y1="${cy}" x2="${cx + 6}" y2="${cy}"/>
+                <line x1="${cx - 4}" y1="${cy - 4}" x2="${cx + 4}" y2="${cy + 4}"/>
+                <line x1="${cx - 4}" y1="${cy + 4}" x2="${cx + 4}" y2="${cy - 4}"/>
+            </g>`;
+        }
+        if (attr === '生命') {
+            return `<path d="M${cx} ${cy + 4} C${cx - 6} ${cy - 2} ${cx - 5} ${cy - 7} ${cx - 1.5} ${cy - 5} Q${cx} ${cy - 3} ${cx + 1.5} ${cy - 5} C${cx + 5} ${cy - 7} ${cx + 6} ${cy - 2} ${cx} ${cy + 4} Z" fill="${color}" opacity="${opacity}"/>`;
+        }
+        if (attr === '暗') {
+            return `<path d="M${cx + 4} ${cy - 4} a6 6 0 1 1 -6 -2 a4 4 0 1 0 6 2 Z" fill="${color}" opacity="${opacity}"/>`;
+        }
+        if (attr === '雷') {
+            return `<path d="M${cx + 1} ${cy - 8} L${cx - 5} ${cy + 1} H${cx} L${cx - 3} ${cy + 9} L${cx + 7} ${cy - 2} H${cx + 1} Z" fill="${color}" opacity="${opacity}"/>`;
+        }
+        // 自然（默认）：小叶子
+        return `<path d="M${cx - 5} ${cy + 4} Q${cx - 2} ${cy - 6} ${cx + 5} ${cy - 4} Q${cx + 2} ${cy + 6} ${cx - 5} ${cy + 4} Z" fill="${color}" opacity="${opacity}"/>
+                <line x1="${cx - 5}" y1="${cy + 4}" x2="${cx + 2}" y2="${cy - 2}" stroke="${color}" stroke-width="1" opacity="${opacity}"/>`;
+    };
+    return glyph(L.x, L.y) + glyph(R.x, R.y);
+}
+
+/**
+ * 生成"蛋蛋"宠物 SVG。
+ * pet 可以省略 → 返回金黄色默认蛋（用于占位 / 预加载）。
+ */
+export function buildEggSvg(pet) {
+    let traits = null;
+    try { if (pet?.dna) traits = decodeDna(pet.dna); } catch { traits = null; }
+    const palette = (traits && EGG_BODY_PALETTE[traits.color]) || DEFAULT_EGG_PALETTE;
+    const safeTraits = traits || { color: '金黄色', eyes: '圆圆的大眼睛', elementalAttribute: '自然' };
+    const stroke = palette.stroke;
+    // 用 dna hash 给纹身/腮红做一点随机偏移，让不同蛋有差异
+    const h = _eggHashFromDna(pet?.dna || '');
+    const cheekDx = (h % 3) - 1; // -1..1
+    const rainbowDefs = palette.rainbow
+        ? `<linearGradient id="mhEggBodyRainbow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#fff1f2"/>
+              <stop offset="35%" stop-color="#fde68a"/>
+              <stop offset="65%" stop-color="#bae6fd"/>
+              <stop offset="100%" stop-color="#c4b5fd"/>
+           </linearGradient>` : '';
+    const irisRainbowDefs = `<linearGradient id="mhEggIrisRainbow" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#ef4444"/>
+        <stop offset="50%" stop-color="#22c55e"/>
+        <stop offset="100%" stop-color="#3b82f6"/>
+      </linearGradient>`;
+    const bodyFill = palette.rainbow ? 'url(#mhEggBodyRainbow)' : 'url(#mhEggBody)';
+    return `
+<svg viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
+  <defs>
+    <radialGradient id="mhEggBody" cx="40%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="${palette.light}"/>
+      <stop offset="55%" stop-color="${palette.mid}"/>
+      <stop offset="100%" stop-color="${palette.dark}"/>
+    </radialGradient>
+    <radialGradient id="mhEggShine" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mhEggTopGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    ${rainbowDefs}
+    ${irisRainbowDefs}
+  </defs>
+  <ellipse cx="60" cy="121" rx="42" ry="6.5" fill="#000" opacity="0.12"/>
+  <!-- 圆滚滚的身体：几乎是正圆，仅顶部极轻微收一点点，保留"蛋"的暗示 -->
+  <path d="M60 14 C90 14 108 40 108 73 C108 106 89 126 60 126 C31 126 12 106 12 73 C12 40 30 14 60 14 Z"
+        fill="${bodyFill}" stroke="${stroke}" stroke-width="2"/>
+  <!-- 顶部软光泽带：让身体像果冻/软糖一样反光 -->
+  <path d="M30 36 C42 24 78 24 90 36 C80 46 40 46 30 36 Z" fill="url(#mhEggTopGloss)"/>
+  <!-- 纹身（元素属性图案） -->
+  ${_renderTattoos(safeTraits, stroke)}
+  <!-- 腮红（紧贴大眼睛下外侧，更显婴儿肥） -->
+  <ellipse cx="${27 + cheekDx}" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
+  <ellipse cx="${93 + cheekDx}" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
+  <!-- 眼睛 -->
+  ${_renderEyes(safeTraits, stroke)}
+  <!-- 嘴巴 -->
+  ${_renderMouth(safeTraits, stroke)}
+  <!-- 左上大高光（软糖光感） -->
+  <ellipse cx="40" cy="44" rx="14" ry="17" fill="url(#mhEggShine)"/>
+</svg>`;
+}
+
+// 旧 API 兼容：导出"默认金黄色蛋" SVG / data URL，供预加载和静态占位使用。
+export const EGG_SVG = buildEggSvg(null);
+const EGG_DATA_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(EGG_SVG.trim());
+
+/** 简化获取 egg 的 data URL（用于 <img src=...>） */
+export function getEggDataUrl() { return EGG_DATA_URL; }
+
+/** 当前 pet 应显示精灵图中的哪一格；若返回 null 表示应该显示蛋。 */
+export function getPetSpriteCell(pet) {
+    if (!pet) return null;
+    if (_isEggAwaitingSheet(pet)) return null;
+    if (!pet.imageSheetUrl) return null;
+    const row = STAGE_ROW[pet.stage];
+    if (row == null) return null; // egg 或未知阶段 → 显示蛋
+    return { row, col: _animCol(pet.anim) };
+}
+
+/**
+ * 返回 pet 形象的 HTML（始终铺满父容器）。视图层使用这个函数。
+ * pet.id 用作 data-mh-pet → 本模块在每次 notify 后扫描并接管渲染（含动画 + 透明化）。
+ * 没有 id 的临时预览 pet（如孵化预览）会回退到下面的静态 inline 渲染。
+ * @param {object} pet
+ * @param {object} [opts]
+ * @param {string} [opts.alt] 图片 alt
+ * @param {string} [opts.extraClass] 附加 class（例如 'floaty'）
+ * @param {'idle'|'walk'} [opts.motion] 动作模式：'idle'=轻微呼吸（默认）, 'walk'=史莱姆 squash/stretch
+ * @param {boolean} [opts.requireProcessedTexture] false 时允许透明化完成前显示原始图
+ */
+export function petArtHtml(pet, opts = {}) {
+    const alt = escapeHtml(opts.alt || '');
+    const extraClass = opts.extraClass ? ` ${opts.extraClass}` : '';
+    const motion = opts.motion === 'walk' ? 'walk' : 'idle';
+    const requireProcessedTexture = opts.requireProcessedTexture !== false;
+    const cell = getPetSpriteCell(pet);
+    const petId = escapeHtml(pet?.id || '');
+    const requireAttr = requireProcessedTexture ? ' data-mh-pet-require-processed="1"' : '';
+    const hostAttrs = `data-mh-pet="${petId}" data-mh-pet-motion="${motion}"${requireAttr} aria-label="${alt}"`;
+    const hostStyle = 'width:100%;height:100%;display:block';
+    const row = _stageRow(pet);
+
+    if (requireProcessedTexture && row != null && !isPetProcessedTextureReady(pet)) {
+        return `<div class="mh-pet-art mh-pet-art-pending${extraClass}" ${hostAttrs} aria-hidden="true"
+            style="${hostStyle};visibility:hidden;pointer-events:none"></div>`;
+    }
+
+    const eggSvg = buildEggSvg(pet);
+    if (!cell) {
+        // 蛋阶段 / 孵化待揭晓 / 还没有 sheet：先 inline 渲染蛋形，pet.js 就绪后会接管
+        return `<div class="mh-pet-art mh-pet-art-egg${extraClass}" ${hostAttrs}
+            style="${hostStyle};display:flex;align-items:center;justify-content:center">
+            ${eggSvg}
+        </div>`;
+    }
+    // 已有 sheet：先保持不可见，mountPetArt 会在透明化处理完成后接管
+    return `<div class="mh-pet-art mh-pet-art-egg${extraClass}" ${hostAttrs}
+        style="${hostStyle};display:flex;align-items:center;justify-content:center">
+        ${eggSvg}
+    </div>`;
+}
+
+/**
+ * 切换已挂载占位符的动作模式（'idle' | 'walk'）。
+ * 视图层在宠物开始 / 停止移动时调用即可，不需要重建 DOM。
+ */
+export function setPetMotion(elOrId, motion) {
+    const m = motion === 'walk' ? 'walk' : 'idle';
+    let els = [];
+    if (typeof elOrId === 'string') {
+        const root = document.getElementById('app') || document.body;
+        els = root ? Array.from(root.querySelectorAll(`[data-mh-pet="${elOrId}"]`)) : [];
+    } else if (elOrId instanceof Element) {
+        els = [elOrId];
+    }
+    els.forEach((el) => {
+        if (el.dataset.mhPetMotion === m) return;
+        el.dataset.mhPetMotion = m;
+        const inner = el.querySelector('.mh-pet-art-sprite');
+        if (inner) {
+            inner.classList.toggle('mh-pet-walk', m === 'walk');
+            inner.classList.toggle('mh-pet-idle', m !== 'walk');
+        }
+    });
+}
+
+// === Sheet URL 缓存（DNA → URL）：localStorage 持久化 ===
+// v6: 许愿缓存键包含参考图片，避免换图后复用旧生成结果。
+const SHEET_CACHE_KEY = 'magichaqi.petSheetCache.v6';
+let _sheetUrlCache = null;
+function _loadSheetCache() {
+    if (_sheetUrlCache) return _sheetUrlCache;
+    try { _sheetUrlCache = JSON.parse(localStorage.getItem(SHEET_CACHE_KEY) || '{}') || {}; }
+    catch (_) { _sheetUrlCache = {}; }
+    return _sheetUrlCache;
+}
+function _persistSheetCache() {
+    try { localStorage.setItem(SHEET_CACHE_KEY, JSON.stringify(_loadSheetCache())); } catch (_) {}
+}
+export function getCachedSheetUrl(dna) {
+    if (!dna) return null;
+    return _loadSheetCache()[dna] || null;
+}
+function setCachedSheetUrl(dna, url) {
+    if (!dna || !url) return;
+    _loadSheetCache()[dna] = url;
+    _persistSheetCache();
+}
+
+function _resolvePetWish(pet, dna) {
+    const direct = typeof pet?.wishPrompt === 'string' ? pet.wishPrompt.trim() : '';
+    if (direct) return direct;
+    const byId = pet?.id ? state.pets?.[pet.id] : null;
+    const fromId = typeof byId?.wishPrompt === 'string' ? byId.wishPrompt.trim() : '';
+    if (fromId) return fromId;
+    const current = state.currentPetId ? state.pets?.[state.currentPetId] : null;
+    const currentWish = current?.dna === dna && typeof current.wishPrompt === 'string'
+        ? current.wishPrompt.trim()
+        : '';
+    if (currentWish) return currentWish;
+    const match = Object.values(state.pets || {}).find(item => (
+        item?.dna === dna
+        && typeof item.wishPrompt === 'string'
+        && item.wishPrompt.trim()
+        && !item.imageSheetUrl
+    ));
+    return match ? match.wishPrompt.trim() : '';
+}
+
+function _sheetCacheKeyForPet(pet, dna = pet?.dna || '') {
+    const wish = _resolvePetWish(pet, dna);
+    const referenceImage = _resolvePetWishReferenceImage(pet, dna);
+    const parts = [dna];
+    if (wish) parts.push(`w:${_hashWish(wish)}`);
+    if (referenceImage) parts.push(`r:${_hashWish(referenceImage)}`);
+    return parts.join('|');
+}
+
+function _getCachedSheetUrlForPet(pet) {
+    const dna = pet?.dna || '';
+    if (!dna) return null;
+    return getCachedSheetUrl(_sheetCacheKeyForPet(pet, dna));
+}
+
+// === 同 DNA 并发去重 ===
+const _inflight = new Map(); // cacheKey -> Promise<url|null>
+const _sheetRequestVersionByPetId = new Map(); // petId -> version
+
+function _hashWish(text) {
+    const s = String(text || '');
+    if (!s) return '';
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = (h * 16777619) >>> 0;
+    }
+    return h.toString(36);
+}
+
+function _resolvePetWishReferenceImage(pet, dna) {
+    const direct = typeof pet?.wishReferenceImage === 'string' ? pet.wishReferenceImage.trim() : '';
+    if (direct) return direct;
+    const byId = pet?.id ? state.pets?.[pet.id] : null;
+    const fromId = typeof byId?.wishReferenceImage === 'string' ? byId.wishReferenceImage.trim() : '';
+    if (fromId) return fromId;
+    const current = state.currentPetId ? state.pets?.[state.currentPetId] : null;
+    const currentImage = current?.dna === dna && typeof current.wishReferenceImage === 'string'
+        ? current.wishReferenceImage.trim()
+        : '';
+    if (currentImage) return currentImage;
+    const match = Object.values(state.pets || {}).find(item => (
+        item?.dna === dna
+        && typeof item.wishReferenceImage === 'string'
+        && item.wishReferenceImage.trim()
+        && !item.imageSheetUrl
+    ));
+    return match ? match.wishReferenceImage.trim() : '';
+}
+
+/**
+ * 生成 / 复用 4×4 sprite sheet。
+ * 命中 localStorage 缓存或 in-flight 请求时直接返回，不会再次调用 LLM。
+ * 若 pet.wishPrompt / pet.wishReferenceImage 存在，则改为以玩家许愿驱动 LLM，并纳入缓存键。
+ * @param {object} pet
+ * @param {object} [options]
+ * @param {boolean} [options.assignToPet=true]
+ * @returns {Promise<string|null>}
+ */
+export async function generatePetSheet(pet, { assignToPet = true } = {}) {
+    if (!pet) return null;
+    const dna = pet.dna || '';
+    if (!dna) return null;
+
+    const requestVersion = _getPetSheetRequestVersion(pet);
+
+    const wish = _resolvePetWish(pet, dna);
+    const referenceImage = _resolvePetWishReferenceImage(pet, dna);
+    const cacheKey = _sheetCacheKeyForPet(pet, dna);
+
+    const cached = getCachedSheetUrl(cacheKey);
+    if (cached) {
+        if (assignToPet && !pet.imageSheetUrl) pet.imageSheetUrl = cached;
+        return cached;
+    }
+    if (_inflight.has(cacheKey)) return _inflight.get(cacheKey);
+
+    const promise = (async () => {
+        try {
+            const { genPetSheet } = await import('./api.js');
+            const url = await genPetSheet(dna, dnaToName(dna), (wish || referenceImage) ? { customPrompt: wish, referenceImage } : undefined);
+            const staleRequest = _isPetSheetRequestStale(pet, requestVersion);
+            if (url && !staleRequest) {
+                setCachedSheetUrl(cacheKey, url);
+                if (assignToPet && pet) {
+                    pet.imageSheetUrl = url;
+                    _requestReadyEggHatch(pet);
+                    try { savePetDebounced(pet); } catch (_) {}
+                }
+            }
+            return staleRequest ? null : (url || null);
+        } catch (e) {
+            console.warn('[pet] generatePetSheet 失败', e);
+            return null;
+        } finally {
+            if (_inflight.get(cacheKey) === promise) _inflight.delete(cacheKey);
+        }
+    })();
+    _inflight.set(cacheKey, promise);
+    return promise;
+}
+
+function _getPetSheetRequestVersion(pet) {
+    return pet?.id ? (_sheetRequestVersionByPetId.get(pet.id) || 0) : 0;
+}
+
+function _bumpPetSheetRequestVersion(pet) {
+    if (!pet?.id) return 0;
+    const version = _getPetSheetRequestVersion(pet) + 1;
+    _sheetRequestVersionByPetId.set(pet.id, version);
+    return version;
+}
+
+function _isPetSheetRequestStale(pet, requestVersion) {
+    return pet?.id ? _getPetSheetRequestVersion(pet) !== requestVersion : false;
+}
+
+function _invalidatePetSheet(pet, { clearCurrent = false } = {}) {
+    if (!pet) return 0;
+    const requestVersion = _bumpPetSheetRequestVersion(pet);
+
+    const currentUrl = pet.imageSheetUrl || '';
+    const dna = pet.dna || '';
+    const cacheKeys = new Set();
+    if (dna) {
+        cacheKeys.add(dna);
+        cacheKeys.add(_sheetCacheKeyForPet(pet, dna));
+    }
+
+    const cache = _loadSheetCache();
+    let changed = false;
+    cacheKeys.forEach(key => {
+        if (!key) return;
+        if (Object.prototype.hasOwnProperty.call(cache, key)) changed = true;
+        delete cache[key];
+        _inflight.delete(key);
+    });
+    if (currentUrl) {
+        Object.keys(cache).forEach(key => {
+            if (cache[key] === currentUrl) {
+                delete cache[key];
+                _inflight.delete(key);
+                changed = true;
+            }
+        });
+    }
+    if (changed) _persistSheetCache();
+
+    if (clearCurrent && currentUrl) {
+        _processed.delete(currentUrl);
+        _memoryImages.delete(currentUrl);
+    }
+    if (clearCurrent) {
+        pet.imageUrl = null;
+        pet.imageSheetUrl = null;
+    }
+    return requestVersion;
+}
+
+export function resetPetSheetImage(pet) {
+    _invalidatePetSheet(pet, { clearCurrent: true });
+}
+
+/**
+ * Force a fresh sprite sheet for the pet's current DNA / wish.
+ * By default the existing art stays visible until the new sheet has been processed, so this is safe for any stage.
+ */
+export async function regeneratePetSheet(pet, { clearCurrent = false, notify: shouldNotify = true } = {}) {
+    if (!pet) return null;
+    const requestVersion = _invalidatePetSheet(pet, { clearCurrent });
+    const url = await generatePetSheet(pet, { assignToPet: false });
+    if (!url) return null;
+
+    const processed = getProcessedSheet(url);
+    await processed?.promise;
+    if (_isPetSheetRequestStale(pet, requestVersion)) return null;
+
+    pet.imageUrl = null;
+    pet.imageSheetUrl = url;
+    try { savePetDebounced(pet); } catch (_) {}
+    if (shouldNotify) {
+        try { const { notify } = await import('./state.js'); notify(); } catch (_) {}
+    }
+    return url;
+}
+
+// Sprite sheet background removal runs in petSheetWorker.js. Keep the main thread free for rendering.
+
+let _sheetWorker = null;
+let _sheetWorkerFailed = false;
+let _sheetWorkerSeq = 0;
+const _sheetWorkerJobs = new Map();
+
+function _getSheetWorker() {
+    if (_sheetWorkerFailed) return null;
+    if (_sheetWorker) return _sheetWorker;
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return null;
+    try {
+        _sheetWorker = new Worker(new URL('./petSheetWorker.js', import.meta.url));
+        _sheetWorker.onmessage = (event) => {
+            const { id, ok, blob, direct, width, height, error } = event.data || {};
+            const job = _sheetWorkerJobs.get(id);
+            if (!job) return;
+            _sheetWorkerJobs.delete(id);
+            if (ok && direct) job.resolve({ direct: true, blob: null, width, height, dataUrl: job.url });
+            else if (ok && blob) job.resolve({ direct: false, blob, width, height, dataUrl: URL.createObjectURL(blob) });
+            else job.reject(new Error(error || 'pet sheet worker failed'));
+        };
+        _sheetWorker.onerror = (event) => {
+            _sheetWorkerFailed = true;
+            console.warn('[pet] sheet worker 出错，将保留原始 sheet：', event?.message || event);
+            for (const [, job] of _sheetWorkerJobs) job.reject(new Error('pet sheet worker crashed'));
+            _sheetWorkerJobs.clear();
+            try { _sheetWorker.terminate(); } catch (_) {}
+            _sheetWorker = null;
+        };
+        return _sheetWorker;
+    } catch (e) {
+        _sheetWorkerFailed = true;
+        console.warn('[pet] sheet worker 初始化失败，将保留原始 sheet：', e);
+        return null;
+    }
+}
+
+async function _processSheetInWorker(url) {
+    const worker = _getSheetWorker();
+    if (!worker) return null;
+    const id = ++_sheetWorkerSeq;
+    return await new Promise((resolve, reject) => {
+        _sheetWorkerJobs.set(id, { resolve, reject, url });
+        try {
+            worker.postMessage({ id, url });
+        } catch (e) {
+            _sheetWorkerJobs.delete(id);
+            reject(e);
+        }
+    });
+}
+
+/**
+ * 加载并处理 sheet。返回 { status, dataUrl, dataBlob, width, height } —— dataUrl 是可渲染 URL，处理完成后才有值。
+ */
+export function getProcessedSheet(url) {
+    if (!url) return null;
+    const existing = _processed.get(url);
+    if (existing) return existing;
+
+    const entry = { status: 'loading', rawUrl: url, dataUrl: null, dataBlob: null, width: 0, height: 0, promise: null };
+    _processed.set(url, entry);
+
+    entry.promise = (async () => {
+        const worker = _getSheetWorker();
+        if (!worker) {
+            entry.status = 'raw';
+            _scheduleScan();
+            return entry;
+        }
+        entry.status = 'processing';
+        _scheduleScan();
+        try {
+            const processed = await _processSheetInWorker(url);
+            entry.dataBlob = processed?.blob || null;
+            entry.dataUrl = processed?.dataUrl || null;
+            entry.width = Number(processed?.width) || 0;
+            entry.height = Number(processed?.height) || 0;
+            entry.status = entry.dataUrl ? 'loaded' : 'raw';
+        } catch (e) {
+            console.warn('[pet] sheet worker 处理失败，将保留原始 sheet：', e);
+            entry.status = 'raw';
+        }
+        _scheduleScan();
+        return entry;
+    })();
+    return entry;
+}
+
+export function isPetProcessedTextureReady(pet) {
+    const row = _stageRow(pet);
+    if (row == null || _isEggAwaitingSheet(pet)) return true;
+    const url = pet?.imageSheetUrl || _getCachedSheetUrlForPet(pet);
+    if (!url) return false;
+    const processed = getProcessedSheet(url);
+    return !!(processed?.status === 'loaded' && processed.dataUrl);
+}
+
+const _processed = new Map(); // url -> { status, rawUrl, dataUrl, dataBlob, width, height, promise }
+const _memoryImages = new Map(); // url -> { status, img, promise }
+
+function _preloadImageToMemory(url, { crossOrigin = null } = {}) {
+    if (!url || typeof Image === 'undefined') return Promise.resolve(null);
+    const existing = _memoryImages.get(url);
+    if (existing) return existing.promise || Promise.resolve(existing);
+
+    const entry = { status: 'loading', img: null, promise: null };
+    _memoryImages.set(url, entry);
+    entry.promise = new Promise((resolve) => {
+        const img = new Image();
+        if (crossOrigin && !String(url).startsWith('data:')) img.crossOrigin = crossOrigin;
+        const finish = (status) => {
+            entry.status = status;
+            entry.img = status === 'loaded' ? img : null;
+            resolve(entry);
+        };
+        img.onload = async () => {
+            try { if (typeof img.decode === 'function') await img.decode(); } catch (_) {}
+            finish('loaded');
+        };
+        img.onerror = () => finish('error');
+        img.src = url;
+    });
+    return entry.promise;
+}
+
+/**
+ * Warm pet art into memory for instant level switches.
+ * This starts the same image load + transparent-sheet processing used by mountPetArt,
+ * then decodes the final renderable data URL and keeps the Image objects alive.
+ */
+export function preloadPetAssets(pets, { includeAll = true } = {}) {
+    const list = Array.isArray(pets) ? pets : (pets ? [pets] : []);
+    const targets = includeAll ? list : list.slice(0, 1);
+    if (!targets.length) return Promise.resolve([]);
+
+    return Promise.allSettled(targets.map(async (pet) => {
+        if (!pet) return null;
+        const row = _stageRow(pet);
+        const url = pet.imageSheetUrl || _getCachedSheetUrlForPet(pet);
+        if (!url || row == null) {
+            await _preloadImageToMemory(EGG_DATA_URL);
+            return { petId: pet.id, status: 'egg' };
+        }
+
+        if (!pet.imageSheetUrl) pet.imageSheetUrl = url;
+        const processed = getProcessedSheet(url);
+        await processed?.promise;
+        if (processed?.status === 'loaded' && processed.dataUrl) {
+            await _preloadImageToMemory(processed.dataUrl);
+            return { petId: pet.id, status: 'loaded' };
+        }
+        await _preloadImageToMemory(url, { crossOrigin: 'anonymous' });
+        return { petId: pet.id, status: processed?.status || 'raw' };
+    }));
+}
+
+// === 渲染 + 动画 ===
+// element -> { state, intervalId, inner }
+const _mounted = new WeakMap();
+
+function _stageRow(pet) {
+    const r = STAGE_ROW[pet?.stage];
+    return r == null ? null : r;
+}
+
+/**
+ * 把宠物画面挂载到指定容器（替换其内容），固定显示 idle 列。
+ * 如果该容器已经处在期望状态，本函数是无操作。
+ */
+export function mountPetArt(el, pet) {
+    if (!el || !pet) return;
+    const url = pet.imageSheetUrl || _getCachedSheetUrlForPet(pet);
+    const row = _stageRow(pet);
+    const requireProcessedTexture = el.dataset.mhPetRequireProcessed === '1';
+
+    if (requireProcessedTexture && row != null && !url) {
+        const mountKey = `sprite-pending|no-url|${pet.dna || ''}`;
+        if (el.dataset.mhPetMounted !== mountKey) {
+            el.dataset.mhPetMounted = mountKey;
+            el.innerHTML = '';
+        }
+        el.style.visibility = 'hidden';
+        el.style.pointerEvents = 'none';
+        el.setAttribute('aria-hidden', 'true');
+        _mounted.set(el, { state: mountKey, inner: null });
+        return;
+    }
+
+    // 蛋阶段 / 孵化待揭晓 / 还没有 sheet → 蛋形 SVG（按 DNA 渲染颜色 / 眼睛 / 纹身）
+    if (_isEggAwaitingSheet(pet) || !url || row == null) {
+        const mountKey = `egg|${pet.dna || ''}`;
+        if (el.dataset.mhPetMounted !== mountKey) {
+            el.dataset.mhPetMounted = mountKey;
+            el.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">${buildEggSvg(pet)}</div>`;
+        }
+        el.style.visibility = '';
+        el.style.pointerEvents = '';
+        el.removeAttribute('aria-hidden');
+        _syncAnimClass(el, pet.anim, pet);
+        _mounted.set(el, { state: 'egg', inner: null });
+        return;
+    }
+
+    const col = _animCol(pet.anim);
+
+    // 透明化处理未完成时，先显示原图对应格子，避免首屏被同步像素处理卡住。
+    const proc = getProcessedSheet(url);
+    if (!(proc?.status === 'loaded' && proc.dataUrl)) {
+        if (requireProcessedTexture) {
+            const waitKey = `sprite-pending|${proc?.rawUrl || url}|${row}|${col}`;
+            if (el.dataset.mhPetMounted !== waitKey) {
+                el.dataset.mhPetMounted = waitKey;
+                el.innerHTML = '';
+            }
+            el.style.visibility = 'hidden';
+            el.style.pointerEvents = 'none';
+            el.setAttribute('aria-hidden', 'true');
+            _mounted.set(el, { state: waitKey, inner: null });
+            return;
+        }
+        const rawUrl = proc?.rawUrl || url;
+        const wantRaw = `sprite-raw|${rawUrl}|${row}|${col}`;
+        if (el.dataset.mhPetMounted !== wantRaw) {
+            const bx = (col * 100 / (SHEET_COLS - 1)).toFixed(3);
+            const by = (row * 100 / (SHEET_ROWS - 1)).toFixed(3);
+            el.dataset.mhPetMounted = wantRaw;
+            el.innerHTML = `<div class="mh-pet-flip"><div class="mh-pet-art mh-pet-art-sprite mh-pet-idle" style="width:100%;height:100%;background-image:url(&quot;${escapeHtml(rawUrl)}&quot;);background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></div></div>`;
+        }
+        _syncAnimClass(el, pet.anim, pet);
+        _mounted.set(el, { state: wantRaw, inner: el.querySelector('.mh-pet-art') });
+        return; // 处理完成会通过 _scheduleScan 再次进入 mountPetArt
+    }
+    const renderUrl = proc.dataUrl;
+    el.style.visibility = '';
+    el.style.pointerEvents = '';
+    el.removeAttribute('aria-hidden');
+
+    const want = `sprite|${url}|${row}|${col}`;
+    const prev = _mounted.get(el);
+    const motion = el.dataset.mhPetMotion === 'walk' ? 'walk' : 'idle';
+    if (prev?.state === want && prev.inner) {
+        if (prev.inner.dataset.bgUrl !== renderUrl) {
+            prev.inner.dataset.bgUrl = renderUrl;
+            prev.inner.style.backgroundImage = `url("${renderUrl}")`;
+        }
+        // 同步 motion class（占位符可能在外部被改过 data-mh-pet-motion）
+        const wantWalk = motion === 'walk';
+        if (prev.inner.classList.contains('mh-pet-walk') !== wantWalk) {
+            prev.inner.classList.toggle('mh-pet-walk', wantWalk);
+            prev.inner.classList.toggle('mh-pet-idle', !wantWalk);
+        }
+        _syncAnimClass(el, pet.anim, pet);
+        return;
+    }
+
+    // 外层：周期性水平翻转（让站立形象偶尔朝向另一边）
+    const flipWrap = document.createElement('div');
+    flipWrap.className = 'mh-pet-flip';
+    // 用 pet.id 派生稳定的随机相位，避免画面里多只宠物同步翻转
+    const flipDelay = -((_hashToUnit(pet.id || url) * 22).toFixed(2)) + 's';
+    flipWrap.style.animationDelay = flipDelay;
+
+    // 内层：背景精灵图 + 动作动画（idle = 呼吸 / walk = 史莱姆 squash/stretch）
+    const inner = document.createElement('div');
+    inner.className = `mh-pet-art mh-pet-art-sprite ${motion === 'walk' ? 'mh-pet-walk' : 'mh-pet-idle'}`;
+    inner.dataset.bgUrl = renderUrl;
+    const bx = (col * 100 / (SHEET_COLS - 1)).toFixed(3);
+    const by = (row * 100 / (SHEET_ROWS - 1)).toFixed(3);
+    inner.style.cssText =
+        `width:100%;height:100%;` +
+        `background-image:url("${renderUrl}");` +
+        `background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;` +
+        `background-position:${bx}% ${by}%;` +
+        `background-repeat:no-repeat;image-rendering:auto`;
+    // motion 动画的相位偏移按周期长度独立散开
+    const motionPeriod = motion === 'walk' ? 1.3 : 12;
+    const motionDelay = -((_hashToUnit((pet.id || url) + '#m') * motionPeriod).toFixed(2)) + 's';
+    inner.style.animationDelay = motionDelay;
+
+    flipWrap.appendChild(inner);
+    el.dataset.mhPetMounted = want;
+    el.innerHTML = '';
+    el.appendChild(flipWrap);
+
+    _syncAnimClass(el, pet.anim, pet);
+
+    _mounted.set(el, { state: want, inner });
+}
+
+// 把字符串映射到 [0,1) 的稳定哈希，用作动画相位偏移
+function _hashToUnit(s) {
+    const str = String(s || '');
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return (h >>> 0) / 4294967296;
+}
+
+/**
+ * 扫描根元素下所有 [data-mh-pet] 占位符并挂载。
+ */
+export function scanAndMount(root) {
+    const r = root || document.getElementById('app') || document.body;
+    if (!r) return;
+    const els = r.querySelectorAll('[data-mh-pet]');
+    els.forEach((el) => {
+        const id = el.getAttribute('data-mh-pet');
+        if (!id) return;
+        const visitPet = state.visitingMode?.friendPet;
+        const visitPlanetPet = (state.visitingMode?.planetPets || []).find(item => item?.id === id);
+        const pet = state.pets[id] || (visitPet?.id === id ? visitPet : null) || visitPlanetPet || null;
+        if (pet) mountPetArt(el, pet);
+    });
+}
+
+let _scanScheduled = false;
+function _scheduleScan() {
+    if (_scanScheduled) return;
+    _scanScheduled = true;
+    requestAnimationFrame(() => {
+        _scanScheduled = false;
+        try {
+            scanAndMount();
+            _tryReadyEggHatches();
+        } catch (e) { console.warn('[pet] scanAndMount 失败', e); }
+    });
+}
+
+// 视图每次 render 之后会触发 notify → 我们在下一帧重新扫描并接管所有占位符
+subscribe(_scheduleScan);
+
+// 兜底：有些代码路径（如 view_home.js 的 runZoomTransition）会直接修改 DOM
+// 而不调用 notify()，导致新插入的 [data-mh-pet] 占位符不会被扫描。
+// 用 MutationObserver 监听 #app 子树变化，自动补一次扫描。
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+    const startObserver = () => {
+        const root = document.getElementById('app') || document.body;
+        if (!root) return;
+        const mo = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    if (node.matches?.('[data-mh-pet]') || node.querySelector?.('[data-mh-pet]')) {
+                        _scheduleScan();
+                        return;
+                    }
+                }
+            }
+        });
+        mo.observe(root, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startObserver, { once: true });
+    } else {
+        startObserver();
+    }
+}
+
+// ============================================================================
+// 宠物图像 Blob 负载（跨窗口/iframe 传输的唯一来源）
+// ----------------------------------------------------------------------------
+// 任何需要“拿到某只宠物某个阶段的图片数据（blob + uv 裁剪信息）”的消费方
+// （如小游戏 iframe 通过 postMessage 请求），都应统一调用 getPetImagePayload()。
+// 这样 sprite sheet 的生成、透明化、原始图回退、蛋图兜底、UV 计算等逻辑只存在于 pet.js，
+// 视图层（view_minigames.js 等）不再各自处理图片。
+// ============================================================================
+
+const EGG_IMAGE_SIZE = 256;
+let _defaultEggBlobPromise = null;
+const _rawSheetBlobCache = new Map(); // url -> Promise<{ blob, width, height } | null>
+
+/**
+ * 计算 sprite sheet 中某个格子的 UV 裁剪信息（像素 + 归一化坐标 + 行列数）。
+ * @param {{row:number, col:number}} cell
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ */
+function petSpriteUv(cell, imageWidth, imageHeight) {
+    const x = Math.floor(cell.col * imageWidth / SHEET_COLS);
+    const y = Math.floor(cell.row * imageHeight / SHEET_ROWS);
+    const nextX = Math.floor((cell.col + 1) * imageWidth / SHEET_COLS);
+    const nextY = Math.floor((cell.row + 1) * imageHeight / SHEET_ROWS);
+    const width = Math.max(1, nextX - x);
+    const height = Math.max(1, nextY - y);
+    return {
+        x,
+        y,
+        width,
+        height,
+        row: cell.row,
+        col: cell.col,
+        cols: SHEET_COLS,
+        rows: SHEET_ROWS,
+        u0: x / imageWidth,
+        v0: y / imageHeight,
+        u1: (x + width) / imageWidth,
+        v1: (y + height) / imageHeight,
+    };
+}
+
+// 默认蛋图 blob（缓存，所有蛋阶段/兜底共用）。
+function _getDefaultEggBlob() {
+    if (_defaultEggBlobPromise) return _defaultEggBlobPromise;
+    _defaultEggBlobPromise = new Promise((resolve, reject) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = EGG_IMAGE_SIZE;
+                    canvas.height = EGG_IMAGE_SIZE;
+                    const cctx = canvas.getContext('2d');
+                    if (!cctx) throw new Error('canvas context is not available');
+                    cctx.clearRect(0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    cctx.drawImage(img, 0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('failed to create egg image blob'));
+                    }, 'image/png');
+                } catch (e) {
+                    reject(e);
+                }
+            };
+            img.onerror = () => reject(new Error('failed to load egg image'));
+            img.src = getEggDataUrl();
+        } catch (e) {
+            reject(e);
+        }
+    });
+    return _defaultEggBlobPromise;
+}
+
+// 拉取原始 sheet 为 blob 并测量像素尺寸（worker 透明化不可用时的回退路径）。
+function _fetchRawSheetBlob(url) {
+    if (!url) return Promise.resolve(null);
+    if (_rawSheetBlobCache.has(url)) return _rawSheetBlobCache.get(url);
+    const promise = (async () => {
+        try {
+            const resp = await fetch(url, { mode: 'cors' });
+            if (!resp.ok) throw new Error(`fetch sheet failed: ${resp.status}`);
+            const blob = await resp.blob();
+            const dims = await _measureBlobImage(blob);
+            if (!dims) return null;
+            return { blob, width: dims.width, height: dims.height };
+        } catch (e) {
+            console.warn('[pet] 拉取原始 sheet 失败', url, e);
+            return null;
+        }
+    })();
+    _rawSheetBlobCache.set(url, promise);
+    return promise;
+}
+
+function _measureBlobImage(blob) {
+    return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            const width = img.naturalWidth || img.width || 0;
+            const height = img.naturalHeight || img.height || 0;
+            URL.revokeObjectURL(objectUrl);
+            resolve(width && height ? { width, height } : null);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(null);
+        };
+        img.src = objectUrl;
+    });
+}
+
+/**
+ * 蛋图负载（蛋阶段 / 形象尚未就绪时的统一兜底）。
+ * @param {object} pet
+ */
+export async function getPetEggImagePayload(pet) {
+    const imageBlob = await _getDefaultEggBlob();
+    return {
+        petId: pet?.id || '',
+        name: displayPetName(pet),
+        stage: pet?.stage || 'egg',
+        anim: 'egg',
+        imageBlob,
+        imageType: imageBlob.type || 'image/png',
+        imageWidth: EGG_IMAGE_SIZE,
+        imageHeight: EGG_IMAGE_SIZE,
+        uv: {
+            x: 0,
+            y: 0,
+            width: EGG_IMAGE_SIZE,
+            height: EGG_IMAGE_SIZE,
+            row: 0,
+            col: 0,
+            cols: 1,
+            rows: 1,
+            u0: 0,
+            v0: 0,
+            u1: 1,
+            v1: 1,
+        },
+    };
+}
+
+/**
+ * 获取某只宠物“当前阶段”可传输的图像负载（blob + uv + 元信息），用于 iframe/跨窗口渲染。
+ * 这是宠物图像数据的唯一来源——sprite sheet 生成、透明化、原始图回退、蛋图兜底都在这里完成。
+ *
+ * @param {object} pet 宠物对象（至少需要 id 或 dna/stage）。
+ * @param {{ anim?: string }} [opts] anim 指定情绪列（idle/happy/sad/sleep），默认按 pet.anim。
+ * @returns {Promise<object>} { petId, name, stage, anim, imageBlob, imageType, imageWidth, imageHeight, uv }
+ */
+export async function getPetImagePayload(pet, opts = {}) {
+    if (!pet) throw new Error('pet not found');
+    // 确保拿到 pet.json 完整数据（dna / imageSheetUrl / stage），避免按需加载未就绪导致空白。
+    if (pet.id) pet = (await getPetAsync(pet.id)) || pet;
+    if (pet.stage === 'egg') return await getPetEggImagePayload(pet);
+
+    let sheetUrl = pet.imageSheetUrl || '';
+    if (!sheetUrl) sheetUrl = await generatePetSheet(pet) || '';
+    // 形象尚未生成完成时，先回退到蛋图，而不是抛错导致消费方什么都不显示。
+    if (!sheetUrl) return await getPetEggImagePayload(pet);
+
+    const anim = opts?.anim;
+    const originalAnim = pet.anim;
+    if (anim) pet.anim = anim;
+    const cell = getPetSpriteCell(pet);
+    if (anim) pet.anim = originalAnim;
+    if (!cell) return await getPetEggImagePayload(pet);
+
+    // 透明化处理后的精灵图（与首页/野外渲染同源）。
+    const processed = getProcessedSheet(sheetUrl);
+    await processed?.promise;
+
+    let imageBlob = null;
+    let imageWidth = 0;
+    let imageHeight = 0;
+    if (processed?.status === 'loaded' && processed.dataBlob && processed.width && processed.height) {
+        imageBlob = processed.dataBlob;
+        imageWidth = processed.width;
+        imageHeight = processed.height;
+    } else {
+        // worker 透明化不可用时（status='raw' 或 direct 模式无 blob），首页会回退到原始 sheet，
+        // 这里同样拉取原始 sheet 为 blob 并测量尺寸，避免抛错导致什么都不显示。
+        const raw = await _fetchRawSheetBlob(sheetUrl);
+        if (!raw) return await getPetEggImagePayload(pet);
+        imageBlob = raw.blob;
+        imageWidth = raw.width;
+        imageHeight = raw.height;
+    }
+
+    const uv = petSpriteUv(cell, imageWidth, imageHeight);
+    return {
+        petId: pet.id || '',
+        name: displayPetName(pet),
+        stage: pet.stage || '',
+        anim: anim || pet.anim || 'idle',
+        imageBlob,
+        imageType: imageBlob.type || 'image/png',
+        imageWidth,
+        imageHeight,
+        uv,
+    };
+}

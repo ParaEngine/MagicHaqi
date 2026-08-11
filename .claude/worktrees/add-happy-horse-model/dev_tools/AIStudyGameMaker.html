@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <title>学习伙伴 · 把资料变成游戏</title>
+  <style>
+    :root {
+      --bg-top:#0a1830; --bg-bot:#0f2747; --ink:#e2e8f0; --muted:#94a3b8; --faint:#64748b;
+      --line:rgba(148,163,184,.16); --card:rgba(255,255,255,.06); --accent:#6366f1; --accent2:#8b5cf6;
+      --sat: env(safe-area-inset-top,0px); --sab: env(safe-area-inset-bottom,0px);
+    }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html,body { margin:0; height:100%; }
+    body {
+      height:100dvh; overflow:hidden; color:var(--ink);
+      background:linear-gradient(180deg,var(--bg-top) 0%,var(--bg-bot) 100%);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+      -webkit-font-smoothing:antialiased;
+    }
+    .app { display:flex; flex-direction:column; height:100dvh; }
+
+    /* 顶栏 */
+    .topbar {
+      display:flex; align-items:center; gap:10px; flex-shrink:0;
+      padding:calc(10px + var(--sat)) 14px 10px;
+      background:rgba(8,16,34,.72); border-bottom:1px solid var(--line); backdrop-filter:blur(8px);
+    }
+    .topbar .avatar { width:34px; height:34px; flex:0 0 34px; border-radius:50%; display:grid; place-items:center;
+      font-size:20px; background:linear-gradient(135deg,var(--accent),var(--accent2)); }
+    .topbar .who { flex:1; min-width:0; }
+    .topbar .who b { display:block; font-size:15px; font-weight:800; }
+    .topbar .who span { display:block; font-size:11px; color:var(--muted); }
+    .iconbtn { width:38px; height:38px; flex:0 0 38px; border:1px solid rgba(148,163,184,.24); background:var(--card);
+      color:#cbd5e1; border-radius:10px; font-size:17px; display:grid; place-items:center; cursor:pointer; }
+    .iconbtn:active { transform:scale(.94); }
+
+    /* 聊天区 */
+    .chat { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px 14px 6px;
+      display:flex; flex-direction:column; gap:12px; }
+    .msg { display:flex; max-width:100%; gap:8px; }
+    .msg.ai { justify-content:flex-start; }
+    .msg.user { justify-content:flex-end; }
+    .bubble { font-size:14.5px; line-height:1.55; word-break:break-word; white-space:pre-wrap; padding:11px 14px; border-radius:15px; max-width:86%; }
+    .bubble.ai { background:var(--card); border:1px solid var(--line); border-bottom-left-radius:5px; }
+    .bubble.user { background:var(--accent); color:#fff; border-bottom-right-radius:5px; }
+    .bubble .pics { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .bubble .pics img { width:64px; height:64px; object-fit:cover; border-radius:8px; }
+    .bubble.typing { color:var(--muted); }
+    .bubble .think { margin-top:7px; padding-top:7px; border-top:1px dashed var(--line); font-size:12px; line-height:1.5;
+      color:var(--faint); white-space:pre-wrap; max-height:108px; overflow:hidden; }
+    .bubble .think:empty { display:none; }
+    .dots span { display:inline-block; width:6px; height:6px; margin:0 1px; border-radius:50%; background:var(--muted); animation:blink 1.2s infinite both; }
+    .dots span:nth-child(2){animation-delay:.2s} .dots span:nth-child(3){animation-delay:.4s}
+    @keyframes blink { 0%,80%,100%{opacity:.25} 40%{opacity:1} }
+    .quickrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .quick { border:1px solid rgba(148,163,184,.24); background:rgba(255,255,255,.05); color:var(--ink);
+      border-radius:12px; padding:9px 13px; font-size:13.5px; font-weight:700; cursor:pointer; }
+    .quick:active { background:rgba(99,102,241,.18); }
+    .linkbtn { border:0; background:none; color:#a5b4fc; font-weight:800; cursor:pointer; padding:0; text-decoration:underline; font-size:14px; }
+
+    /* 题型选择条 */
+    .chips { display:flex; gap:8px; overflow-x:auto; padding:8px 14px 0; flex-shrink:0; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .chips::-webkit-scrollbar { display:none; }
+    .chip { flex:0 0 auto; border:1px solid rgba(148,163,184,.24); background:rgba(255,255,255,.05); color:var(--muted);
+      border-radius:999px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; }
+    .chip.sel { border-color:var(--accent); background:rgba(99,102,241,.18); color:#c7d2fe; }
+
+    /* 附件缩略 */
+    .attachrow { display:flex; gap:8px; overflow-x:auto; padding:8px 14px 0; flex-shrink:0; scrollbar-width:none; }
+    .attachrow:empty { display:none; }
+    .attachrow::-webkit-scrollbar { display:none; }
+    .att { position:relative; flex:0 0 auto; }
+    .att img { width:54px; height:54px; object-fit:cover; border-radius:9px; border:1px solid var(--line); }
+    .att .x { position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:0;
+      background:#ef4444; color:#fff; font-size:13px; line-height:1; display:grid; place-items:center; cursor:pointer; }
+
+    /* 输入条 */
+    .composer { flex-shrink:0; padding:8px 12px calc(10px + var(--sab)); background:rgba(8,16,34,.6); border-top:1px solid var(--line); }
+    .inputrow { display:flex; align-items:flex-end; gap:8px; }
+    .plus { width:42px; height:42px; flex:0 0 42px; border:1px solid rgba(148,163,184,.24); background:var(--card); color:#cbd5e1;
+      border-radius:12px; font-size:22px; display:grid; place-items:center; cursor:pointer; }
+    .plus:active { transform:scale(.94); }
+    .composer textarea { flex:1; min-width:0; resize:none; max-height:120px; border:1px solid rgba(148,163,184,.24);
+      background:rgba(255,255,255,.06); color:var(--ink); border-radius:14px; padding:11px 13px; font-size:15px; line-height:1.4; outline:none; font-family:inherit; }
+    .composer textarea::placeholder { color:var(--faint); }
+    .send { width:46px; height:46px; flex:0 0 46px; border:0; border-radius:14px; cursor:pointer; color:#fff; font-size:20px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2)); display:grid; place-items:center; }
+    .send:disabled { opacity:.45; cursor:not-allowed; }
+    .send:active:not(:disabled) { transform:scale(.94); }
+
+    /* 制作工坊全屏宿主 */
+    .maker-host { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,var(--bg-top) 0%,var(--bg-bot) 100%); display:none; }
+    .maker-host.show { display:block; }
+
+    /* 底部抽屉：我的游戏 */
+    .sheet-mask { position:fixed; inset:0; z-index:60; background:rgba(6,18,44,.6); backdrop-filter:blur(4px); display:none; }
+    .sheet-mask.show { display:block; }
+    .sheet { position:fixed; left:0; right:0; bottom:0; z-index:61; max-height:72dvh; transform:translateY(101%);
+      transition:transform .26s cubic-bezier(.32,.72,0,1); background:linear-gradient(180deg,#111d38,#0f2747);
+      border-top-left-radius:20px; border-top-right-radius:20px; border-top:1px solid rgba(99,102,241,.3);
+      padding:14px 14px calc(16px + var(--sab)); display:flex; flex-direction:column; }
+    .sheet.show { transform:translateY(0); }
+    .sheet .grab { width:40px; height:4px; border-radius:2px; background:rgba(148,163,184,.4); margin:0 auto 12px; }
+    .sheet h2 { margin:0 4px 10px; font-size:16px; font-weight:900; }
+    .gamelist { overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+    .gameitem { display:flex; align-items:center; gap:11px; padding:11px 12px; border:1px solid var(--line);
+      background:rgba(255,255,255,.04); border-radius:13px; cursor:pointer; }
+    .gameitem:active { background:rgba(99,102,241,.14); }
+    .gameitem .ico { width:40px; height:40px; flex:0 0 40px; border-radius:10px; display:grid; place-items:center; font-size:22px; background:rgba(255,255,255,.06); }
+    .gameitem .meta { flex:1; min-width:0; }
+    .gameitem .meta b { display:block; font-size:14px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gameitem .meta span { display:block; font-size:11px; color:var(--muted); }
+    .gameitem .del { flex:0 0 auto; border:0; background:none; color:var(--faint); font-size:16px; padding:6px; cursor:pointer; }
+    .empty { text-align:center; color:var(--muted); font-size:13px; padding:24px 8px; }
+    /* 设置抽屉 */
+    .set-row { display:flex; flex-direction:column; gap:7px; margin:0 4px 16px; }
+    .set-row > label { font-size:13px; color:var(--muted); font-weight:700; }
+    .set-select { width:100%; height:48px; border-radius:12px; border:1px solid rgba(148,163,184,.24); background:#0f2747;
+      color:var(--ink); font-size:15px; padding:0 12px; outline:none; appearance:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 14px center; }
+    .set-btn { width:100%; min-height:48px; border-radius:12px; border:1px solid rgba(148,163,184,.24); background:var(--card);
+      color:var(--ink); font-size:15px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 14px; gap:10px; }
+    .set-btn:active { background:rgba(99,102,241,.14); }
+    .set-btn .badge { font-size:12px; font-weight:700; color:var(--muted); }
+    .set-hint { font-size:12px; color:var(--faint); margin:2px 4px 4px; line-height:1.55; }
+    .hidden { display:none !important; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="topbar">
+      <div class="avatar">🦊</div>
+      <div class="who">
+        <b id="buddyName">学习伙伴</b>
+        <span id="buddySub">把资料拍给我，变成好玩的复习游戏</span>
+      </div>
+      <button class="iconbtn" id="btnSettings" title="设置">⚙️</button>
+      <button class="iconbtn" id="btnList" title="我的游戏">🎒</button>
+      <button class="iconbtn" id="btnNew" title="新对话">✨</button>
+    </div>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="chips" id="chips">
+      <button class="chip sel" data-type="mcq">选择题闯关</button>
+      <button class="chip" data-type="dictation">听写默写</button>
+      <button class="chip" data-type="cloze">背诵填空</button>
+      <button class="chip" data-type="review">错题复习</button>
+    </div>
+    <div class="attachrow" id="attachrow"></div>
+    <div class="composer">
+      <div class="inputrow">
+        <button class="plus" id="btnAttach" title="拍照/上传">＋</button>
+        <textarea id="input" rows="1" placeholder="把要复习的内容拍照、或写在这里…"></textarea>
+        <button class="send" id="btnSend">➤</button>
+      </div>
+    </div>
+    <input id="fileInput" type="file" accept="image/*" capture="environment" multiple class="hidden">
+  </div>
+
+  <div class="maker-host" id="makerHost"></div>
+
+  <div class="sheet-mask" id="sheetMask"></div>
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <h2>我的游戏</h2>
+    <div class="gamelist" id="gamelist"><div class="empty">还没有游戏，发一份资料给我吧～</div></div>
+  </div>
+
+  <div class="sheet-mask" id="settingsMask"></div>
+  <div class="sheet" id="settingsSheet">
+    <div class="grab"></div>
+    <h2>设置</h2>
+    <div class="set-row">
+      <label>AI 大模型</label>
+      <select class="set-select" id="modelSelect"><option value="">自动（推荐）</option></select>
+      <div class="set-hint">用于看资料、出题与做游戏。不确定就用「自动」。</div>
+    </div>
+    <div class="set-row">
+      <label>本地 API Key</label>
+      <button class="set-btn" id="btnLocalApi"><span>配置自己的 API Key</span><span class="badge" id="localApiBadge">未启用</span></button>
+      <div class="set-hint">填入你自己的大模型 API Key 后，将使用你的额度（可选）。</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ============================================================
+    // AIStudyGameMaker：面向最终用户（小白）的移动优先聊天式伴学游戏制作。
+    //   - 视觉语言对齐 view_game_maker（深色 + 靛紫渐变 + 气泡聊天）
+    //   - 把资料（拍照/文字）发给"学习伙伴"，自动 OCR 抽题 → 生成有声有图的伴学游戏
+    //   - 复用 view_game_maker.js(renderGameMaker, mode:'study') + storage(study-games)
+    // ============================================================
+    const $ = (id) => document.getElementById(id);
+    const state = { sdk:null, type:'mcq', images:[], records:[], makerOpen:false, busy:false };
+
+    function esc(v){ const d=document.createElement('div'); d.textContent=v==null?'':String(v); return d.innerHTML; }
+    function fmt(ts){ const v=Number(ts); if(!Number.isFinite(v)||v<=0) return ''; try{ return new Date(v).toLocaleString(); }catch(_){ return ''; } }
+
+    // ---- 聊天气泡 ----
+    function bubble(role, html, opts={}){
+      const wrap=document.createElement('div'); wrap.className='msg '+role;
+      const b=document.createElement('div'); b.className='bubble '+role+(opts.cls?(' '+opts.cls):'');
+      b.innerHTML=html; wrap.appendChild(b); $('chat').appendChild(wrap);
+      $('chat').scrollTop=$('chat').scrollHeight;
+      return { wrap, b };
+    }
+    function aiSay(html, opts){ return bubble('ai', html, opts); }
+    function typing(){ return bubble('ai','<span class="dots"><span></span><span></span><span></span></span>',{cls:'typing'}); }
+
+    // -------- KeepworkSDK 加载（本地源码优先，CDN 兜底） --------
+    const SDK_CDN_URL='https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260620a';
+    const sdkLoadTimeoutMs=8000;
+    function withTimeout(p,ms,l){ let t=null; const to=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(l+' timed out')),ms);}); return Promise.race([p,to]).finally(()=>clearTimeout(t)); }
+    function loadScript(src){ return new Promise((res,rej)=>{ const ex=[...document.scripts].find(s=>s.src===src);
+      if(ex){ ex.addEventListener('load',()=>res(),{once:true}); ex.addEventListener('error',()=>rej(new Error('SDK script failed')),{once:true}); if(window.keepwork||window.KeepworkSDK) res(); return; }
+      const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('SDK script failed: '+src)); document.head.appendChild(s); }); }
+    function importRuntimeModule(src){ return new Function('src','return import(src)')(src); }
+    function shouldLoadSdkAsModule(src){ return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src); }
+    function getSdkCandidates(){
+      const params=new URLSearchParams(window.location.search); const explicit=params.get('sdk');
+      const host=window.location.hostname; const isLocal=!host||host==='localhost'||host==='127.0.0.1'||host==='::1'; const isFile=window.location.protocol==='file:';
+      const local=['http://127.0.0.1:5001/index.ts']; const deployed=[SDK_CDN_URL];
+      return [explicit, ...((isLocal||isFile)?local:[]), ...deployed, ...((isLocal||isFile)?[]:local)].filter(Boolean);
+    }
+    let storageMod, gameMakerMod, stateMod;
+    async function ensureSDK(){ if(window.keepwork||window.KeepworkSDK) return; let last=null;
+      for(const url of getSdkCandidates()){ try{ if(shouldLoadSdkAsModule(url)) await withTimeout(importRuntimeModule(url),sdkLoadTimeoutMs,'SDK '+url); else await loadScript(url); if(window.keepwork||window.KeepworkSDK) return; }catch(e){ last=e; } }
+      throw last||new Error('无法加载 KeepworkSDK'); }
+    async function boot(){
+      try{ await ensureSDK(); }catch(err){ aiSay('哎呀，加载失败了：'+esc(err?.message||err)+'。请检查网络后刷新页面。'); throw err; }
+      const sdk=window.keepwork||new window.KeepworkSDK({timeout:30000});
+      window.keepwork=sdk; window.sdk=sdk; state.sdk=sdk;
+      if(sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+      try{ await sdk.localAPIKeySettings?.load?.(); }catch(_){}
+      [stateMod, storageMod, gameMakerMod] = await Promise.all([
+        import('../js/state.js'), import('../js/storage.js'), import('../js/view_game_maker.js'),
+      ]);
+      stateMod.state.sdk=sdk; window.MH_state=stateMod.state;
+      greet();
+      await loadRecords();
+    }
+
+    function loggedIn(){ return !!(state.sdk && state.sdk.token); }
+    async function ensureLogin(){
+      const sdk=state.sdk; if(!sdk) return false;
+      if(sdk.token) return true;
+      await new Promise((resolve)=>{
+        let done=false; const fin=()=>{ if(done) return; done=true; resolve(); };
+        if(sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: fin });
+        else if(sdk.login) sdk.login().finally(fin);
+        setTimeout(fin, 600);
+      });
+      return !!sdk.token;
+    }
+
+    function greet(){
+      aiSay('嗨～我是你的学习伙伴！🦊\n\n把要复习的内容<b>拍张照</b>，或直接<b>写给我</b>（听写词、复习题、卷子、课文都行），我就把它做成一个有声音、有讲解、能闯关的小游戏，陪你一起学。'
+        + '<div class="quickrow">'
+        + '<button class="quick" data-q="photo">📷 拍照/上传资料</button>'
+        + '<button class="quick" data-q="example">✨ 看个例子</button>'
+        + '</div>');
+    }
+
+    // ---- 题型选择 ----
+    $('chips').addEventListener('click',(e)=>{ const c=e.target.closest('.chip'); if(!c) return;
+      state.type=c.dataset.type; [...$('chips').children].forEach(x=>x.classList.toggle('sel',x===c)); });
+
+    // ---- 附件 ----
+    function fileToDataUrl(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('读取失败')); r.readAsDataURL(f); }); }
+    $('btnAttach').onclick=()=>$('fileInput').click();
+    $('fileInput').addEventListener('change', async (e)=>{
+      for(const f of [...(e.target.files||[])]){ if(!f.type.startsWith('image/')) continue;
+        try{ state.images.push({ id:'img_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name:f.name, dataUrl:await fileToDataUrl(f) }); }catch(_){}}
+      e.target.value=''; renderAttach();
+    });
+    function renderAttach(){ $('attachrow').innerHTML=state.images.map(i=>
+      `<div class="att"><img src="${i.dataUrl}" alt="${esc(i.name)}"><button class="x" data-rm="${i.id}">×</button></div>`).join(''); }
+    $('attachrow').addEventListener('click',(e)=>{ const b=e.target.closest('button[data-rm]'); if(!b) return;
+      state.images=state.images.filter(i=>i.id!==b.dataset.rm); renderAttach(); });
+
+    // ---- 聊天区快捷按钮 ----
+    $('chat').addEventListener('click',(e)=>{
+      const q=e.target.closest('[data-q]'); if(q){ const k=q.dataset.q;
+        if(k==='photo') $('fileInput').click();
+        else if(k==='example'){ $('input').value='帮我复习三年级科学：植物的种子由种皮和胚两部分构成；电路要接通才能让小灯泡发光。'; autoGrow(); $('input').focus(); }
+        else if(k==='login') ensureLogin().then(()=>{ if(loggedIn()){ aiSay('登录好啦，继续把资料发给我吧～'); loadRecords(); } });
+        return; }
+    });
+
+    // ---- 自增长输入框 ----
+    const inputEl=$('input');
+    function autoGrow(){ inputEl.style.height='auto'; inputEl.style.height=Math.min(inputEl.scrollHeight,120)+'px'; }
+    inputEl.addEventListener('input', autoGrow);
+
+    // ---- AI 抽题 ----
+    function extractAssistantText(r){ if(typeof r==='string') return r;
+      return r?.result || r?.choices?.[0]?.message?.content || r?.data?.choices?.[0]?.message?.content || r?.text || ''; }
+    function extractJsonArray(text){ const v=String(text||'').trim(); if(!v) throw new Error('AI 未返回内容');
+      // json_object 模式会把数组包进对象里，键名不固定（items/questions/题目/data…）：兜底取第一个数组值。
+      const pickArray=(p)=>{ if(Array.isArray(p)) return p;
+        if(p&&typeof p==='object'){ for(const k of ['items','questions','data','list','题目']) if(Array.isArray(p[k])) return p[k];
+          for(const k of Object.keys(p)) if(Array.isArray(p[k])) return p[k]; }
+        return null; };
+      const tp=(s)=>{ try{ return pickArray(JSON.parse(s)); }catch(_){ return null; } };
+      let r=tp(v); if(r) return r;
+      const f=v.match(/```(?:json)?\s*([\s\S]*?)```/i); if(f){ r=tp(f[1]); if(r) return r; }
+      const s=v.indexOf('['), e=v.lastIndexOf(']'); if(s>=0&&e>s){ r=tp(v.slice(s,e+1)); if(r) return r; }
+      const os=v.indexOf('{'), oe=v.lastIndexOf('}'); if(os>=0&&oe>os){ r=tp(v.slice(os,oe+1)); if(r) return r; }
+      throw new Error('没能从资料里读出题目'); }
+    const TYPE_SCHEMA={
+      mcq:'每题 {"q":"题面","o":["A","B","C","D"],"a":正确下标(0起),"why":"为什么(讲机制)","wow":"知道吗(课本外趣闻)","vis":"🌰 直观小图示(emoji/简短HTML)"}',
+      dictation:'每题 {"prompt":"要读出来让学生听写的词/句","answer":"正确答案","hint":"可选提示"}',
+      cloze:'每题 {"text":"完整句子/段落","blanks":[{"pos":"用 ___ 标记或第几个词","answer":"答案","hint":"可选提示"}]}',
+      review:'每题 {"q":"题面","o":["..."],"a":下标,"why":"...","wow":"...","vis":"...","weak":true/false}',
+    };
+    function payloadText(value, payload){
+      if(typeof value==='string'&&value) return value;
+      const p=payload!=null?payload:value;
+      if(typeof p==='string') return p;
+      if(p&&typeof p==='object'){
+        return p.result||p.text||p.content||p.choices?.[0]?.message?.content||p.choices?.[0]?.delta?.content||'';
+      }
+      return '';
+    }
+    // text：用户文字；onProgress(thinkingOrContentTail) 用于实时显示"思考/出题"进度。
+    async function extractItems(text, onProgress){
+      const sdk=state.sdk;
+      const sys='你是一个伴学题库抽取助手。从用户提供的资料（图片或文字）中提取题目，只输出 JSON 对象 {"items":[ ... ]}（不要 markdown、不要解释）。'
+        +'\n题型为「'+state.type+'」，items 里每个元素结构：'+TYPE_SCHEMA[state.type]+'。'
+        +'\n资料里若没有现成题目（例如只是一段课文/单词表），请据此自行出题；背诵填空(cloze)要把关键词挖空。'
+        +'\n忠实还原资料里的题目与答案；选择题/复习题若没给 why/wow/vis，请你补全（贴合学科、适龄、准确、简短）。';
+      const uc=[{type:'text',text: text?('资料：\n'+text):'请从下列图片中提取题目。'}];
+      for(const img of state.images) uc.push({type:'image_url',image_url:{url:img.dataUrl}});
+      const messages=[{role:'system',content:sys},{role:'user',content:uc}];
+      const model=getModel()||undefined;
+
+      // 流式累积：reason=模型思考；content=正文（JSON）。优先把思考展示给用户，没有思考再展示正文尾巴。
+      let reason='', content='';
+      const onReasoning=(full,delta)=>{ reason=(typeof full==='string'&&full)?full:(reason+(delta||'')); onProgress&&onProgress(reason||content); };
+      const onMessage=(value,payload)=>{ const t=payloadText(value,payload); if(!t) return; content=t.startsWith(content)?t:(content+t); onProgress&&onProgress(reason||content); };
+
+      let raw='';
+      if(sdk?.aiGenerators?.chat){ let r;
+        const base={messages,model,stream:true,temperature:0.4,onMessage,onReasoning};
+        try{ r=await sdk.aiGenerators.chat({...base,responseFormat:'json_object'}); }
+        catch(err){ if(!/response.?format|json_object/i.test(err?.message||String(err))) throw err; r=await sdk.aiGenerators.chat(base); }
+        raw=extractAssistantText(r)||content;
+      } else if(sdk?.aiChat?.chat){
+        const r=await sdk.aiChat.chat({messages,model,stream:true,temperature:0.4,onMessage,onReasoning});
+        raw=extractAssistantText(r)||content;
+      } else throw new Error('当前环境不支持 AI 出题');
+      return extractJsonArray(raw);
+    }
+
+    // ---- 发送：资料 → 抽题 → 生成 ----
+    async function handleSend(){
+      if(state.busy) return;
+      const text=inputEl.value.trim();
+      if(!text && !state.images.length){ inputEl.focus(); return; }
+      if(!loggedIn()){ const ok=await ensureLogin(); if(!ok){ aiSay('做游戏需要先登录哦。<div class="quickrow"><button class="quick" data-q="login">👉 点我登录</button></div>'); return; } loadRecords(); }
+
+      // 用户气泡（文字 + 缩略图）
+      const picsHtml=state.images.length?('<div class="pics">'+state.images.map(i=>`<img src="${i.dataUrl}">`).join('')+'</div>'):'';
+      bubble('user', (text?esc(text):'（这份资料）')+picsHtml);
+      const sentImages=state.images.slice(); const typeLabel=({mcq:'选择题闯关',dictation:'听写默写',cloze:'背诵填空',review:'错题复习'})[state.type];
+      inputEl.value=''; autoGrow(); state.images=[]; renderAttach();
+
+      state.busy=true; $('btnSend').disabled=true;
+      const tip=typing();
+      tip.b.classList.remove('typing');
+      tip.b.innerHTML='📖 正在看你的资料、出题中…<div class="think"></div>';
+      const live=tip.b.querySelector('.think');
+      const onProg=(s)=>{ if(!live||!s) return; const t=String(s).trim(); live.textContent=t.length>260?('…'+t.slice(-260)):t; $('chat').scrollTop=$('chat').scrollHeight; };
+      try{
+        const items=await extractItems(text, onProg);
+        if(!items.length){ tip.b.innerHTML='这份资料我没读出可用的题目，换张更清晰的照片、或把内容写清楚一点再发给我？'; return; }
+        tip.b.innerHTML=`好啦！读到 <b>${items.length}</b> 道题，正在做成「${typeLabel}」游戏，马上好…`;
+
+        const studentId='同学';
+        const subject=(text? text.slice(0,18) : '伴学复习').replace(/\s+/g,' ').trim()||'伴学复习';
+        const materials={ type:state.type, subject, title:subject, studentId, items };
+        let memory=''; try{ memory=await storageMod.loadStudentMemory(studentId); }catch(_){}
+        const initialPrompt=`请用我提供的学习资料做一个「${typeLabel}」伴学游戏：题库就用资料里的这 ${items.length} 道题`
+          +`（不要保留任何模板里的旧题，也不要自己另编题），单一主题不分单元、进入即开始答题；`
+          +`保留三层揭晓卡（图示/为什么/知道吗）、爱心连击与数字人语音陪学；`
+          +`移动优先、精简，「语音陪学」按钮放最上面的顶栏，手机上不要底部的宠物伙伴面板。`;
+
+        tip.wrap.remove();
+        openMaker(null, { materials, memory, title:subject, initialPrompt });
+      }catch(e){
+        console.error('生成失败', e);
+        tip.b.classList.remove('typing');
+        tip.b.innerHTML='出题时出了点小问题：'+esc(e?.message||e)+'。再试一次？';
+      }finally{
+        state.busy=false; $('btnSend').disabled=false;
+      }
+    }
+    $('btnSend').onclick=handleSend;
+    inputEl.addEventListener('keydown',(e)=>{ if(e.key==='Enter' && !e.shiftKey && !/Mobi|Android|iPhone/i.test(navigator.userAgent)){ e.preventDefault(); handleSend(); } });
+
+    // ---- 制作工坊（renderGameMaker, study 模式，全屏） ----
+    function openMaker(rec, opts={}){
+      let game=opts.game||null;
+      const host=$('makerHost');
+      const mount=()=>{
+        host.innerHTML=''; host.classList.add('show'); state.makerOpen=true;
+        gameMakerMod.renderGameMaker(host, {
+          game, mode:'study', materials:opts.materials||null, memory:opts.memory||'', initialPrompt:opts.initialPrompt||'',
+        }, {
+          onBack:()=>closeMaker(),
+          onSaved: async ()=>{ await loadRecords(); },
+          storage:{ save:(html,meta)=>storageMod.saveStudyGame(html, { ...meta, title: meta.title||opts.title }) },
+        });
+      };
+      if(rec){
+        storageMod.loadStudyGameHtml(rec.path).catch(()=>'').then((html)=>{ game={ record:rec, html:html||'' }; mount(); });
+      } else { mount(); }
+    }
+    function closeMaker(){
+      try{ gameMakerMod?.disposeGameMaker?.(); }catch(_){}
+      $('makerHost').classList.remove('show'); $('makerHost').innerHTML=''; state.makerOpen=false;
+      $('chat').scrollTop=$('chat').scrollHeight;
+    }
+
+    // ---- 我的游戏（底部抽屉） ----
+    async function loadRecords(){
+      if(!loggedIn()){ state.records=[]; return; }
+      try{ state.records=await storageMod.loadStudyGameList(); }catch(e){ console.warn('列表加载失败',e); state.records=[]; }
+      renderGameList();
+    }
+    function renderGameList(){
+      const list=$('gamelist');
+      if(!state.records.length){ list.innerHTML='<div class="empty">还没有游戏，发一份资料给我吧～</div>'; return; }
+      list.innerHTML=state.records.map(r=>
+        `<div class="gameitem" data-open="${esc(r.path)}">
+          <div class="ico">${esc(r.icon||'📚')}</div>
+          <div class="meta"><b>${esc(r.title||r.id||'伴学游戏')}</b><span>${esc(fmt(r.updatedAt))}</span></div>
+          <button class="del" data-del="${esc(r.path)}" title="删除">🗑</button>
+        </div>`).join('');
+    }
+    $('gamelist').addEventListener('click', async (e)=>{
+      const del=e.target.closest('button[data-del]');
+      if(del){ const path=del.dataset.del; const rec=state.records.find(r=>r.path===path);
+        if(confirm('删除「'+(rec?.title||'这个游戏')+'」？')){ try{ await storageMod.deleteStudyGame(path); await loadRecords(); }catch(err){ alert('删除失败：'+(err?.message||err)); } } return; }
+      const open=e.target.closest('[data-open]');
+      if(open){ const rec=state.records.find(r=>r.path===open.dataset.open); if(rec){ closeSheet(); openMaker(rec); } }
+    });
+    function openSheet(){ loadRecords(); $('sheetMask').classList.add('show'); $('sheet').classList.add('show'); }
+    function closeSheet(){ $('sheetMask').classList.remove('show'); $('sheet').classList.remove('show'); }
+    $('btnList').onclick=openSheet; $('sheetMask').onclick=closeSheet;
+    $('btnNew').onclick=()=>{ if(state.makerOpen) closeMaker(); state.images=[]; renderAttach(); inputEl.value=''; autoGrow(); aiSay('好，重新开始！把新的复习内容发给我吧～'); };
+
+    // ---- 运行时记忆回写：监听生成游戏的 gameFinished ----
+    window.addEventListener('message', async (e)=>{
+      const d=e?.data; if(!d||d.type!=='gameFinished'||!d.data||!storageMod?.appendStudentMemory) return;
+      const x=d.data; const sid=(x.studentId||'同学');
+      try{ const wrong=Array.isArray(x.wrong)&&x.wrong.length?('；易错：'+x.wrong.slice(0,8).join('、')):'';
+        await storageMod.appendStudentMemory(sid, `复习《${x.title||x.subject||'伴学'}》：${x.correct??'?'}/${x.total??'?'} 对，得分 ${x.score??'?'}${wrong}`); }catch(err){ console.warn('记忆回写失败',err); }
+    });
+
+    // ---- 设置：大模型 + 本地 API Key（与 view_game_maker 共用同一 localStorage 模型键） ----
+    const MODEL_KEY='mh_game_maker_model'; // 与 view_game_maker.js 一致：renderGameMaker 会自动读取
+    function getModel(){ try{ return localStorage.getItem(MODEL_KEY)||''; }catch(_){ return ''; } }
+    function setModel(v){ try{ if(v) localStorage.setItem(MODEL_KEY,v); else localStorage.removeItem(MODEL_KEY); }catch(_){} }
+    function isLocalApiKeyEnabled(){ try{ return !!state.sdk?.localAPIKeySettings?.enabled; }catch(_){ return false; } }
+    function mv(m){ return m?.name||m?.modelId||''; }
+    function ml(m){ const v=mv(m); return (m?.displayName && m.displayName!==v) ? `${m.displayName} (${v})` : v; }
+    let kwModels=null;
+    async function loadKwModels(){ if(kwModels) return kwModels; const sdk=state.sdk;
+      if(!sdk?.aiGenerators?.getAllModels){ kwModels=[]; return kwModels; }
+      try{ const list=await sdk.aiGenerators.getAllModels(); kwModels=(Array.isArray(list)?list:[]).filter(m=>m&&m.name).map(m=>({name:m.name,displayName:m.displayName||''})); }catch(_){ kwModels=[]; }
+      return kwModels; }
+    function listChatModels(){ const sdk=state.sdk;
+      try{ const models=isLocalApiKeyEnabled() ? (sdk?.localAPIKeySettings?.listModels?.('Chat')||[]) : (kwModels||[]).slice();
+        return models.sort((a,b)=>mv(a).localeCompare(mv(b))); }catch(_){ return []; } }
+    async function populateModelSelect(){
+      const sel=$('modelSelect'); if(!sel) return;
+      if(!isLocalApiKeyEnabled()){ try{ await loadKwModels(); }catch(_){} }
+      const models=listChatModels(); const cur=getModel();
+      let html='<option value="">自动（推荐）</option>';
+      for(const m of models){ const v=mv(m); html+=`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(ml(m))}</option>`; }
+      if(cur && !models.some(m=>mv(m)===cur)) html+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+      sel.innerHTML=html;
+      const badge=$('localApiBadge'); if(badge) badge.textContent=isLocalApiKeyEnabled()?'已启用':'未启用';
+    }
+    function openSettings(){ $('settingsMask').classList.add('show'); $('settingsSheet').classList.add('show'); populateModelSelect(); }
+    function closeSettings(){ $('settingsMask').classList.remove('show'); $('settingsSheet').classList.remove('show'); }
+    $('btnSettings').onclick=openSettings;
+    $('settingsMask').onclick=closeSettings;
+    $('modelSelect').addEventListener('change',(e)=>setModel(e.target.value||''));
+    $('btnLocalApi').onclick=()=>{
+      const sdk=state.sdk;
+      if(!sdk?.localAPIKeySettings?.show){ alert('当前环境不支持本地 API Key 设置。'); return; }
+      sdk.localAPIKeySettings.show({ title:'本地 API Key 设置', fullscreen:true, onSave:()=>populateModelSelect(), onClose:()=>populateModelSelect() });
+    };
+
+    window.MH_StudyGameMaker={ state, openMaker, closeMaker, loadRecords, populateModelSelect };
+    boot().catch(err=>console.error('AIStudyGameMaker 启动失败', err));
+  </script>
+</body>
+</html>

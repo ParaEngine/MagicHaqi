@@ -419,10 +419,13 @@ art_assets = [];
 (function () {
   const STORAGE_KEY = 'haqiGrowthGuardianV1';
   const PIN_KEY = 'haqiGrowthGuardianPinV1';
+  const PIN_LOCK_KEY = 'haqiGrowthGuardianPinLockV2';
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
+  const MAX_SCHOOL_AWARD_POINTS = 20;
+  const PIN_PBKDF2_ITERATIONS = 210000;
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
   const DEFAULT_METRICS = [
     { id: 'p_homework', name: '主动完成作业', category: '学习', delta: 3, active: true },
@@ -514,6 +517,8 @@ art_assets = [];
   let guardianSdk = null;
   let guardianUser = null;
   let parentPinHash = '';
+  let pinFailureCount = 0;
+  let pinLockedUntil = 0;
   let saveTimer = 0;
   let saveQueue = Promise.resolve();
   let mode = 'child';
@@ -535,7 +540,8 @@ art_assets = [];
   let dailyResetTimer = 0;
   let schoolInboxRefreshTimer = 0;
   function refreshVisibleSchoolInbox() {
-    if (document.hidden || mode !== 'parent' || !['today', 'school'].includes(parentTab)) return;
+    const link = state?.schoolLink;
+    if (document.hidden || !link?.sitePath || !link?.classId || !link?.studentId) return;
     refreshSchoolInbox();
   }
   let currentPetId = '';
@@ -550,12 +556,14 @@ art_assets = [];
   async function loadAwardNotifications(link) {
     if (!link?.sitePath || !link?.studentId || !guardianSdk?.loadPage) return [];
     try {
-      const result = await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath: schoolNotificationIndexPath(link) });
-      const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
+      const text = await readSchoolSharedPage(link, schoolNotificationIndexPath(link));
       const parsed = JSON.parse(text || '[]');
       const notifications = Array.isArray(parsed) ? parsed : [];
       return notifications
-        .filter(item => ['award_submitted', 'award_processed'].includes(item?.type) && item?.studentId === link.studentId)
+        .filter(item => item?.version === 3 && item?.privacyScope === 'student'
+          && ['award_submitted', 'award_processed'].includes(item.type)
+          && item.studentId === link.studentId && item.classId === link.classId
+          && normalizeSchoolUsername(item.teacherUsername) === normalizeSchoolUsername(link.teacherUsername))
         .sort((a, b) => Number(b.notifiedAt || b.processedAt || 0) - Number(a.notifiedAt || a.processedAt || 0));
     } catch (_) {
       return [];
@@ -592,6 +600,7 @@ art_assets = [];
       metrics: DEFAULT_METRICS.map(item => ({ ...item })),
       ledger: [],
       focusSessions: [],
+      activeFocusSession: null,
       rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
       redemptions: [],
       schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
@@ -605,6 +614,7 @@ art_assets = [];
     if (!parsed?.children?.length || !Array.isArray(parsed.metrics) || !Array.isArray(parsed.ledger)) return null;
     if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
     if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+    if (!parsed.activeFocusSession || typeof parsed.activeFocusSession !== 'object') parsed.activeFocusSession = null;
     if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
     parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
     parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
@@ -668,11 +678,23 @@ art_assets = [];
     return saveQueue;
   }
 
+  function isMissingCloudFileError(error) {
+    const status = Number(error?.status || error?.statusCode || error?.response?.status || 0);
+    const code = String(error?.code || error?.response?.data?.code || '').toLowerCase();
+    const message = String(error?.message || error || '').toLowerCase();
+    return status === 404 || code === 'enoent' || code.includes('not_found') || /(?:not found|does not exist|不存在|未找到)/.test(message);
+  }
+
   async function readCloudFile(path) {
     try {
       return (await guardianStore.readFile(path, 1, 99999)) || '';
-    } catch (_) {
-      try { return (await guardianStore.readFile(path)) || ''; } catch (__) { return ''; }
+    } catch (rangeError) {
+      try {
+        return (await guardianStore.readFile(path)) || '';
+      } catch (fallbackError) {
+        if (isMissingCloudFileError(rangeError) || isMissingCloudFileError(fallbackError)) return '';
+        throw new Error(`读取 Keepwork 云端文件失败（${path}）：${fallbackError?.message || rangeError?.message || fallbackError || rangeError}`);
+      }
     }
   }
 
@@ -687,10 +709,18 @@ art_assets = [];
       readCloudFile(CLOUD_PIN_PATH)
     ]);
     let cloudState = null;
-    try { cloudState = normalizeState(JSON.parse(cloudStateText || 'null')); } catch (_) {}
+    if (cloudStateText.trim()) {
+      try {
+        cloudState = normalizeState(JSON.parse(cloudStateText));
+      } catch (error) {
+        throw new Error(`家庭云端数据无法解析，请勿继续操作并稍后重试：${error?.message || error}`);
+      }
+      if (!cloudState) throw new Error('家庭云端数据格式异常，请勿继续操作并联系支持人员');
+    }
     const legacyState = cloudState ? null : loadLegacyState();
     state = cloudState || legacyState || freshState();
     parentPinHash = cloudPin.trim() || localStorage.getItem(PIN_KEY) || '';
+    restorePinLockState();
     if (legacyState || (!cloudPin.trim() && parentPinHash)) {
       await Promise.all([
         legacyState ? queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)) : Promise.resolve(),
@@ -912,8 +942,28 @@ art_assets = [];
     setTimeout(() => element.remove(), 2800);
   }
 
+  function configuredParentOrigin() {
+    const value = new URLSearchParams(location.search).get('parentOrigin');
+    if (value) {
+      try { return new URL(value).origin; } catch (_) { return ''; }
+    }
+    if (document.referrer) {
+      try { return new URL(document.referrer).origin; } catch (_) {}
+    }
+    return '';
+  }
+
+  function trustedParentMessage(event) {
+    if (window.parent === window || event.source !== window.parent) return false;
+    const explicitOrigin = configuredParentOrigin();
+    if (explicitOrigin) return event.origin === explicitOrigin;
+    if (location.protocol === 'file:') return event.origin === 'null' || /^https?:\/\/(?:[^.]+\.)*keepwork\.com$/i.test(event.origin);
+    return event.origin === location.origin || /^https:\/\/(?:[^.]+\.)*keepwork\.com$/i.test(event.origin);
+  }
+
   function post(type, data = {}) {
-    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+    const targetOrigin = configuredParentOrigin() || (location.protocol === 'file:' ? '*' : location.origin);
+    try { window.parent.postMessage({ type, data }, targetOrigin); } catch (_) {}
   }
 
   function render() {
@@ -1080,6 +1130,10 @@ art_assets = [];
     return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
   }
 
+  function normalizeSchoolUsername(value) {
+    return safeCloudPart(value).toLowerCase();
+  }
+
   function schoolEventExpiresAt(event) {
     return Number(event?.expiresAt) || (Number(event?.createdAt) + 72 * 60 * 60 * 1000);
   }
@@ -1089,10 +1143,14 @@ art_assets = [];
   }
 
   function normalizeSchoolEventSummary(item, link = state.schoolLink) {
-    if (!item?.id || item?.eventType !== 'school_award') return null;
+    const delta = Number(item?.delta);
+    if (item?.version !== 3 || item?.privacyScope !== 'student' || !item?.id || item?.eventType !== 'school_award') return null;
     if (item.classId !== link.classId || item.studentId !== link.studentId) return null;
     if (!['submitted', 'published'].includes(item.status) || !isActiveSchoolEvent(item)) return null;
+    if (!Number.isInteger(delta) || delta < 1 || delta > MAX_SCHOOL_AWARD_POINTS) return null;
     return {
+      version: 3,
+      privacyScope: 'student',
       id: item.id,
       eventType: item.eventType,
       status: item.status,
@@ -1104,7 +1162,7 @@ art_assets = [];
       studentId: item.studentId,
       studentUuid: item.studentUuid || '',
       studentName: item.studentName || '',
-      delta: Math.max(0, Math.trunc(Number(item.delta) || 0)),
+      delta,
       reason: item.reason || '',
       category: item.category || '学习',
       note: item.note || ''
@@ -1113,6 +1171,10 @@ art_assets = [];
 
   function schoolEventBasePath(link = state.schoolLink) {
     return `${schoolStudentRoot(link)}/events`;
+  }
+
+  function schoolEventPath(eventId, link = state.schoolLink) {
+    return `${schoolEventBasePath(link)}/${safeCloudPart(eventId)}.json`;
   }
 
   function schoolStudentRoot(link = state.schoolLink) {
@@ -1131,8 +1193,31 @@ art_assets = [];
     return `${schoolStudentRoot(link)}/receipts/${safeCloudPart(eventId)}.json`;
   }
 
+  function schoolReceiptAuditPath(receipt, link = state.schoolLink) {
+    const guardian = safeCloudPart(receipt?.guardianUsername || 'unknown');
+    const receiptId = safeCloudPart(receipt?.receiptId || `${receipt?.decidedAt || 0}-${guardian}`);
+    return `${schoolStudentRoot(link)}/receipts/audit/${safeCloudPart(receipt?.eventId)}/${guardian}/${receiptId}.json`;
+  }
+
   function schoolActionPath(eventId, link = state.schoolLink) {
     return `${schoolStudentRoot(link)}/actions/${safeCloudPart(eventId)}.json`;
+  }
+
+  function personalGrowthPath(teacherUsername, studentId, recordType, recordId) {
+    return `growth-link/v3/schools/${safeCloudPart(teacherUsername)}/students/${safeCloudPart(studentId)}/${recordType}/${safeCloudPart(recordId)}.json`;
+  }
+
+  function crossUserPersonalGrowthPath(username, path) {
+    return `//${safeCloudPart(username)}/edunotes/store/MagicHaqi/${path}`;
+  }
+
+  async function readPersonalGrowthRecord(username, path) {
+    if (!guardianStore) throw new Error('Keepwork PersonalPageStore 不可用');
+    const target = normalizeSchoolUsername(username) === guardianUsername()
+      ? path
+      : crossUserPersonalGrowthPath(username, path);
+    const text = await readCloudFile(target);
+    return JSON.parse(text || 'null');
   }
 
   function schoolNotificationIndexPath(link = state.schoolLink) {
@@ -1167,39 +1252,145 @@ art_assets = [];
     if (typeof guardianSdk?.loadPage !== 'function') throw new Error('当前 Keepwork SDK 不支持共享站点读取');
     if (!validSchoolSitePath(link.sitePath)) throw new Error('请填写教师提供的学校共享 KeepWork 站点路径');
     try {
-      return sharedPageContent(await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath }));
+      const result = await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath });
+      const content = sharedPageContent(result);
+      if (!content && result?.success && typeof guardianSdk.get === 'function' && typeof guardianSdk.getRepoPath === 'function' && typeof guardianSdk.safeEncodeURIComponent === 'function') {
+        const repoPath = guardianSdk.getRepoPath(link.sitePath);
+        const encodedPath = guardianSdk.safeEncodeURIComponent(`${link.sitePath}/${pagePath}`);
+        const raw = await guardianSdk.get(`/repos/${repoPath}/files/${encodedPath}/raw`);
+        return typeof raw === 'string' ? raw : JSON.stringify(raw);
+      }
+      return content;
     } catch (error) {
       throw new Error(`无法读取学校共享站点。请确认当前家长账号拥有该站点访问权限，且路径正确：${error?.message || error}`);
     }
   }
 
   function guardianUsername() {
-    return safeCloudPart(guardianUser?.username || guardianUser?.name || '');
+    return normalizeSchoolUsername(guardianUser?.username || guardianUser?.name || '');
   }
 
   function validateSchoolAccessPolicy(policy, link) {
     const account = guardianUsername();
     if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
     if (!policy || typeof policy !== 'object' || policy.version !== 3 || policy.privacyScope !== 'student') return '该学生目录尚未发布授权策略。请让教师在学校共享站点中发布该学生的云端授权';
+    const policyTeacher = normalizeSchoolUsername(policy.teacherUsername);
+    if (!policyTeacher) return '学校授权策略缺少教师身份，请让教师重新发布云端授权';
+    if (link.teacherUsername && policyTeacher !== normalizeSchoolUsername(link.teacherUsername)) return '教师身份与学校授权策略不匹配';
     if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
     const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
     if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该学生目录不包含当前学生的授权记录';
-    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
+    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(normalizeSchoolUsername) : [];
     if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
     return '';
   }
 
+  async function validateSchoolLink(link) {
+    const policyText = await readSchoolSharedPage(link, schoolPolicyPath(link));
+    let policy;
+    try {
+      policy = JSON.parse(policyText || 'null');
+    } catch (error) {
+      throw new Error(`学校授权策略格式错误：${error?.message || error}`);
+    }
+    const accessError = validateSchoolAccessPolicy(policy, link);
+    if (accessError) throw new Error(accessError);
+    link.teacherUsername = normalizeSchoolUsername(policy.teacherUsername);
+  }
+
+  function applySchoolLink(link) {
+    const targetChanged = state.schoolLink.sitePath !== link.sitePath
+      || state.schoolLink.classId !== link.classId
+      || state.schoolLink.studentId !== link.studentId;
+    Object.assign(state.schoolLink, link);
+    if (targetChanged) {
+      state.schoolLink.appliedEventIds = [];
+      state.schoolLink.ignoredEventIds = [];
+      state.schoolLink.pendingReceipts = [];
+      state.schoolLink.lastSeenNotificationEventId = '';
+      state.schoolLink.lastSeenNotificationAt = 0;
+      lastAwardNotificationId = '';
+    }
+    saveState();
+  }
+
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
-    const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    const receiptId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `receipt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const receipt = { version: 3, privacyScope: 'student', receiptId, eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
     state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
     state.schoolLink.pendingReceipts.unshift(receipt);
     await persistStateNow();
     await publishPendingSchoolReceipts();
   }
 
+  async function readPersonalGrowthRemoteJson(path) {
+    if (typeof guardianSdk?.get !== 'function' || typeof guardianSdk?.getRepoPath !== 'function' || typeof guardianSdk?.safeEncodeURIComponent !== 'function') {
+      throw new Error('当前 Keepwork SDK 不支持云端 JSON 读取');
+    }
+    const fullPath = `${safeCloudPart(guardianUsername())}/edunotes/store/MagicHaqi/${path}`;
+    const parts = fullPath.split('/');
+    const sitePath = `${parts[0]}/${parts[1]}`;
+    const pagePath = parts.slice(2).join('/');
+    const repoPath = guardianSdk.getRepoPath(sitePath);
+    const encodedPath = guardianSdk.safeEncodeURIComponent(`${sitePath}/${pagePath}`);
+    const raw = await guardianSdk.get(`/repos/${repoPath}/files/${encodedPath}/raw`, {});
+    return typeof raw === 'string' ? JSON.parse(raw || 'null') : raw;
+  }
+
+  async function confirmPersonalGrowthRecordSynced(path, receiptId) {
+    const remoteReceipt = await readPersonalGrowthRemoteJson(path);
+    if (remoteReceipt?.receiptId !== receiptId) throw new Error('家庭处理回执尚未同步到云端，请稍后重试');
+  }
+
+  async function writePersonalGrowthRecordSynced(path, receipt) {
+    if (typeof guardianSdk?.editFileByFullPath !== 'function') throw new Error('当前 Keepwork SDK 不支持云端回执写入');
+    const fullPath = `${safeCloudPart(guardianUsername())}/edunotes/store/MagicHaqi/${path}`;
+    const result = await guardianSdk.editFileByFullPath(fullPath, JSON.stringify(receipt, null, 2), null, false);
+    if (result?.success === false) throw new Error(result.message || result.error || '家庭处理回执写入被云端拒绝');
+    await confirmPersonalGrowthRecordSynced(path, receipt.receiptId);
+  }
+
+  async function recoverMissingSchoolReceipts() {
+    const link = state.schoolLink;
+    const completedEventIds = [...new Set([...(link.appliedEventIds || []), ...(link.ignoredEventIds || [])])];
+    if (!completedEventIds.length) return;
+    let changed = false;
+    for (const eventId of completedEventIds) {
+      if (link.pendingReceipts.some(receipt => receipt.eventId === eventId)) continue;
+      const event = schoolInboxCache.find(item => item.id === eventId);
+      if (!event) continue;
+      const receiptPath = personalGrowthPath(link.teacherUsername, link.studentId, 'receipts', eventId);
+      try {
+        const remoteReceipt = await readPersonalGrowthRemoteJson(receiptPath);
+        if (remoteReceipt?.eventId === eventId) continue;
+      } catch (error) {
+        if (!isMissingCloudFileError(error)) throw error;
+      }
+      const ledgerEntry = state.ledger.find(entry => String(entry.externalEventId || '') === eventId);
+      const decision = (link.appliedEventIds || []).includes(eventId) ? 'approved' : 'ignored';
+      link.pendingReceipts.unshift({
+        version: 3,
+        privacyScope: 'student',
+        receiptId: `recovered_${safeCloudPart(eventId)}_${safeCloudPart(guardianUsername())}`,
+        eventId,
+        classId: link.classId,
+        studentId: link.studentId,
+        decision,
+        decidedAt: Number(ledgerEntry?.at || ledgerEntry?.createdAt) || Date.now(),
+        guardianUsername: guardianUsername(),
+        growthEntryId: decision === 'approved' ? String(ledgerEntry?.id || '') : '',
+        childAction: event.childAction || null
+      });
+      changed = true;
+    }
+    if (!changed) return;
+    await persistStateNow();
+    await publishPendingSchoolReceipts();
+  }
+
   async function publishPendingSchoolReceipts() {
     const link = state.schoolLink;
-    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk?.savePage || !link.pendingReceipts.length) return;
+    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianStore || !link.pendingReceipts.length) return;
     publishingSchoolReceipts = true;
     schoolReceiptSyncError = '';
     try {
@@ -1207,15 +1398,14 @@ art_assets = [];
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
       for (const receipt of [...link.pendingReceipts]) {
-        try {
-          await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
-        } catch (error) {
-          const message = String(error?.message || error);
-          if (/404|请求不合法|not found/i.test(message)) {
-            throw new Error(`无法写入学校共享站点“${link.sitePath}”。请确认家长账号已拥有该站点的编辑权限。`);
-          }
-          throw error;
-        }
+        const receiptPath = personalGrowthPath(link.teacherUsername, link.studentId, 'receipts', receipt.eventId);
+        const auditPath = personalGrowthPath(link.teacherUsername, link.studentId, `receipts/audit/${safeCloudPart(receipt.eventId)}/${safeCloudPart(receipt.guardianUsername)}`, receipt.receiptId);
+        await guardianStore.createFile(auditPath, JSON.stringify(receipt, null, 2));
+        await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
+        if (typeof guardianStore.batchSyncToRemote !== 'function') throw new Error('当前 Keepwork SDK 不支持立即同步家庭回执');
+        await guardianStore.batchSyncToRemote(true);
+        await writePersonalGrowthRecordSynced(auditPath, receipt);
+        await writePersonalGrowthRecordSynced(receiptPath, receipt);
         link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
         await persistStateNow();
       }
@@ -1233,53 +1423,67 @@ art_assets = [];
     if (!link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk) return;
     schoolInboxLoadError = '';
     schoolStudentProfile = null;
+    const partialErrors = [];
     try {
       const policyText = await readSchoolSharedPage(link, schoolPolicyPath(link));
       let policy = null;
-      try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
+      try { policy = JSON.parse(policyText || 'null'); } catch (error) { throw new Error(`学校授权策略格式错误：${error?.message || error}`); }
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
+      const policyTeacher = normalizeSchoolUsername(policy.teacherUsername);
+      if (link.teacherUsername !== policyTeacher) {
+        link.teacherUsername = policyTeacher;
+        saveState();
+      }
       publishPendingSchoolReceipts();
       try {
         const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
         const profile = JSON.parse(profileText || 'null');
-        if (profile?.version === 3 && profile?.privacyScope === 'student' && profile?.classId === link.classId && profile?.student?.id === link.studentId) schoolStudentProfile = profile;
-      } catch (_) {}
+        if (profile?.version === 3 && profile?.privacyScope === 'student' && profile?.classId === link.classId
+          && profile?.student?.id === link.studentId && normalizeSchoolUsername(profile.teacherUsername) === policyTeacher) schoolStudentProfile = profile;
+      } catch (error) { partialErrors.push(`课堂档案读取失败：${error?.message || error}`); }
       const basePath = schoolEventBasePath(link);
       const indexText = await readSchoolSharedPage(link, `${basePath}/index.json`);
       let index = [];
-      try { index = JSON.parse(indexText || '[]'); } catch (_) {}
-      if (!Array.isArray(index)) index = [];
-      const summarizedEvents = [];
-      const detailLookupItems = [];
-      index.slice(0, 100).forEach(item => {
-        const summaryEvent = normalizeSchoolEventSummary(item, link);
-        if (summaryEvent) summarizedEvents.push(summaryEvent);
-        else if (item?.id) detailLookupItems.push(item);
-      });
+      try { index = JSON.parse(indexText || '[]'); } catch (error) { throw new Error(`学校消息索引格式错误：${error?.message || error}`); }
+      if (!Array.isArray(index)) throw new Error('学校消息索引格式错误：内容不是列表');
+      const detailLookupItems = index.slice(0, 100).filter(item => item?.id);
       const detailEvents = await Promise.all(detailLookupItems.map(async item => {
         try {
           const text = await readSchoolSharedPage(link, `${basePath}/${safeCloudPart(item.id)}.json`);
-          const event = JSON.parse(text || 'null');
-          return event?.classId === link.classId && event?.studentId === link.studentId ? event : null;
-        } catch (_) { return null; }
+          return normalizeSchoolEventSummary(JSON.parse(text || 'null'), link);
+        } catch (error) {
+          partialErrors.push(`消息 ${item.id} 读取失败`);
+          return null;
+        }
       }));
-      schoolInboxCache = [...summarizedEvents, ...detailEvents.filter(Boolean)]
-        .filter(event => event?.eventType === 'school_award' && event.studentId === link.studentId && ['submitted', 'published'].includes(event.status) && isActiveSchoolEvent(event))
+      schoolInboxCache = detailEvents.filter(Boolean)
         .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
       schoolInboxCache = await Promise.all(schoolInboxCache.map(async event => {
         try {
-          const action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
           const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
-          const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
-          if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
+          const expectedStudentUsername = normalizeSchoolUsername(policyStudent?.keepworkUsername);
+          const action = expectedStudentUsername
+            ? await readPersonalGrowthRecord(expectedStudentUsername, personalGrowthPath(policyTeacher, link.studentId, 'actions', event.id))
+            : null;
+          if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && normalizeSchoolUsername(action.studentUsername) === expectedStudentUsername) {
             event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
           }
-        } catch (_) {}
+        } catch (error) { partialErrors.push(`消息 ${event.id} 的孩子行动读取失败`); }
         return event;
       }));
-      const notifications = await loadAwardNotifications(link);
-      notifyNewAwardNotification(notifications);
+      try {
+        await recoverMissingSchoolReceipts();
+      } catch (error) {
+        partialErrors.push(`历史家庭回执恢复失败：${error?.message || error}`);
+      }
+      try {
+        const notifications = await loadAwardNotifications(link);
+        notifyNewAwardNotification(notifications);
+      } catch (error) {
+        partialErrors.push(`学校通知读取失败：${error?.message || error}`);
+      }
+      if (partialErrors.length) schoolInboxLoadError = `部分学校数据未加载（${partialErrors.length} 项）：${partialErrors.slice(0, 2).join('；')}`;
     } catch (error) {
       schoolInboxCache = [];
       schoolInboxLoadError = error?.message || '无法读取学校云端消息';
@@ -1313,7 +1517,7 @@ art_assets = [];
     const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
     const readyEvents = events.filter(event => event.childAction);
     const bulkApprove = readyEvents.length > 1 ? `<button class="btn btn-primary" id="approveAllSchoolEventsBtn">全部计入 (${readyEvents.length})</button>` : '';
-    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : `<div class="empty">${schoolInboxLoadError ? '部分消息未加载，请点击“刷新云端”重试。' : '暂无待处理的学校成长消息。'}</div>`}</div></section>`;
   }
 
   function metricCards(metrics) {
@@ -1367,7 +1571,7 @@ art_assets = [];
     const preview = selectedPet?.imageSheetUrl
       ? `<div class="pet-choice-art" style="background-image:url(&quot;${escapeHtml(selectedPet.imageSheetUrl)}&quot;)"></div>`
       : '<div style="font-size:64px">🥚</div>';
-    return `<div class="pet-manager"><section class="panel"><div style="padding:18px"><h2 class="section-title">从宠物图鉴选择</h2><p class="section-desc">每只宠物从 0 能量开始，成长进度独立保存。</p></div><div style="padding:0 18px 18px"><label class="field"><span style="font-weight:900">宠物名字</span><select class="select" id="famousPetSelect" ${famousPets.length ? '' : 'disabled'}>${famousPets.map(pet => `<option value="${escapeHtml(pet.id)}" ${selectedPet?.id === pet.id ? 'selected' : ''}>${escapeHtml(pet.name)}</option>`).join('')}</select></label><p class="section-desc">${escapeHtml(famousPetsStatus)}</p>${selectedPet ? `<article class="pet-choice selected" style="margin-top:14px"><div class="pet-choice-preview">${preview}</div><div class="pet-choice-meta"><strong>${escapeHtml(selectedPet.name)}</strong><span>官方成品 · 4×4 成长图集</span></div><button class="btn ${isCurrent ? 'btn-soft' : 'btn-primary'}" id="useFamousPetBtn" data-parent-pet-source="famous" data-parent-pet-id="${escapeHtml(selectedPet.id)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '当前形象' : '设为当前形象'}</button></article>` : '<div class="empty">宠物名单暂未加载。</div>'}</div></section><section class="panel"><div style="padding:18px"><h2 class="section-title">宠物历史记录</h2><p class="section-desc">切换宠物不会转移能量，回来时继续原来的成长进度。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>宠物</th><th>成长能量</th><th>当前形态</th><th>最近使用</th><th>操作</th></tr></thead><tbody>${petHistoryRows()}</tbody></table></div></section></div>`;
+    return `<div class="pet-manager"><section class="panel"><div style="padding:18px"><h2 class="section-title">从宠物图鉴选择</h2><p class="section-desc">首次选择的宠物从 0 成长能量开始，每只宠物的成长进度独立保存。</p></div><div style="padding:0 18px 18px"><label class="field"><span style="font-weight:900">宠物名字</span><select class="select" id="famousPetSelect" ${famousPets.length ? '' : 'disabled'}>${famousPets.map(pet => `<option value="${escapeHtml(pet.id)}" ${selectedPet?.id === pet.id ? 'selected' : ''}>${escapeHtml(pet.name)}</option>`).join('')}</select></label><p class="section-desc">${escapeHtml(famousPetsStatus)}</p>${selectedPet ? `<article class="pet-choice selected" style="margin-top:14px"><div class="pet-choice-preview">${preview}</div><div class="pet-choice-meta"><strong>${escapeHtml(selectedPet.name)}</strong><span>官方成品 · 4×4 成长图集</span></div><button class="btn ${isCurrent ? 'btn-soft' : 'btn-primary'}" id="useFamousPetBtn" data-parent-pet-source="famous" data-parent-pet-id="${escapeHtml(selectedPet.id)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '当前形象' : '设为当前形象'}</button></article>` : '<div class="empty">宠物名单暂未加载。</div>'}</div></section><section class="panel"><div style="padding:18px"><h2 class="section-title">宠物历史记录</h2><p class="section-desc">哈奇币属于孩子，切换宠物后会继续保留；成长能量属于每只宠物，不会相互转移。再次切回时，将继续这只宠物原来的成长进度。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>宠物</th><th>成长能量</th><th>当前形态</th><th>最近使用</th><th>操作</th></tr></thead><tbody>${petHistoryRows()}</tbody></table></div></section></div>`;
   }
 
   async function loadGuardianSdk() {
@@ -1378,14 +1582,11 @@ art_assets = [];
         autoReloadAfterRedirectLogin: false,
         wxAuth: { scope: 'snsapi_base' }
       };
-      const explicitSdk = new URLSearchParams(location.search).get('sdk');
       const isLocal = !location.hostname || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
       const localSdk = 'http://127.0.0.1:5001/index.ts';
       const sdkUrls = [
-        explicitSdk,
         ...(isLocal || location.protocol === 'file:' ? [localSdk] : []),
-        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a',
-        ...(isLocal || location.protocol === 'file:' ? [] : [localSdk])
+        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a'
       ].filter(Boolean);
       let lastError;
       for (const url of sdkUrls) {
@@ -1475,9 +1676,13 @@ art_assets = [];
       guardianUser = await ensureGuardianLogin(sdk);
       await loadCloudData(sdk);
       if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
-        Object.assign(state.schoolLink, incomingSchoolLink);
-        parentTab = 'school';
-        saveState();
+        try {
+          await validateSchoolLink(incomingSchoolLink);
+          applySchoolLink(incomingSchoolLink);
+          parentTab = 'school';
+        } catch (error) {
+          schoolInboxLoadError = `教师链接未绑定：${error?.message || error}`;
+        }
       }
       selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
       syncChildFromPetProgress();
@@ -1486,9 +1691,10 @@ art_assets = [];
       scheduleDailyEnergyReset();
       syncCurrentPetArt();
       render();
+      restoreFocusSession();
       requestPetImage(activeChild().selectedPetId || '');
       clearInterval(schoolInboxRefreshTimer);
-      refreshVisibleSchoolInbox();
+      refreshSchoolInbox();
       schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
       if (!loadedSent) {
         loadedSent = true;
@@ -1532,7 +1738,7 @@ art_assets = [];
   }
 
   function settingsView() {
-    return `<div class="settings-grid"><section class="panel setting-card"><h3>家长 PIN</h3><p>进入家长模式需要验证，避免孩子直接修改积分。</p><button class="btn btn-soft" id="changePinBtn">修改 PIN</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>账号</h3><p>退出当前 Keepwork 账号。家庭成长数据仍会保存在云端。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
+    return `<div class="settings-grid"><section class="panel setting-card"><h3>家长 PIN</h3><p>进入家长模式需要验证，避免孩子直接修改积分。</p><button class="btn btn-soft" id="changePinBtn">修改 PIN</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>账号</h3><p>退出当前 Keepwork 账号。家庭成长数据仍会保存在云端。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>删除云端家庭档案</h3><p>永久删除此 Keepwork 账号下所有设备共享的孩子、指标、账本和家长 PIN。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">删除云端家庭档案</button></section></div>`;
   }
 
   function bindGlobal() {
@@ -1661,24 +1867,119 @@ art_assets = [];
     return btoa(`haqi-guardian:${pin}`);
   }
 
-  function showPinModal(forceChange = false) {
+  function bytesToBase64(bytes) {
+    let binary = '';
+    bytes.forEach(value => { binary += String.fromCharCode(value); });
+    return btoa(binary);
+  }
+
+  function base64ToBytes(value) {
+    return Uint8Array.from(atob(value), character => character.charCodeAt(0));
+  }
+
+  async function derivePinHash(pin, salt, iterations = PIN_PBKDF2_ITERATIONS) {
+    if (!globalThis.crypto?.subtle) throw new Error('当前浏览器环境不支持安全 PIN，请使用 HTTPS 或本机预览地址');
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(`haqi-guardian:${pin}`), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+    return bytesToBase64(new Uint8Array(bits));
+  }
+
+  async function createPinCredential(pin) {
+    if (!globalThis.crypto?.getRandomValues) throw new Error('当前浏览器环境不支持安全 PIN，请使用 HTTPS 或本机预览地址');
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    return JSON.stringify({ version: 2, algorithm: 'PBKDF2-SHA-256', iterations: PIN_PBKDF2_ITERATIONS, salt: bytesToBase64(salt), hash: await derivePinHash(pin, salt) });
+  }
+
+  async function verifyPinCredential(pin) {
+    try {
+      const credential = JSON.parse(parentPinHash);
+      if (credential?.version !== 2 || credential.algorithm !== 'PBKDF2-SHA-256' || !credential.salt || !credential.hash) return { valid: false, legacy: false };
+      const iterations = Number(credential.iterations);
+      if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 1000000) return { valid: false, legacy: false };
+      return { valid: await derivePinHash(pin, base64ToBytes(credential.salt), iterations) === credential.hash, legacy: false };
+    } catch (_) {
+      return { valid: await hashPin(pin) === parentPinHash, legacy: true };
+    }
+  }
+
+  function restorePinLockState() {
+    try {
+      const lock = JSON.parse(localStorage.getItem(PIN_LOCK_KEY) || 'null');
+      pinFailureCount = Math.max(0, Math.min(5, Math.trunc(Number(lock?.failureCount) || 0)));
+      pinLockedUntil = Math.max(0, Number(lock?.lockedUntil) || 0);
+      if (pinLockedUntil <= Date.now()) {
+        pinLockedUntil = 0;
+        if (pinFailureCount >= 5) pinFailureCount = 0;
+      }
+    } catch (_) {
+      pinFailureCount = 0;
+      pinLockedUntil = 0;
+    }
+    persistPinLockState();
+  }
+
+  function persistPinLockState() {
+    if (!pinFailureCount && !pinLockedUntil) localStorage.removeItem(PIN_LOCK_KEY);
+    else localStorage.setItem(PIN_LOCK_KEY, JSON.stringify({ failureCount: pinFailureCount, lockedUntil: pinLockedUntil }));
+  }
+
+  function showPinModal(forceChange = false, changeAuthorized = false) {
     const hasPin = Boolean(parentPinHash);
-    const setup = forceChange || !hasPin;
-    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
+    const setup = !hasPin || changeAuthorized;
+    const verifyExisting = hasPin && !setup;
+    const accountName = String(guardianUser?.username || guardianUser?.name || '');
+    const setupIntro = !hasPin
+      ? '首次设置前，请输入当前 Keepwork 用户名确认账号归属，再设置 4–8 位数字 PIN。'
+      : '请设置新的 4–8 位数字 PIN。';
+    const accountField = !hasPin ? '<div class="field"><label>当前 Keepwork 用户名</label><input class="input" id="guardianAccountConfirm" maxlength="80" required autocomplete="username"></div>' : '';
+    modal(`<h2>${setup ? '设置家长 PIN' : forceChange ? '验证旧 PIN' : '验证家长身份'}</h2><p>${setup ? setupIntro : forceChange ? '修改 PIN 前需要先验证当前 PIN。' : '请输入家长 PIN 进入管理台。连续输错 5 次将锁定 5 分钟。'}</p><form id="pinForm">${accountField}<div class="field"><label>${setup ? '新 PIN' : 'PIN'}</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : forceChange ? '继续修改' : '进入管理台'}</button></div></form>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
     document.getElementById('pinForm').addEventListener('submit', async event => {
       event.preventDefault();
       const pin = document.getElementById('pinInput').value;
       if (setup) {
+        if (!hasPin && document.getElementById('guardianAccountConfirm').value.trim().toLowerCase() !== accountName.trim().toLowerCase()) return toast('Keepwork 用户名不匹配，无法设置家长 PIN');
         if (pin !== document.getElementById('pinConfirm').value) return toast('两次输入的 PIN 不一致');
-        parentPinHash = await hashPin(pin);
+        try { parentPinHash = await createPinCredential(pin); } catch (error) { return toast(error?.message || String(error)); }
         await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
+        pinFailureCount = 0;
+        pinLockedUntil = 0;
+        persistPinLockState();
         parentUnlocked = true;
         toast('家长 PIN 已保存');
-      } else if (await hashPin(pin) === parentPinHash) {
-        parentUnlocked = true;
+      } else if (Date.now() < pinLockedUntil) {
+        return toast(`PIN 已锁定，请在 ${Math.ceil((pinLockedUntil - Date.now()) / 60000)} 分钟后重试`);
       } else {
-        return toast('PIN 不正确');
+        const verification = await verifyPinCredential(pin);
+        if (verification.valid) {
+        pinFailureCount = 0;
+        pinLockedUntil = 0;
+        persistPinLockState();
+        if (verification.legacy) {
+          try {
+            parentPinHash = await createPinCredential(pin);
+            await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
+          } catch (error) {
+            return toast(`旧 PIN 验证成功，但安全升级失败：${error?.message || error}`);
+          }
+        }
+        if (forceChange && verifyExisting) {
+          closeModal();
+          showPinModal(true, true);
+          return;
+        }
+        parentUnlocked = true;
+        } else {
+        pinFailureCount += 1;
+        if (pinFailureCount >= 5) {
+          pinFailureCount = 5;
+          pinLockedUntil = Date.now() + 5 * 60 * 1000;
+          persistPinLockState();
+          return toast('PIN 连续输错 5 次，已锁定 5 分钟');
+        }
+        persistPinLockState();
+        return toast(`PIN 不正确，还可尝试 ${5 - pinFailureCount} 次`);
+        }
       }
       closeModal();
       mode = 'parent';
@@ -1718,54 +2019,70 @@ art_assets = [];
     return record;
   }
 
-  function saveSchoolLink(event) {
+  async function saveSchoolLink(event) {
     event.preventDefault();
     const teacherUsername = document.getElementById('schoolTeacherUsername').value.trim();
     const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
     const classId = document.getElementById('schoolClassId').value.trim();
     const studentId = document.getElementById('schoolStudentId').value.trim();
     if (!validSchoolSitePath(sitePath) || !classId || !studentId) return toast('请填写有效的共享站点路径、班级编号和学生编号');
-    const targetChanged = state.schoolLink.sitePath !== sitePath
-      || state.schoolLink.classId !== classId
-      || state.schoolLink.studentId !== studentId;
-    state.schoolLink.teacherUsername = teacherUsername;
-    state.schoolLink.sitePath = sitePath;
-    state.schoolLink.classId = classId;
-    state.schoolLink.studentId = studentId;
-    state.schoolLink.studentName = document.getElementById('schoolStudentName').value.trim();
-    if (targetChanged) {
-      state.schoolLink.appliedEventIds = [];
-      state.schoolLink.ignoredEventIds = [];
-      state.schoolLink.pendingReceipts = [];
-      state.schoolLink.lastSeenNotificationEventId = '';
-      state.schoolLink.lastSeenNotificationAt = 0;
-      lastAwardNotificationId = '';
+    const link = { teacherUsername, sitePath, classId, studentId, studentName: document.getElementById('schoolStudentName').value.trim() };
+    const submitButton = event.submitter;
+    if (submitButton) submitButton.disabled = true;
+    try {
+      await validateSchoolLink(link);
+      applySchoolLink(link);
+      render();
+      refreshSchoolInbox();
+      toast('学校成长收件箱已绑定，正在读取云端消息');
+      return true;
+    } catch (error) {
+      toast(`学校绑定未保存：${error?.message || error}`);
+      return false;
+    } finally {
+      if (submitButton?.isConnected) submitButton.disabled = false;
     }
-    saveState();
-    render();
-    refreshSchoolInbox();
-    toast('学校成长收件箱已绑定，正在读取云端消息');
   }
 
   function showSchoolLinkModal() {
     const link = state.schoolLink;
     modal(`<h2>修改学校绑定</h2><p>仅修改教师账号或孩子姓名会保留收件箱处理记录；修改家庭站点、班级或学生编号会开始新的收件箱。已入账的学校奖励始终不会重复计入。</p><form id="schoolLinkModalForm"><div class="field"><label>家庭专用 Keepwork 站点路径</label><input class="input" id="schoolSitePath" maxlength="160" required value="${escapeHtml(link.sitePath)}"></div><div class="field"><label>教师 Keepwork 账号（选填，用于识别）</label><input class="input" id="schoolTeacherUsername" maxlength="80" value="${escapeHtml(link.teacherUsername)}"></div><div class="field"><label>班级编号</label><input class="input" id="schoolClassId" maxlength="80" required value="${escapeHtml(link.classId)}"></div><div class="field"><label>学生编号</label><input class="input" id="schoolStudentId" maxlength="80" required value="${escapeHtml(link.studentId)}"></div><div class="field"><label>孩子在学校使用的姓名（选填）</label><input class="input" id="schoolStudentName" maxlength="40" value="${escapeHtml(link.studentName)}"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存绑定</button></div></form>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
-    document.getElementById('schoolLinkModalForm').addEventListener('submit', event => {
-      saveSchoolLink(event);
-      closeModal();
+    document.getElementById('schoolLinkModalForm').addEventListener('submit', async event => {
+      if (await saveSchoolLink(event)) closeModal();
     });
   }
 
   async function approveSchoolEvent(eventId, options = {}) {
-    const event = schoolInboxEvents().find(item => item.id === eventId);
-    if (!event) return toast('这条学校消息已处理或不存在');
+    const cachedEvent = schoolInboxEvents().find(item => item.id === eventId);
+    if (!cachedEvent) return toast('这条学校消息已处理或不存在');
     try {
-      if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
+      const eventText = await readSchoolSharedPage(state.schoolLink, schoolEventPath(eventId));
+      const currentEvent = normalizeSchoolEventSummary(JSON.parse(eventText || 'null'));
+      if (!currentEvent || currentEvent.id !== eventId) throw new Error('该学校奖励已撤销、过期或内容不匹配，请刷新后重试');
+      const event = { ...currentEvent, childAction: cachedEvent.childAction || null };
+      const existingEntry = state.ledger.find(entry => String(entry.externalEventId || '') === event.id);
+      if (existingEntry) {
+        const wasRevoked = Boolean(existingEntry.revokedAt);
+        if (wasRevoked) {
+          existingEntry.revokedAt = null;
+          const progress = state.petProgress[existingEntry.petKey];
+          if (progress) {
+            progress.energy = clampEnergy(progress.energy + existingEntry.delta);
+            if (existingEntry.delta > 0) progress.lifetimeStars = Math.max(0, Number(progress.lifetimeStars) || 0) + existingEntry.delta;
+            if (existingEntry.petKey === petKeyForChild()) syncChildFromPetProgress();
+          } else {
+            const child = state.children.find(item => item.id === existingEntry.childId);
+            if (child) {
+              child.energy = clampEnergy(child.energy + existingEntry.delta);
+              if (existingEntry.delta > 0) child.lifetimeStars = Math.max(0, Number(child.lifetimeStars) || 0) + existingEntry.delta;
+            }
+          }
+        }
         if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
-        await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '', event.childAction || null);
+        await queueSchoolReceipt(event, 'approved', existingEntry.id, event.childAction || null);
         if (options.render !== false) render();
-        if (options.toast !== false) toast('这条学校奖励已入账，不会重复计入');
+        if (options.toast !== false) toast(wasRevoked ? '已恢复这条学校奖励及宠物成长进度' : '这条学校奖励已入账，不会重复计入');
         return true;
       }
       state.schoolLink.appliedEventIds.unshift(event.id);
@@ -1812,7 +2129,7 @@ art_assets = [];
     }
   }
 
-  function revokeEntry(entryId) {
+  async function revokeEntry(entryId) {
     if (syncDailyEnergyBaselines()) saveState();
     const entry = state.ledger.find(item => item.id === entryId && !item.revokedAt);
     if (!entry || !confirm('确认撤销这条记录？账本中仍会保留撤销痕迹。')) return;
@@ -1826,9 +2143,14 @@ art_assets = [];
     } else if (child) {
       child.energy = clampEnergy(child.energy - entry.delta);
     }
-    saveState();
+    if (entry.source === 'school_sync' && entry.externalEventId) {
+      state.schoolLink.appliedEventIds = state.schoolLink.appliedEventIds.filter(id => id !== entry.externalEventId);
+      await queueSchoolReceipt({ id: entry.externalEventId }, 'revoked', entry.id);
+    } else {
+      saveState();
+    }
     render();
-    toast('记录已撤销');
+    toast(entry.source === 'school_sync' ? (state.schoolLink.pendingReceipts.length ? '记录已撤销，教师回执等待同步' : '记录已撤销并已通知教师') : '记录已撤销');
   }
 
   function toggleMetric(metricId) {
@@ -1974,6 +2296,8 @@ art_assets = [];
     const task = document.getElementById('focusTask')?.value || '成长任务';
     const durationMs = selectedDuration * 60 * 1000;
     focusSession = { id: `focus_${Date.now()}`, task, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    state.activeFocusSession = { ...focusSession, lastSavedAt: Date.now() };
+    await persistStateNow();
     renderFocusScreen();
     post('gameStarted', { task, duration: selectedDuration });
     try {
@@ -1987,6 +2311,33 @@ art_assets = [];
 
   function focusReward(minutes) {
     return game_config.focusRewards[minutes] || Math.max(1, Math.floor(minutes / 10));
+  }
+
+  function saveFocusCheckpoint(immediate = false) {
+    if (!focusSession) return Promise.resolve();
+    state.activeFocusSession = { ...focusSession, lastSavedAt: Date.now() };
+    return immediate ? persistStateNow() : (saveState(), Promise.resolve());
+  }
+
+  function restoreFocusSession() {
+    const saved = state.activeFocusSession;
+    if (!saved || !saved.id || !Number.isFinite(Number(saved.remainingMs)) || Number(saved.remainingMs) <= 0) {
+      state.activeFocusSession = null;
+      return;
+    }
+    focusSession = {
+      ...saved,
+      duration: Number(saved.duration) || selectedDuration,
+      durationMs: Number(saved.durationMs) || Number(saved.duration) * 60 * 1000,
+      remainingMs: Number(saved.remainingMs),
+      paused: true,
+      lastTick: Date.now()
+    };
+    selectedDuration = focusSession.duration;
+    saveFocusCheckpoint();
+    renderFocusScreen();
+    focusTimer = window.setInterval(tickFocus, 250);
+    toast('已恢复上次未完成的专注守护，请点击继续');
   }
 
   function renderFocusScreen() {
@@ -2007,6 +2358,7 @@ art_assets = [];
     const elapsed = now - focusSession.lastTick;
     focusSession.lastTick = now;
     if (!focusSession.paused && document.visibilityState === 'visible') focusSession.remainingMs -= elapsed;
+    if (now - Number(state.activeFocusSession?.lastSavedAt || 0) >= 10 * 1000) saveFocusCheckpoint();
     if (focusSession.remainingMs <= 0) finishFocus(true);
     else {
       const screen = document.getElementById('focusScreen');
@@ -2025,6 +2377,7 @@ art_assets = [];
     if (!focusSession) return;
     focusSession.paused = !focusSession.paused;
     focusSession.lastTick = Date.now();
+    saveFocusCheckpoint(true);
     renderFocusScreen();
   }
 
@@ -2032,6 +2385,7 @@ art_assets = [];
     if (!focusSession) return;
     const session = focusSession;
     focusSession = null;
+    state.activeFocusSession = null;
     clearInterval(focusTimer);
     focusTimer = 0;
     try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (_) {}
@@ -2061,23 +2415,35 @@ art_assets = [];
   }
 
   async function resetData() {
-    if (!confirm('确认清除 Keepwork 中的全部成长守护数据？此操作不可撤销。')) return;
+    const confirmation = prompt('此操作会永久删除此 Keepwork 账号下所有设备共享的成长守护数据。请输入“删除云端数据”继续：');
+    if (confirmation !== '删除云端数据') {
+      if (confirmation !== null) toast('确认文字不匹配，未删除任何数据');
+      return;
+    }
     clearTimeout(saveTimer);
-    await Promise.all([
-      queueCloudWrite(CLOUD_STATE_PATH, ''),
-      queueCloudWrite(CLOUD_PIN_PATH, '')
-    ]);
-    location.reload();
+    try {
+      await Promise.all([
+        queueCloudWrite(CLOUD_STATE_PATH, ''),
+        queueCloudWrite(CLOUD_PIN_PATH, '')
+      ]);
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(PIN_KEY);
+      localStorage.removeItem(PIN_LOCK_KEY);
+      location.reload();
+    } catch (error) {
+      toast(`云端数据删除失败，原页面已保留：${error?.message || error}`);
+    }
   }
 
   function requestPetImage(petId = '') {
     const requestId = `guardian_pet_${Date.now()}`;
     petRequestId = requestId;
     currentPetId = petId || activeChild().selectedPetId || currentPetId;
-    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: currentPetId || undefined }, '*');
+    const targetOrigin = configuredParentOrigin() || (location.protocol === 'file:' ? '*' : location.origin);
+    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: currentPetId || undefined }, targetOrigin);
     setTimeout(() => {
       if (availablePets.length) return;
-      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `guardian_pets_${Date.now()}`, anim: 'happy' }, '*');
+      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `guardian_pets_${Date.now()}`, anim: 'happy' }, targetOrigin);
     }, 900);
   }
 
@@ -2097,10 +2463,14 @@ art_assets = [];
   }
 
   window.addEventListener('message', event => {
+    if (!trustedParentMessage(event)) return;
     const message = event.data || {};
     if (message.type === 'setGameConfig' && message.data && typeof message.data === 'object') {
       if (message.data.petId) requestPetImage(message.data.petId);
-      if (Array.isArray(message.data.focusDurations)) game_config.focusDurations = message.data.focusDurations.filter(value => Number(value) > 0);
+      if (Array.isArray(message.data.focusDurations)) {
+        const durations = message.data.focusDurations.map(Number).filter(value => Number.isInteger(value) && value >= 1 && value <= 120).slice(0, 8);
+        if (durations.length) game_config.focusDurations = durations;
+      }
     }
     if (message.type === 'haqi_pet_image' && message.ok && message.data && (!petRequestId || !message.requestId || message.requestId === petRequestId || message.requestId === 'active_pet_config')) setPetImage(message.data);
     if (message.type === 'haqi_pet_images' && message.ok) {
@@ -2117,6 +2487,7 @@ art_assets = [];
   });
 
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden && focusSession) saveFocusCheckpoint(true);
     if (!document.hidden && syncDailyEnergyBaselines()) {
       saveState();
       if (!focusSession) render();
@@ -2125,6 +2496,11 @@ art_assets = [];
     if (!document.hidden) publishPendingSchoolReceipts();
     if (!document.hidden) refreshVisibleSchoolInbox();
     if (focusSession) focusSession.lastTick = Date.now();
+  });
+
+  window.addEventListener('pagehide', () => {
+    if (focusSession) state.activeFocusSession = { ...focusSession, lastSavedAt: Date.now() };
+    if (saveTimer || focusSession) persistStateNow();
   });
 
   window.addEventListener('online', () => {
@@ -2141,6 +2517,8 @@ art_assets = [];
   });
 
   window.addEventListener('beforeunload', () => {
+    if (focusSession) state.activeFocusSession = { ...focusSession, lastSavedAt: Date.now() };
+    if (saveTimer || focusSession) persistStateNow();
     clearTimeout(dailyResetTimer);
     clearInterval(schoolInboxRefreshTimer);
     petObjectUrls.forEach(url => URL.revokeObjectURL(url));

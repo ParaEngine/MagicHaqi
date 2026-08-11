@@ -154,7 +154,7 @@
     <div class="overview">
       <article class="panel"><div class="panel-inner">
         <h2>联动一句话</h2>
-        <p class="muted">一个班级配置一个由学校或教师拥有的 KeepWork 共享站点；每位学生在站点内拥有独立目录。教师发入口，学生完成行动，家长确认奖励，不再要求每个家庭另建站点。</p>
+        <p class="muted">一个班级使用一个联动数据空间；每位学生在其中拥有独立目录。系统默认按当前教师账号自动命名空间，管理员首次开通后，教师发入口，学生完成行动，家长确认奖励，不再要求每个家庭另建站点。</p>
         <div class="flow">
           <div class="flow-step"><span class="flow-num">1</span><div><strong>课堂</strong><br><span class="muted">教师为学生加分并发布家庭成长奖励。</span></div></div>
           <div class="flow-step"><span class="flow-num">2</span><div><strong>孩子</strong><br><span class="muted">学生通过专属链接登录，完成页面给出的家庭小行动。</span></div></div>
@@ -165,7 +165,7 @@
         <h2>涉及页面</h2>
         <ul class="quick-list">
           <li><strong>教师与学生：</strong><code>minigames/haqi_personal_pet_points.html</code></li>
-          <li><strong>家长：</strong><code>minigames/haqi_growth_guardian.html</code></li>
+          <li><strong>家长：</strong><code>minigames/haqi_growth_guardian_c.html</code></li>
           <li><strong>本说明：</strong><code>docs/haqi_growth_link_guide.html</code></li>
         </ul>
       </div></aside>
@@ -179,7 +179,7 @@
           <div class="role-icon">🧑‍🏫</div>
           <h3>教师端：发布课堂认可</h3>
           <ul>
-            <li>在班级设置中配置一次学校共享 KeepWork 站点。</li>
+            <li>在班级设置中确认系统自动命名的联动数据空间。</li>
             <li>单个添加或从 Excel 批量导入学生、学生账号和家长账号。</li>
             <li>按课堂表现加分，生成家庭成长奖励。</li>
             <li>通过“家庭入口卡”分别发送学生与家长链接。</li>
@@ -215,7 +215,7 @@
       <h2>完整联动流程</h2>
       <p class="section-intro">以下流程描述的是一条课堂奖励从产生到家庭确认的实际生命周期。</p>
       <div class="timeline reveal">
-        <div class="timeline-row"><div class="timeline-label">0. 班级准备</div><div>教师在“班级设置”中填写年级、班级和学校共享站点路径，例如 <code>teacher_zhang/class-growth</code>。随后导入学生资料，并为每位学生配置其 KeepWork 用户名与家长账号白名单。</div><span class="timeline-state">教师配置</span></div>
+        <div class="timeline-row"><div class="timeline-label">0. 班级准备</div><div>教师在“班级设置”中填写年级和班级，系统按教师账号自动命名联动数据空间。管理员首次在 KeepWork 开通该空间后，教师导入学生资料，并为每位学生配置其 KeepWork 用户名与家长账号白名单。只有学校统一分配空间时，才需在“管理员设置”查看或修改真实路径。</div><span class="timeline-state">教师配置</span></div>
         <div class="timeline-row"><div class="timeline-label">1. 发布入口</div><div>教师在“家庭入口卡”中发布学生的授权与课堂档案，并分别发送学生入口和家长入口。链接已带上共享站点、班级和学生标识。</div><span class="timeline-state">一键发送</span></div>
         <div class="timeline-row"><div class="timeline-label">2. 课堂加分</div><div>教师对某位学生加分。系统保留课堂积分流水，同时创建一条有效期默认 72 小时的家庭成长奖励。</div><span class="timeline-state">奖励待办</span></div>
         <div class="timeline-row"><div class="timeline-label">3. 学生行动</div><div>学生在个人页面看到待办，例如完成学习小任务或分享当天收获；点击完成后，系统写入该奖励对应的学生行动记录。</div><span class="timeline-state">孩子已完成</span></div>
@@ -235,23 +235,28 @@
 
     <section id="data">
       <h2>共享站点、数据隔离与权限</h2>
-      <p class="section-intro">所有联动文件都在一个学校共享站点内，但按学生编号分目录保存。这样减少建站成本，同时使每条奖励、回执和通知都能定位到对应孩子。</p>
-      <pre class="code">minigames/haqi-growth-link/v3/students/&lt;studentId&gt;/
+      <p class="section-intro">教师发布的数据按学生编号保存在学校共享站点；学生行动和家长回执分别写入提交者自己的 PersonalPageStore。这样无需给学生或家长授予共享站点编辑权限，同时每条记录仍能按教师、学生和奖励定位。</p>
+      <pre class="code">学校共享站点：minigames/haqi-growth-link/v3/students/&lt;studentId&gt;/
   access-policy.json              # 学生与家长白名单、授权策略
   student-profile.json            # 当前学生的课堂档案
   events/index.json               # 该学生的课堂奖励索引
   events/&lt;eventId&gt;.json           # 单条课堂奖励
-  actions/&lt;eventId&gt;.json          # 学生提交的家庭小行动
-  receipts/&lt;eventId&gt;.json         # 家长“计入/暂不计入”的回执
   notifications/index.json        # 该学生的通知索引
-  notifications/&lt;notificationId&gt;.json</pre>
+  notifications/&lt;notificationId&gt;.json
+
+学生个人空间：growth-link/v3/schools/&lt;teacher&gt;/students/&lt;studentId&gt;/
+  actions/&lt;eventId&gt;.json          # 学生提交的家庭小行动
+
+家长个人空间：growth-link/v3/schools/&lt;teacher&gt;/students/&lt;studentId&gt;/
+  receipts/&lt;eventId&gt;.json         # 家长“计入/暂不计入”的回执
+  receipts/audit/...              # 家长处理审计</pre>
       <div class="data-grid" style="margin-top:14px">
         <article class="data-card"><strong>应用层隔离</strong><span class="muted">所有 V3 文件带有 <code>privacyScope: "student"</code>，读取时会校验班级、学生编号、学生账号或家长白名单。</span></article>
-        <article class="data-card"><strong>KeepWork 站点权限</strong><span class="muted">站点是否可读写仍由 KeepWork 的真实访问权限决定。教师需拥有编辑权限；学生和家长账号需要具备完成各自读取或回执写入所需的站点访问权限。</span></article>
+        <article class="data-card"><strong>最小写权限</strong><span class="muted">教师只写学校共享站点；学生和家长只写自己的 PersonalPageStore。三端读取时只使用授权策略中绑定的账号，不扫描其他用户空间。</span></article>
       </div>
       <div class="notice warning" style="margin-top:14px">
         <h3>重要：白名单不等于 KeepWork ACL</h3>
-        <p>页面中的家长白名单用于应用逻辑校验，不能替代 KeepWork 平台的真实成员权限。静态 HTML 无法自动创建站点、加入成员或授予编辑权限，这些操作必须先在 KeepWork 平台完成。</p>
+        <p>页面中的账号绑定和家长白名单用于限制跨用户读取范围，不能替代 KeepWork 平台的数据访问控制。学校共享站点必须允许学生和家长读取教师发布的数据，但不需要授予他们编辑权限；个人空间是否支持授权账号跨用户读取仍由 KeepWork 平台决定。</p>
       </div>
     </section>
 
@@ -264,7 +269,8 @@
           <li>班级设置已保存正确的学校共享站点路径。</li>
           <li>每位需要参与联动的学生都已填写学生 KeepWork 用户名，且家长白名单至少有一个账号。</li>
           <li>已发布至少一位学生的云端授权与课堂档案，并通过入口卡发送学生、家长链接。</li>
-          <li>已确认学生和家长账号具备 KeepWork 站点所需的访问权限。</li>
+          <li>已确认学生和家长账号能读取学校共享站点；无需给这两个账号授予站点编辑权限。</li>
+          <li>已确认 KeepWork PersonalPageStore 支持绑定账号按绝对路径读取学生行动和家长回执。</li>
           <li>用一个测试学生完成“教师加分 → 学生行动 → 家长确认 → 教师刷新回执”的闭环验证。</li>
         </ol>
       </div></div>
@@ -275,8 +281,8 @@
       <div class="faq">
         <details><summary>为什么发布时出现 HTTP 404 或“请求不合法”？</summary><p>通常表示填写的站点不存在、站点路径不符合 <code>用户名/站点名</code> 格式，或当前登录教师没有该站点的编辑权限。先在 KeepWork 中确认站点和权限，再重新发布。</p></details>
         <details><summary>学生每次登录都需要输入学生编号吗？</summary><p>不需要。普通使用时学生只打开教师链接，再输入账号和密码；链接携带学生标识。学生编号仅在没有链接时用于手动恢复家长绑定。</p></details>
-        <details><summary>学生或家长能看到其他孩子的数据吗？</summary><p>应用会始终使用当前学生的独立目录，并校验策略、学生编号与账号信息。但对真实敏感数据，仍必须正确配置 KeepWork 站点的访问权限，不能只依赖页面白名单。</p></details>
-        <details><summary>为什么家长暂时不能“计入成长”？</summary><p>当前奖励可能尚未被学生提交家庭小行动、已过 72 小时有效期、已被撤销，或家长账号没有站点写入权限。家长端会显示相应状态或同步失败信息。</p></details>
+        <details><summary>学生或家长能看到其他孩子的数据吗？</summary><p>应用只使用链接指定的学生目录，并校验策略、学生编号、绑定学生账号和家长白名单。跨用户个人空间读取也只会访问策略中明确绑定的账号，不会遍历或搜索其他用户。</p></details>
+        <details><summary>为什么家长暂时不能“计入成长”？</summary><p>当前奖励可能尚未被学生提交家庭小行动、已过 72 小时有效期、已被撤销，或 KeepWork PersonalPageStore 暂时无法读取学生行动或写入家长回执。家长端会显示相应状态或同步失败信息。</p></details>
       </div>
     </section>
 

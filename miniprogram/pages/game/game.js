@@ -79,6 +79,7 @@ Page({
     const parts = []
     if (options && options.gameFrom) parts.push('gameFrom=' + encodeURIComponent(options.gameFrom))
     if (options && options.game) parts.push('game=' + encodeURIComponent(options.game))
+    if (options && options.msg) parts.push('msg=' + encodeURIComponent(options.msg))
     const importGameDraft = getImportGameDraft(options || {})
     if (importGameDraft) {
       this._lastImportGameDraft = importGameDraft
