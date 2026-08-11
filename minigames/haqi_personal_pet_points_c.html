@@ -1449,6 +1449,7 @@
         if (duplicateStudent) { showToast(`该学生账号已绑定 ${duplicateStudent.name}`); return; }
         const pet = pets.find(item => item.id === petId) || pets[0];
         const existing = state.students.find(item => item.id === id);
+        const isNewStudent = !existing;
         let savedStudent;
         if (existing) {
           const difference = Math.floor(points) - existing.points;
@@ -1468,7 +1469,15 @@
         document.getElementById('studentFormScreen').classList.add('hidden');
         save(); render();
         if (validFamilySitePath(schoolSitePath()) && JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').active) {
-          publishFamilySetup(savedStudent).then(() => { showToast(`${savedStudent.name} 已绑定，请发送入口`); openAccessCards(); }).catch(error => { savedStudent.familyPublishError = error?.message || String(error); save(); showToast(`绑定失败：${savedStudent.familyPublishError}`); openAccessCards(); });
+          publishFamilySetup(savedStudent).then(() => {
+            showToast(isNewStudent ? `${savedStudent.name} 已绑定，请发送入口` : `${savedStudent.name} 的家庭授权已更新`);
+            if (isNewStudent) openAccessCards();
+          }).catch(error => {
+            savedStudent.familyPublishError = error?.message || String(error);
+            save();
+            showToast(`${isNewStudent ? '绑定' : '更新授权'}失败：${savedStudent.familyPublishError}`);
+            if (isNewStudent) openAccessCards();
+          });
         }
       }
       function openStudentImport() {

@@ -72,8 +72,8 @@
     .login-separator::before, .login-separator::after { content: ""; flex: 1; height: 1px; background: var(--line); }
     .login-status { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: center; }
     .account-chip { min-height: 38px; display: flex; align-items: center; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: #405e61; background: white; font-size: 12px; font-weight: 800; }
-    .child-layout { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
-    .pet-stage { position: relative; min-height: 610px; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 26px 24px 20px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
+    .child-layout { height: min(610px, calc(100dvh - 100px)); min-height: 520px; display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
+    .pet-stage { position: relative; min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 20px 20px 16px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
     .pet-stage::before { content: ""; position: absolute; inset: 0; opacity: .62; background-image: radial-gradient(ellipse at 17% 17%, rgba(255,255,255,.9) 0 22px, transparent 23px), radial-gradient(ellipse at 78% 12%, rgba(255,255,255,.82) 0 31px, transparent 32px), linear-gradient(164deg, transparent 58%, rgba(79,137,67,.14) 58.5% 66%, transparent 66.5%); }
     .pet-stage::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 96px; height: 38px; border-radius: 50%; background: rgba(52,93,57,.16); filter: blur(10px); transform: perspective(120px) rotateX(58deg); }
     .pet-head { position: relative; z-index: 2; width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -85,13 +85,13 @@
     .today-change-badge strong { font-size: 13px; }
     .today-change-badge.positive strong { color: #087a52; }
     .today-change-badge.negative strong { color: #be3348; }
-    .pet-art-wrap { position: relative; z-index: 2; flex: 1; width: min(310px, 90%); min-height: 300px; display: grid; place-items: center; }
-    .pet-art { width: 260px; height: 260px; background-repeat: no-repeat; background-position: center; background-size: contain; filter: drop-shadow(0 24px 18px rgba(32,79,77,.24)); animation: petFloat 3.6s ease-in-out infinite; }
+    .pet-art-wrap { position: relative; z-index: 2; flex: 1; width: min(300px, 94%); min-height: 250px; display: grid; place-items: center; }
+    .pet-art { width: 270px; height: 270px; background-repeat: no-repeat; background-position: center; background-size: contain; filter: drop-shadow(0 20px 15px rgba(32,79,77,.22)); animation: petFloat 3.6s ease-in-out infinite; }
     .pet-art.placeholder { display: grid; place-items: center; border-radius: 50%; background: #fff7ed; border: 8px solid #fed7aa; font-size: 112px; }
     .pet-art.placeholder::after { content: "🥚"; }
     .stage-spark { position: absolute; inset: 8% 0 auto; text-align: center; font-size: 24px; color: #f59e0b; animation: twinkle 1.8s ease-in-out infinite; }
     .energy-card { position: relative; z-index: 2; width: 100%; padding: 15px; background: rgba(255,255,255,.84); border: 1px solid rgba(255,255,255,.94); border-radius: 8px; box-shadow: 0 15px 34px rgba(42,92,72,.13); backdrop-filter: blur(14px); }
-    .mobile-pet-actions { position: relative; z-index: 2; width: 100%; display: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
+    .mobile-pet-actions { position: relative; z-index: 2; width: 100%; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
     .mobile-pet-action { min-width: 0; min-height: 50px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 5px 2px; border: 1px solid rgba(8,118,108,.18); border-radius: 8px; color: #244f52; background: rgba(255,255,255,.88); box-shadow: 0 6px 14px rgba(26,73,70,.1); font-size: 10px; font-weight: 900; text-decoration: none; backdrop-filter: blur(10px); }
     .mobile-pet-action span { font-size: 19px; line-height: 1; }
     .mobile-panel-close { display: none; }
@@ -111,7 +111,7 @@
     .energy-change.positive { color: #087a52; }
     .energy-change.negative { color: #be3348; }
     .next-copy { margin-top: 8px; color: var(--muted); font-size: 12px; }
-    .child-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 14px; }
+    .child-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; }
     .child-main > * { min-width: 0; max-width: 100%; }
     .hero-copy { position: relative; overflow: hidden; padding: 26px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-color: rgba(255,255,255,.1); background: linear-gradient(120deg, #163e43 0%, #0d6260 68%, #167b70 100%); color: white; box-shadow: 0 22px 48px rgba(16,73,72,.2); }
     .hero-copy::after { content: "成长日记"; position: absolute; right: 17%; bottom: -11px; color: rgba(255,255,255,.055); font-size: 64px; line-height: 1; font-weight: 900; pointer-events: none; }
@@ -120,11 +120,15 @@
     .hero-copy p { margin: 0; color: #c9dce9; font-size: 14px; }
     .today-score { flex: 0 0 auto; min-width: 118px; text-align: center; padding: 13px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; background: rgba(255,255,255,.1); box-shadow: inset 0 1px rgba(255,255,255,.1); backdrop-filter: blur(10px); }
     .today-score strong { display: block; font-size: 32px; color: #fbbf24; }
+    .hero-actions { flex: 0 0 auto; display: flex; align-items: stretch; gap: 8px; }
+    .shop-launch { min-width: 74px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 8px 12px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; color: #fff7ce; background: rgba(255,255,255,.1); font-size: 12px; font-weight: 900; cursor: pointer; }
+    .shop-launch span { font-size: 20px; line-height: 1; }
     .focus-panel { position: relative; padding: 20px; border-left: 4px solid var(--sun); }
     .section-title { margin: 0; font-size: 18px; font-weight: 900; }
     .section-desc { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
     .focus-options { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 16px; }
-    .focus-controls { display: flex; gap: 8px; min-width: 0; }
+    .focus-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+    .focus-controls.has-custom-task { grid-template-columns: minmax(0, .8fr) minmax(180px, 1.2fr); }
     .select { min-height: 42px; width: 100%; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 700; outline: none; }
     .duration-tabs { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; }
     .duration-btn { min-width: 68px; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: white; font-weight: 900; color: #526579; cursor: pointer; }
@@ -175,10 +179,32 @@
     .redemption-list { display: grid; gap: 8px; padding: 0 18px 18px; }
     .redemption-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #f9fcfb; }
     .redemption-actions { display: flex; gap: 6px; }
-    .bottom-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-height: 220px; }
-    .list-panel { padding: 18px; min-width: 0; border-color: var(--panel-line); }
-    .timeline { display: grid; gap: 9px; margin-top: 14px; }
-    .timeline-item { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #e2ece9; border-radius: 8px; background: linear-gradient(120deg, #fbfefd, #f5faf8); transition: transform .18s ease, border-color .18s ease; }
+    .today-tasks { display: grid; gap: 6px; margin-top: 10px; }
+    .today-task { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 9px; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; background: rgba(255,255,255,.09); font-size: 12px; }
+    .today-task strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-task button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; color: #164e4a; background: #ccfbf1; font-weight: 900; cursor: pointer; }
+    .calendar-layout { display: grid; grid-template-columns: minmax(430px, 1.15fr) minmax(300px, .85fr); gap: 12px; }
+    .calendar-panel { padding: 16px; }
+    .calendar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+    .calendar-nav { display: flex; align-items: center; gap: 6px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+    .calendar-weekday { padding: 5px; color: var(--muted); text-align: center; font-size: 11px; font-weight: 900; }
+    .calendar-day { position: relative; min-height: 58px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: white; text-align: left; cursor: pointer; }
+    .calendar-day.outside { opacity: .36; }
+    .calendar-day.selected { border-color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua); background: #effcf8; }
+    .calendar-day.today { color: var(--aqua-deep); font-weight: 900; }
+    .calendar-day i { position: absolute; left: 7px; bottom: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--sun); }
+    .calendar-task-list { display: grid; gap: 8px; margin-top: 14px; }
+    .calendar-task { padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fbfefd; }
+    .calendar-task-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .calendar-task-meta { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .calendar-task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .weekday-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .weekday-picker label { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+    .bottom-grid { min-height: 0; display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .list-panel { min-height: 0; overflow: hidden; padding: 16px; border-color: var(--panel-line); }
+    .timeline { max-height: calc(100% - 32px); display: grid; gap: 9px; margin-top: 14px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+    .timeline-item { min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #e2ece9; border-radius: 8px; background: linear-gradient(120deg, #fbfefd, #f5faf8); transition: transform .18s ease, border-color .18s ease; }
     .timeline-item:hover { transform: translateX(3px); border-color: #aadacf; }
     .timeline-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: #e8fbf6; }
     .timeline-title { font-size: 13px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -251,6 +277,10 @@
     .pet-choice-meta span { color: var(--muted); font-size: 11px; }
     .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(15,35,52,.68); backdrop-filter: blur(6px); }
     .modal { width: min(460px, 100%); max-height: 90vh; overflow: auto; padding: 22px; background: white; border-radius: 8px; box-shadow: 0 25px 80px rgba(0,0,0,.28); }
+    .modal.shop-modal { width: min(1120px, 100%); padding: 0; overflow: hidden; }
+    .shop-modal .shop-vault { max-height: min(760px, 88dvh); border: 0; box-shadow: none; }
+    .shop-modal .reward-vault-head { padding-right: 70px; }
+    .shop-modal-close { position: absolute; z-index: 2; top: 14px; right: 14px; }
     .modal h2 { margin: 0; font-size: 21px; font-weight: 900; }
     .modal p { margin: 7px 0 16px; color: var(--muted); font-size: 13px; }
     .field { display: grid; gap: 6px; margin-top: 12px; }
@@ -271,7 +301,7 @@
     .focus-content { width: min(720px, 100%); text-align: center; }
     .focus-pet { width: 210px; height: 210px; margin: 0 auto 12px; animation: focusPetFloat 6s ease-in-out infinite; will-change: transform; }
     .focus-pet.placeholder { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.12); }
-    .focus-task { color: #99f6e4; font-size: 13px; font-weight: 900; }
+    .focus-task { max-width: 680px; margin: 0 auto 8px; color: #99f6e4; font-size: clamp(20px, 2.5vw, 30px); line-height: 1.35; font-weight: 900; overflow-wrap: anywhere; }
     .focus-calendar { margin: 8px 0 12px; }
     .focus-date { color: #c8e6ee; font-size: clamp(15px, 3vw, 20px); font-weight: 800; }
     .focus-time { margin: 4px 0; font: 900 clamp(52px, 12vw, 104px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
@@ -291,6 +321,7 @@
     @keyframes reveal { from { opacity: 0; transform: translateY(10px); } }
     @media (max-width: 900px) {
       .child-layout, .parent-layout { grid-template-columns: 1fr; }
+      .child-layout { height: auto; min-height: 0; }
       .pet-stage { min-height: 490px; }
       .profile-panel { position: static; display: grid; grid-template-columns: 180px 1fr; }
       .profile-pet { min-height: 180px; }
@@ -311,7 +342,7 @@
       .currency-value { font-size: 17px; }
       .main { padding: 10px; }
       .child-layout { display: block; }
-      .pet-stage { min-height: calc(100dvh - 76px); padding: 18px 16px 14px; }
+      .pet-stage { min-height: calc(100dvh - 84px); padding: 18px 16px 14px; }
       .pet-art { width: 210px; height: 210px; }
       .pet-art-wrap { min-height: 210px; }
       .stage-actions { min-width: 82px; }
@@ -327,10 +358,13 @@
       .mobile-panel-close { position: absolute; z-index: 3; top: 9px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 5px 12px rgba(26,73,70,.1); font-size: 20px; line-height: 1; text-decoration: none; }
       .shop-vault .mobile-panel-close { position: sticky; flex: 0 0 auto; align-self: flex-end; margin: -39px 10px 7px 0; }
       .hero-copy { padding: 18px; align-items: flex-start; }
+      .hero-actions { flex-direction: column; }
+      .shop-launch { min-width: 88px; }
       .today-score { min-width: 88px; padding: 9px; }
       .today-score strong { font-size: 26px; }
       .focus-options { grid-template-columns: 1fr; }
       .focus-options > *, .focus-controls, .focus-controls .select { min-width: 0; width: 100%; max-width: 100%; }
+      .focus-controls.has-custom-task { grid-template-columns: minmax(0, 1fr); }
       .duration-tabs { width: 100%; max-width: 100%; }
       .reward-vault-head { align-items: flex-start; }
       .bottom-grid, .metric-columns, .settings-grid { grid-template-columns: 1fr; }
@@ -366,8 +400,12 @@
       .redemption-item { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
       .redemption-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
       .redemption-actions .btn { width: 100%; }
+      .calendar-layout { grid-template-columns: 1fr; }
+      .calendar-panel { padding: 12px; }
+      .calendar-day { min-height: 46px; padding: 5px; }
       .modal-backdrop { align-items: end; padding: 0; }
       .modal { width: 100%; max-height: 88dvh; padding: 18px; border-radius: 8px 8px 0 0; }
+      .modal.shop-modal { width: 100%; padding: 0; }
       .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .modal-actions .btn { width: 100%; }
       .toast-stack { top: auto; right: 10px; bottom: 10px; left: 10px; }
@@ -550,6 +588,9 @@ art_assets = [];
   let redemptionFilter = 'pending';
   let metricQuery = '';
   let selectedDuration = 25;
+  let selectedFocusTask = '完成作业';
+  let customFocusTask = '';
+  let calendarSelectedDate = localDateKey();
   let petRequestId = '';
   let petObjectUrl = '';
   let availablePets = [];
@@ -632,6 +673,8 @@ art_assets = [];
       metrics: DEFAULT_METRICS.map(item => ({ ...item })),
       ledger: [],
       focusSessions: [],
+      calendarItems: [],
+      calendarCompletions: [],
       rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
       redemptions: [],
       schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
@@ -648,6 +691,8 @@ art_assets = [];
     parsed.syncWriterDeviceId = String(parsed.syncWriterDeviceId || '');
     if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
     if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+    if (!Array.isArray(parsed.calendarItems)) parsed.calendarItems = [];
+    if (!Array.isArray(parsed.calendarCompletions)) parsed.calendarCompletions = [];
     if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
     parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
     parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
@@ -937,6 +982,79 @@ art_assets = [];
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
+  function dateFromKey(dateKey) {
+    const [year, month, day] = String(dateKey || '').split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  function calendarItemOccursOn(item, dateKey) {
+    if (!item || item.active === false || item.startDate > dateKey || (item.endDate && item.endDate < dateKey)) return false;
+    const weekday = dateFromKey(dateKey).getDay();
+    const recurrence = item.recurrence || { type: 'once', days: [] };
+    if (recurrence.type === 'daily') return true;
+    if (recurrence.type === 'weekdays') return weekday >= 1 && weekday <= 5;
+    if (recurrence.type === 'weekly') return Array.isArray(recurrence.days) && recurrence.days.includes(weekday);
+    return item.startDate === dateKey;
+  }
+
+  function calendarCompletion(itemId, dateKey) {
+    return state.calendarCompletions.find(item => item.itemId === itemId && item.occurrenceDate === dateKey) || null;
+  }
+
+  function calendarItemsForDate(dateKey = localDateKey(), childId = activeChild().id) {
+    return state.calendarItems
+      .filter(item => item.childId === childId && calendarItemOccursOn(item, dateKey))
+      .sort((left, right) => String(left.time || '23:59').localeCompare(String(right.time || '23:59')) || left.title.localeCompare(right.title));
+  }
+
+  function calendarStatusLabel(completion) {
+    if (!completion) return '待完成';
+    if (completion.status === 'confirmed') return '已确认';
+    if (completion.status === 'needs_help') return '需要帮助';
+    return '待家长确认';
+  }
+
+  function recurrenceLabel(item) {
+    const type = item.recurrence?.type || 'once';
+    if (type === 'daily') return '每天';
+    if (type === 'weekdays') return '工作日';
+    if (type === 'weekly') return `每周${(item.recurrence.days || []).map(day => '日一二三四五六'[day]).join('、')}`;
+    return '仅一次';
+  }
+
+  function showLoginTodoReminder() {
+    if (loginRole === 'parent') {
+      const pending = state.calendarCompletions
+        .filter(completion => completion.childId === activeChild().id && completion.status === 'submitted')
+        .sort((left, right) => (right.completedAt || 0) - (left.completedAt || 0));
+      if (!pending.length) return;
+      const rows = pending.map(completion => {
+        const task = state.calendarItems.find(item => item.id === completion.itemId);
+        return `<div class="today-task"><span>${escapeHtml(completion.occurrenceDate)}</span><strong>${escapeHtml(task?.title || '日历任务')}</strong><span>待核实</span></div>`;
+      }).join('');
+      modal(`<h2>孩子已完成任务</h2><p class="section-desc">孩子提交了 ${pending.length} 项任务，请检查实际完成情况后再确认奖励。</p><div class="today-tasks" style="margin-top:16px">${rows}</div><div class="modal-actions"><button class="btn btn-soft" id="closeCompletionReminder">稍后处理</button><button class="btn btn-primary" id="reviewCalendarCompletions">去核实检查</button></div>`);
+      document.getElementById('closeCompletionReminder')?.addEventListener('click', closeModal);
+      document.getElementById('reviewCalendarCompletions')?.addEventListener('click', () => {
+        calendarSelectedDate = pending[0].occurrenceDate;
+        parentTab = 'calendar';
+        closeModal();
+        render();
+      });
+      return;
+    }
+    if (loginRole !== 'child') return;
+    const today = localDateKey();
+    const tasks = calendarItemsForDate(today);
+    if (!tasks.length) return;
+    const rows = tasks.map(item => {
+      const completion = calendarCompletion(item.id, today);
+      return `<div class="today-task"><span>${escapeHtml(item.time || '未设置')}</span><strong>${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div>`;
+    }).join('');
+    const pendingCount = tasks.filter(item => !calendarCompletion(item.id, today)).length;
+    modal(`<h2>今日待办提醒</h2><p class="section-desc">今天共有 ${tasks.length} 项任务，${pendingCount ? `还有 ${pendingCount} 项待完成。` : '今天的任务都已提交。'}</p><div class="today-tasks" style="margin-top:16px">${rows}</div><div class="modal-actions"><button class="btn btn-primary" id="confirmTodoReminder">知道了</button></div>`);
+    document.getElementById('confirmTodoReminder')?.addEventListener('click', closeModal);
+  }
+
   function syncDailyEnergyBaselines() {
     const date = localDateKey();
     let changed = false;
@@ -1140,11 +1258,13 @@ art_assets = [];
     const next = nextLevel(child.energy);
     const maxEnergy = game_config.evolutionThresholds.at(-1);
     const energyScale = game_config.evolutionThresholds.map(value => ({ value, percent: value / maxEnergy * 100 }));
-    const coins = coinStats(child.id);
-    const rewards = state.rewards.filter(item => item.active !== false);
     const isCustomDuration = !game_config.focusDurations.includes(selectedDuration);
+    const focusTasks = ['完成作业', '认真阅读', '练琴或运动', '整理自己的物品'];
+    const isCustomFocusTask = selectedFocusTask === '__custom__';
     const currentPetKey = petKeyForChild(child);
     const recent = state.ledger.filter(item => item.childId === child.id && item.petKey === currentPetKey && !item.revokedAt).slice(0, 5);
+    const todayTasks = calendarItemsForDate();
+    const submittedCount = todayTasks.filter(item => calendarCompletion(item.id, localDateKey())).length;
     return `
       <div class="child-layout">
         <section class="panel pet-stage ${equippedCosmetic('petBackground')}">
@@ -1158,9 +1278,8 @@ art_assets = [];
           </div>
           <nav class="mobile-pet-actions" aria-label="成长功能">
             <a class="mobile-pet-action" href="#mobileFocus"><span>⏱</span>专注守护</a>
-            <a class="mobile-pet-action" href="#mobileShop"><span>🛍</span>商店</a>
+            <button class="mobile-pet-action" type="button" data-open-shop><span>🛍</span>商店</button>
             <a class="mobile-pet-action" href="#mobileRecent"><span>📒</span>最近成长</a>
-            <a class="mobile-pet-action" href="#mobileGuide"><span>🏅</span>图鉴</a>
           </nav>
           <div class="energy-card">
             <div class="energy-row"><span>成长能量</span><strong>${child.energy} / ${maxEnergy}</strong></div>
@@ -1177,33 +1296,22 @@ art_assets = [];
         </section>
         <div class="child-main">
           <section class="panel hero-copy">
-            <div><div class="eyebrow" style="color:#5eead4">今日成长计划</div><h1>${todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发'}</h1><p>专心完成一件事，哈奇就会陪你一起积累成长能量。</p></div>
-            <div class="today-score"><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div>
+            <div><div class="eyebrow" style="color:#5eead4">今日成长计划 · ${submittedCount}/${todayTasks.length}</div><h1>${todayTasks.length ? `今天有 ${todayTasks.length} 件小事` : (todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发')}</h1>${todayTasks.length ? `<div class="today-tasks">${todayTasks.slice(0, 3).map(item => { const completion = calendarCompletion(item.id, localDateKey()); return `<div class="today-task"><span>${escapeHtml(item.time || '全天')}</span><strong>${escapeHtml(item.title)}</strong>${completion ? `<span>${calendarStatusLabel(completion)}</span>` : `<button data-open-calendar-task="${item.id}">查看</button>`}</div>`; }).join('')}</div>` : '<p>家长还没有安排今天的任务，可以先完成一件自己的小目标。</p>'}</div>
+            <div class="hero-actions"><div class="today-score"><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><button class="shop-launch" type="button" data-open-shop><span>🛍</span>哈奇商店</button></div>
           </section>
           <section class="panel focus-panel" id="mobileFocus">
             <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
             <h2 class="section-title">专注守护</h2><p class="section-desc">进入全屏后，宠物会安静陪伴。提前退出只会暂停，不会扣分。</p>
             <div class="focus-options">
               <div>
-                <div class="focus-controls"><select id="focusTask" class="select" aria-label="选择专注任务"><option>完成作业</option><option>认真阅读</option><option>练琴或运动</option><option>整理自己的物品</option><option>自定义成长任务</option></select></div>
+                <div class="focus-controls ${isCustomFocusTask ? 'has-custom-task' : ''}"><select id="focusTask" class="select" aria-label="选择专注任务">${focusTasks.map(task => `<option value="${task}" ${selectedFocusTask === task ? 'selected' : ''}>${task}</option>`).join('')}<option value="__custom__" ${isCustomFocusTask ? 'selected' : ''}>自定义任务...</option></select>${isCustomFocusTask ? `<input id="customFocusTaskInput" class="input" maxlength="40" value="${escapeHtml(customFocusTask)}" placeholder="输入要做的事情" aria-label="自定义专注任务">` : ''}</div>
                 <div class="duration-tabs">${game_config.focusDurations.map(value => `<button class="duration-btn ${selectedDuration === value ? 'active' : ''}" data-duration="${value}">${value} 分钟</button>`).join('')}<form class="custom-duration" id="customDurationForm"><input class="input" id="customDurationInput" type="number" min="1" max="120" value="${isCustomDuration ? selectedDuration : ''}" placeholder="分钟" aria-label="自定义专注分钟数" required><button class="duration-btn ${isCustomDuration ? 'active' : ''}" type="submit">自定义</button></form></div>
               </div>
               <button class="btn btn-sun" id="startFocusBtn">▶ 开始守护 · +${focusReward(selectedDuration)}</button>
             </div>
           </section>
-          <section class="panel shop-vault" id="mobileShop">
-            <div class="reward-vault-head">
-              <div><h2 class="section-title">哈奇商店</h2><p class="section-desc">用金币兑换心愿奖励，或解锁伙伴的新装扮。</p><div class="coin-progress"><div style="width:${coins.progress * 10}%"></div></div><div class="next-copy">再获得 ${10 - coins.progress} 个正向积分，收获下一枚金币</div></div>
-            </div>
-            <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
-            <div class="shop-sections">
-              <div class="shop-section"><div class="shop-section-head"><h3>🎁 心愿奖励</h3><p>兑换后由家长确认兑现。</p></div><div class="reward-list">${rewards.length ? rewards.map(reward => rewardCard(reward, coins.balance)).join('') : '<div class="empty">家长还没有设置可兑换的奖励。</div>'}</div></div>
-              <div class="shop-section"><div class="shop-section-head"><h3>✨ 装扮道具</h3><p>永久解锁，拥有后可以随时切换。</p></div><div class="cosmetic-list">${COSMETICS.map(cosmetic => cosmeticCard(cosmetic, coins.balance)).join('')}</div></div>
-            </div>
-          </section>
           <div class="bottom-grid">
             <section class="panel list-panel" id="mobileRecent"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">最近成长</h2><div class="timeline">${recent.length ? recent.map(entry => timelineItem(entry)).join('') : '<div class="empty">还没有成长记录，完成第一个小目标吧。</div>'}</div></section>
-            <section class="panel list-panel" id="mobileGuide"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">成长图鉴</h2><div class="milestone-list">${game_config.levels.slice(1).map((item, index) => milestoneItem(item, index + 1, child)).join('')}</div></section>
           </div>
         </div>
       </div>`;
@@ -1248,8 +1356,8 @@ art_assets = [];
           <div class="profile-info"><div class="eyebrow">当前孩子</div><h2>${escapeHtml(child.name)}</h2><div class="mini-stat"><div><span>成长能量</span><strong>${child.energy}</strong></div><div><span>当前形态</span><strong style="font-size:13px">${level.name}</strong></div><div><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><div><span>终身成长星</span><strong>${child.lifetimeStars}</strong></div></div><button class="btn btn-soft" id="editChildBtn" style="width:100%;margin-top:12px">编辑孩子与宠物</button></div>
         </aside>
         <div class="parent-main">
-          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
-          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'calendar' ? 'active' : ''}" data-parent-tab="calendar">家庭日历</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'calendar', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
+          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'calendar' ? calendarView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
         </div>
       </div>`;
   }
@@ -1538,6 +1646,20 @@ art_assets = [];
     return `<div class="panel metrics-toolbar"><div><h2 class="section-title">为具体行为评分</h2><p class="section-desc">每次记录都可追溯、备注和撤销。</p></div><input id="metricSearch" class="search" value="${escapeHtml(metricQuery)}" placeholder="搜索指标或分类..."></div><div class="metric-columns"><section class="panel metric-section positive"><div class="metric-heading"><h3>● 加分指标 (${visible.filter(item => item.delta > 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta > 0))}</div></section><section class="panel metric-section negative"><div class="metric-heading"><h3>● 改进指标 (${visible.filter(item => item.delta < 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta < 0))}</div></section></div>`;
   }
 
+  function calendarView() {
+    const selected = dateFromKey(calendarSelectedDate);
+    const monthStart = new Date(selected.getFullYear(), selected.getMonth(), 1);
+    const gridStart = new Date(selected.getFullYear(), selected.getMonth(), 1 - monthStart.getDay());
+    const days = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setDate(gridStart.getDate() + index);
+      const key = localDateKey(date);
+      return { key, day: date.getDate(), currentMonth: date.getMonth() === selected.getMonth(), hasTasks: calendarItemsForDate(key).length > 0 };
+    });
+    const tasks = calendarItemsForDate(calendarSelectedDate);
+    return `<div class="calendar-layout"><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">家庭日历</h2><p class="section-desc">设置一次或每天重复的任务，孩子登录时会提醒今日待办。</p></div><div class="calendar-nav"><button class="btn btn-soft" data-calendar-month="-1" aria-label="上个月">‹</button><strong>${selected.getFullYear()}年${selected.getMonth() + 1}月</strong><button class="btn btn-soft" data-calendar-month="1" aria-label="下个月">›</button></div></div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(day => `<div class="calendar-weekday">${day}</div>`).join('')}${days.map(day => `<button class="calendar-day ${day.currentMonth ? '' : 'outside'} ${day.key === calendarSelectedDate ? 'selected' : ''} ${day.key === localDateKey() ? 'today' : ''}" data-calendar-date="${day.key}">${day.day}${day.hasTasks ? '<i></i>' : ''}</button>`).join('')}</div></section><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">${selected.getMonth() + 1}月${selected.getDate()}日</h2><p class="section-desc">${tasks.length} 项安排</p></div><button class="btn btn-primary" id="addCalendarTaskBtn">＋ 添加任务</button></div><div class="calendar-task-list">${tasks.length ? tasks.map(item => { const completion = calendarCompletion(item.id, calendarSelectedDate); return `<article class="calendar-task"><div class="calendar-task-head"><strong>${escapeHtml(item.time || '未设置')} · ${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div><div class="calendar-task-meta">${recurrenceLabel(item)} · 家长确认后 +${Math.max(0, Number(item.points) || 0)}</div><div class="calendar-task-actions">${completion?.status === 'submitted' || completion?.status === 'needs_help' ? `<button class="btn btn-primary" data-confirm-calendar="${completion.id}">确认完成</button>` : ''}<button class="btn btn-soft" data-edit-calendar="${item.id}">编辑</button><button class="btn btn-soft" data-delete-calendar="${item.id}">删除</button></div></article>`; }).join('') : '<div class="empty">这一天还没有安排。</div>'}</div></section></div>`;
+  }
+
   function historyView() {
     const entries = state.ledger.filter(item => item.childId === activeChild().id && item.petKey === petKeyForChild());
     return `<section class="panel"><div style="padding:18px"><h2 class="section-title">积分账本</h2><p class="section-desc">撤销不会删除记录，确保每次变化都有依据。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>时间</th><th>行为</th><th>来源</th><th>备注</th><th>变化</th><th>操作</th></tr></thead><tbody>${entries.length ? entries.map(entry => `<tr style="${entry.revokedAt ? 'opacity:.45' : ''}"><td>${formatTime(entry.createdAt)}</td><td><strong>${escapeHtml(entry.reason)}</strong><br><span style="color:var(--muted)">${escapeHtml(entry.category)}</span></td><td>${entry.source === 'focus_session' ? '专注守护' : entry.source === 'school_sync' ? '学校同步' : '家长记录'}</td><td>${escapeHtml(entry.note || '—')}</td><td class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}${entry.revokedAt ? '（已撤销）' : ''}</td><td>${!entry.revokedAt ? `<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-revoke="${entry.id}">撤销</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">暂无记录</td></tr>'}</tbody></table></div></section>`;
@@ -1744,6 +1866,7 @@ art_assets = [];
     render();
     requestPetImage(activeChild().selectedPetId || '');
     await refreshHandoff({ claim: new URL(location.href).searchParams.get('handoff') === '1' });
+    showLoginTodoReminder();
     clearInterval(guardianStateSyncTimer);
     guardianStateSyncTimer = window.setInterval(refreshGuardianCloudState, 8 * 1000);
     clearInterval(handoffSyncTimer);
@@ -1882,6 +2005,12 @@ art_assets = [];
   }
 
   function bindChild() {
+    document.getElementById('focusTask')?.addEventListener('change', event => {
+      selectedFocusTask = event.target.value;
+      render();
+      if (selectedFocusTask === '__custom__') document.getElementById('customFocusTaskInput')?.focus();
+    });
+    document.getElementById('customFocusTaskInput')?.addEventListener('input', event => { customFocusTask = event.target.value; });
     document.querySelectorAll('[data-duration]').forEach(button => button.addEventListener('click', () => { selectedDuration = Number(button.dataset.duration); render(); }));
     document.getElementById('customDurationForm')?.addEventListener('submit', event => {
       event.preventDefault();
@@ -1890,7 +2019,9 @@ art_assets = [];
       selectedDuration = minutes;
       render();
     });
-    document.getElementById('startFocusBtn')?.addEventListener('click', startFocus);
+    document.getElementById('startFocusBtn')?.addEventListener('click', () => startFocus());
+    document.querySelectorAll('[data-open-calendar-task]').forEach(button => button.addEventListener('click', () => showChildCalendarTask(button.dataset.openCalendarTask)));
+    document.querySelectorAll('[data-open-shop]').forEach(button => button.addEventListener('click', showShopModal));
     document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => redeemReward(button.dataset.redeem)));
     document.querySelectorAll('[data-cosmetic]').forEach(button => button.addEventListener('click', () => selectCosmetic(button.dataset.cosmetic)));
   }
@@ -1921,6 +2052,12 @@ art_assets = [];
     document.getElementById('schoolLinkForm')?.addEventListener('submit', saveSchoolLink);
     document.getElementById('addMetricBtn')?.addEventListener('click', showAddMetricModal);
     document.getElementById('addRewardBtn')?.addEventListener('click', showAddRewardModal);
+    document.getElementById('addCalendarTaskBtn')?.addEventListener('click', () => showCalendarTaskModal());
+    document.querySelectorAll('[data-calendar-date]').forEach(button => button.addEventListener('click', () => { calendarSelectedDate = button.dataset.calendarDate; render(); }));
+    document.querySelectorAll('[data-calendar-month]').forEach(button => button.addEventListener('click', () => { const date = dateFromKey(calendarSelectedDate); date.setMonth(date.getMonth() + Number(button.dataset.calendarMonth), 1); calendarSelectedDate = localDateKey(date); render(); }));
+    document.querySelectorAll('[data-edit-calendar]').forEach(button => button.addEventListener('click', () => showCalendarTaskModal(button.dataset.editCalendar)));
+    document.querySelectorAll('[data-delete-calendar]').forEach(button => button.addEventListener('click', () => deleteCalendarTask(button.dataset.deleteCalendar)));
+    document.querySelectorAll('[data-confirm-calendar]').forEach(button => button.addEventListener('click', () => confirmCalendarCompletion(button.dataset.confirmCalendar)));
     document.getElementById('editChildBtn')?.addEventListener('click', showEditChildModal);
     document.getElementById('famousPetSelect')?.addEventListener('change', event => { selectedFamousPetId = event.target.value; render(); });
     document.querySelectorAll('[data-parent-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.parentPetId, button.dataset.parentPetSource)));
@@ -1930,13 +2067,103 @@ art_assets = [];
     document.getElementById('resetBtn')?.addEventListener('click', resetData);
   }
 
-  function modal(content) {
-    document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal" role="dialog" aria-modal="true">${content}</div></div>`;
+  function modal(content, className = '') {
+    document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal ${className}" role="dialog" aria-modal="true">${content}</div></div>`;
     document.getElementById('modalBackdrop').addEventListener('click', event => { if (event.target.id === 'modalBackdrop') closeModal(); });
   }
 
   function closeModal() {
     document.getElementById('modalRoot').innerHTML = '';
+  }
+
+  function showCalendarTaskModal(itemId = '') {
+    const item = state.calendarItems.find(entry => entry.id === itemId);
+    const recurrenceType = item?.recurrence?.type === 'once' ? 'once' : 'daily';
+    const now = new Date();
+    const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    modal(`<h2>${item ? '编辑日历任务' : '添加日历任务'}</h2><form id="calendarTaskForm"><div class="field"><label>自定义任务名称</label><input class="input" id="calendarTitle" maxlength="40" required value="${escapeHtml(item?.title || '')}" placeholder="例如：英语朗读"></div><div class="field"><label>开始时间</label><input class="input" id="calendarTime" type="time" required value="${escapeHtml(item?.time || defaultTime)}"></div><div class="field"><label>家长确认后奖励</label><input class="input" id="calendarPoints" type="number" min="0" max="50" required value="${Math.max(0, Number(item?.points) || 3)}"></div><div class="field"><label>是否只执行一次</label><select class="input" id="calendarRecurrence"><option value="once" ${recurrenceType === 'once' ? 'selected' : ''}>是，仅一次</option><option value="daily" ${recurrenceType === 'daily' ? 'selected' : ''}>否，每天重复</option></select></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存任务</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('calendarTaskForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const type = document.getElementById('calendarRecurrence').value;
+      const startDate = item?.startDate || calendarSelectedDate;
+      const now = Date.now();
+      const record = { id: item?.id || `task_${now}_${Math.random().toString(36).slice(2, 6)}`, childId: activeChild().id, title: document.getElementById('calendarTitle').value.trim(), category: '日常', time: document.getElementById('calendarTime').value, points: Math.max(0, Math.min(50, Number(document.getElementById('calendarPoints').value) || 0)), recurrence: { type, days: [] }, startDate, endDate: '', active: true, createdAt: item?.createdAt || now, updatedAt: now };
+      if (item) Object.assign(item, record); else state.calendarItems.push(record);
+      calendarSelectedDate = startDate;
+      saveState(); closeModal(); render(); toast('日历任务已保存');
+    });
+  }
+
+  function deleteCalendarTask(itemId) {
+    const item = state.calendarItems.find(entry => entry.id === itemId);
+    if (!item || !confirm(`删除“${item.title}”？已提交的历史记录会保留。`)) return;
+    item.active = false;
+    item.updatedAt = Date.now();
+    saveState(); render(); toast('任务已删除');
+  }
+
+  function startCalendarTask(itemId) {
+    const item = calendarItemsForDate().find(entry => entry.id === itemId);
+    if (!item) return;
+    const select = document.getElementById('focusTask');
+    if (select && ![...select.options].some(option => option.value === item.title)) select.add(new Option(item.title, item.title));
+    if (select) select.value = item.title;
+    startFocus(item.id);
+  }
+
+  function showChildCalendarTask(itemId) {
+    const item = calendarItemsForDate().find(entry => entry.id === itemId);
+    if (!item) return;
+    modal(`<h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.time || '未设置时间')} · ${recurrenceLabel(item)}</p><p class="section-desc">完成后由家长确认 +${Math.max(0, Number(item.points) || 0)} 点；使用专注守护还会按专注时长获得每日限额内的自动奖励。</p><div class="modal-actions"><button class="btn btn-soft" id="calendarNeedHelpBtn">需要帮助</button><button class="btn btn-soft" id="calendarCompleteBtn">我已完成</button><button class="btn btn-primary" id="calendarStartFocusBtn">开始专注</button></div>`);
+    document.getElementById('calendarNeedHelpBtn').addEventListener('click', () => {
+      const note = prompt('可以告诉家长哪里需要帮助（选填）') || '';
+      closeModal();
+      submitCalendarCompletion(item.id, 'needs_help', note.trim().slice(0, 100));
+    });
+    document.getElementById('calendarCompleteBtn').addEventListener('click', () => { closeModal(); submitCalendarCompletion(item.id); });
+    document.getElementById('calendarStartFocusBtn').addEventListener('click', () => { closeModal(); startCalendarTask(item.id); });
+  }
+
+  function submitCalendarCompletion(itemId, status = 'submitted', childNote = '') {
+    const date = localDateKey();
+    let completion = calendarCompletion(itemId, date);
+    if (!completion) {
+      completion = { id: `completion_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, itemId, childId: activeChild().id, occurrenceDate: date, status, completedAt: Date.now(), childNote, confirmedAt: null, ledgerEntryId: '' };
+      state.calendarCompletions.unshift(completion);
+    } else if (completion.status !== 'confirmed') {
+      completion.status = status;
+      completion.completedAt = Date.now();
+      completion.childNote = childNote;
+    }
+    saveState(); render(); toast(status === 'needs_help' ? '已告诉家长需要帮助' : '完成情况已提交给家长');
+  }
+
+  function calendarLedgerEntry(completion) {
+    return state.ledger.find(entry => entry.calendarItemId === completion.itemId && entry.calendarOccurrenceDate === completion.occurrenceDate)
+      || state.ledger.find(entry => entry.calendarCompletionId === completion.id);
+  }
+
+  function confirmCalendarCompletion(completionId) {
+    const completion = state.calendarCompletions.find(item => item.id === completionId);
+    const task = state.calendarItems.find(item => item.id === completion?.itemId);
+    if (!completion || !task || completion.status === 'confirmed') return toast('这项任务已经确认或不存在');
+    const existing = calendarLedgerEntry(completion);
+    const record = existing || addLedgerEntry({ category: task.category || '日常', delta: Math.max(0, Number(task.points) || 0), source: 'parent', reason: `日历任务：${task.title}`, note: completion.childNote || `${completion.occurrenceDate} 完成`, calendarCompletionId: completion.id, calendarItemId: completion.itemId, calendarOccurrenceDate: completion.occurrenceDate }, { render: false, toast: false });
+    completion.status = 'confirmed';
+    completion.confirmedAt = Date.now();
+    completion.ledgerEntryId = record.id;
+    saveState(); render(); toast(`已确认“${task.title}”并计入成长`);
+  }
+
+  function showShopModal() {
+    const child = activeChild();
+    const coins = coinStats(child.id);
+    const rewards = state.rewards.filter(item => item.active !== false);
+    modal(`<section class="shop-vault"><div class="reward-vault-head"><div><h2 class="section-title">哈奇商店</h2><p class="section-desc">用金币兑换心愿奖励，或解锁伙伴的新装扮。</p><div class="coin-progress"><div style="width:${coins.progress * 10}%"></div></div><div class="next-copy">再获得 ${10 - coins.progress} 个正向积分，收获下一枚金币</div></div><div class="coin-balance"><span>🪙</span><strong>${coins.balance}</strong></div></div><button class="icon-btn shop-modal-close" id="closeShopModal" aria-label="关闭商店">×</button><div class="shop-sections"><div class="shop-section"><div class="shop-section-head"><h3>🎁 心愿奖励</h3><p>兑换后由家长确认兑现。</p></div><div class="reward-list">${rewards.length ? rewards.map(reward => rewardCard(reward, coins.balance)).join('') : '<div class="empty">家长还没有设置可兑换的奖励。</div>'}</div></div><div class="shop-section"><div class="shop-section-head"><h3>✨ 装扮道具</h3><p>永久解锁，拥有后可以随时切换。</p></div><div class="cosmetic-list">${COSMETICS.map(cosmetic => cosmeticCard(cosmetic, coins.balance)).join('')}</div></div></div></section>`, 'shop-modal');
+    document.getElementById('closeShopModal').addEventListener('click', closeModal);
+    document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => redeemReward(button.dataset.redeem)));
+    document.querySelectorAll('[data-cosmetic]').forEach(button => button.addEventListener('click', () => selectCosmetic(button.dataset.cosmetic)));
   }
 
   function showChildModeConfirm() {
@@ -2326,12 +2553,16 @@ art_assets = [];
     });
   }
 
-  async function startFocus() {
+  async function startFocus(calendarItemId = '') {
     if (focusSession) return;
     handoffOwnerDeviceId = deviceId;
-    const task = document.getElementById('focusTask')?.value || '成长任务';
+    const selectedTask = document.getElementById('focusTask')?.value || selectedFocusTask;
+    const task = selectedTask === '__custom__' ? (document.getElementById('customFocusTaskInput')?.value || customFocusTask).trim() : selectedTask;
+    if (!task) return toast('请先填写自定义任务名称');
+    selectedFocusTask = selectedTask;
+    if (selectedTask === '__custom__') customFocusTask = task;
     const durationMs = selectedDuration * 60 * 1000;
-    focusSession = { id: `focus_${Date.now()}`, task, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    focusSession = { id: `focus_${Date.now()}`, task, calendarItemId, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
     scheduleHandoffWrite(0);
     renderFocusScreen();
     post('gameStarted', { task, duration: selectedDuration });
@@ -2427,6 +2658,7 @@ art_assets = [];
     const elapsedMinutes = Math.max(0, Math.round((session.durationMs - Math.max(0, session.remainingMs)) / 60000));
     const reward = completed ? Math.max(0, Math.min(focusReward(session.duration), game_config.dailyAutoPointCap - autoPointsToday())) : 0;
     state.focusSessions.unshift({ id: session.id, childId: activeChild().id, task: session.task, plannedMinutes: session.duration, elapsedMinutes, completed, reward, startedAt: session.startedAt, finishedAt: Date.now() });
+    if (completed && session.calendarItemId) submitCalendarCompletion(session.calendarItemId);
     saveState();
     if (reward > 0) {
       addLedgerEntry({ metricId: 'focus_guard', category: '自律', delta: reward, source: 'focus_session', reason: `${session.task} · 专注守护 ${session.duration} 分钟`, note: '自动奖励' });
