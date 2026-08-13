@@ -1223,8 +1223,27 @@ art_assets = [];
     setTimeout(() => element.remove(), 2800);
   }
 
+  const mobileHostParams = new URLSearchParams(location.search);
+  const isWechatMiniProgramHost = mobileHostParams.get('host') === 'wechat-miniprogram';
+  const mobileProtocolChannel = mobileHostParams.get('channel') === 'haqi.growth.mobile.v1' ? 'haqi.growth.mobile.v1' : '';
+  let wechatBridgePromise = null;
+  function loadWechatBridge() {
+    if (!isWechatMiniProgramHost || !mobileProtocolChannel) return Promise.resolve(null);
+    if (window.wx?.miniProgram?.postMessage) return Promise.resolve(window.wx.miniProgram);
+    if (wechatBridgePromise) return wechatBridgePromise;
+    wechatBridgePromise = new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
+      script.onload = () => resolve(window.wx?.miniProgram || null);
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+    return wechatBridgePromise;
+  }
+
   function post(type, data = {}) {
     try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+    loadWechatBridge().then(bridge => bridge?.postMessage({ data: { channel: mobileProtocolChannel, type, data } }));
   }
 
   function render() {

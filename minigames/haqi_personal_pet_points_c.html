@@ -1927,6 +1927,26 @@
         const parentOrigin = configuredParentOrigin();
         return !parentOrigin || event.origin === parentOrigin;
       }
+      const mobileHostParams = new URLSearchParams(location.search);
+      const isWechatMiniProgramHost = mobileHostParams.get('host') === 'wechat-miniprogram';
+      const mobileProtocolChannel = mobileHostParams.get('channel') === 'haqi.growth.mobile.v1' ? 'haqi.growth.mobile.v1' : '';
+      let wechatBridgePromise = null;
+      function loadWechatBridge() {
+        if (!isWechatMiniProgramHost || !mobileProtocolChannel) return Promise.resolve(null);
+        if (window.wx?.miniProgram?.postMessage) return Promise.resolve(window.wx.miniProgram);
+        if (wechatBridgePromise) return wechatBridgePromise;
+        wechatBridgePromise = new Promise(resolve => {
+          const script = document.createElement('script');
+          script.src = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
+          script.onload = () => resolve(window.wx?.miniProgram || null);
+          script.onerror = () => resolve(null);
+          document.head.appendChild(script);
+        });
+        return wechatBridgePromise;
+      }
+      function postWechatHost(type, data = {}) {
+        loadWechatBridge().then(bridge => bridge?.postMessage({ data: { channel: mobileProtocolChannel, type, data } }));
+      }
       function applyExternalGameConfig(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
         const next = {};
@@ -2427,6 +2447,7 @@
         const parentOrigin = configuredParentOrigin();
         if (parentOrigin || location.protocol === 'file:') window.parent.postMessage({ type: 'gameLoaded', data: { id: 'haqi_personal_pet_points' } }, parentOrigin || '*');
       }
+      postWechatHost('gameLoaded', { id: 'haqi_personal_pet_points', role: loginRole });
     })();
   </script>
 </body>

@@ -1,6 +1,8 @@
 const app = getApp()
 const WORKBUDDY_APP_ID = 'wx907c65e5e107ddcf'
 const GROWTH_BASE_URL = 'https://magic-haqi-growth.pages.dev'
+const GROWTH_MOBILE_CHANNEL = 'haqi.growth.mobile.v1'
+const GROWTH_MESSAGE_TYPES = new Set(['gameLoaded', 'gameStarted', 'gameFinished', 'growthStatus'])
 const GROWTH_PARAMS = {
   student: ['studentSite', 'studentId', 'studentAccount'],
   guardian: ['guardianSite', 'guardianClass', 'guardianStudent', 'guardianName', 'guardianTeacher']
@@ -36,7 +38,11 @@ function getGrowthLaunch(options = {}) {
   const role = String(source.growthRole || inferredRole).toLowerCase()
   if (!['teacher', 'student', 'guardian'].includes(role)) return null
   const page = role === 'guardian' ? 'haqi_growth_guardian_c.html' : 'haqi_personal_pet_points_c.html'
-  const params = [`growthRole=${encodeURIComponent(role)}`]
+  const params = [
+    `growthRole=${encodeURIComponent(role)}`,
+    'host=wechat-miniprogram',
+    `channel=${encodeURIComponent(GROWTH_MOBILE_CHANNEL)}`
+  ]
   for (const key of GROWTH_PARAMS[role] || []) {
     if (source[key]) params.push(`${key}=${encodeURIComponent(String(source[key]))}`)
   }
@@ -105,7 +111,16 @@ Page({
     const msg = e?.detail?.data
     if (!Array.isArray(msg) || !msg.length) return
     const latest = msg[msg.length - 1]
+    if (latest?.channel === GROWTH_MOBILE_CHANNEL && GROWTH_MESSAGE_TYPES.has(latest.type)) {
+      this._growthProtocolState = { type: latest.type, data: latest.data || {}, receivedAt: Date.now() }
+      if (latest.type === 'gameFinished') wx.showToast({ title: '成长任务已记录', icon: 'none' })
+      return
+    }
     if (latest?.type === 'openWorkBuddy') openWorkBuddy(latest.prompt || '')
+  },
+
+  onWebLoad() {
+    this._growthProtocolState ||= { type: 'webLoaded', data: {}, receivedAt: Date.now() }
   },
 
   onError(e) {
