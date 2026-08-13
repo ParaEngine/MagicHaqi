@@ -160,6 +160,12 @@
         <button type="button" data-login-role="teacher" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">教师登录</span><span class="mt-1 block text-xs font-medium">管理班级、学生与积分</span></button>
         <button type="button" data-login-role="student" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">学生登录</span><span class="mt-1 block text-xs font-medium">仅查看名单和个人宠物</span></button>
       </div>
+      <form id="teacherPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="teacherLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="teacherLoginPassword" name="password" type="password" class="mt-1 w-full" autocomplete="current-password" required></label>
+        <button id="teacherPasswordLoginButton" class="primary w-full" type="submit">登录教师账号</button>
+        <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅转发给 KeepWork 官方登录接口，不会保存到本页面或成长平台数据库。</p>
+      </form>
       <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
         <label class="block text-sm font-bold text-slate-600">学校共享 KeepWork 站点路径<input id="studentLoginSitePath" name="sitePath" class="mt-1 w-full" maxlength="160" autocomplete="off" required placeholder="例如：teacher_zhang/class-growth"></label>
         <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required placeholder="点击教师链接后自动填入"></label>
@@ -252,6 +258,9 @@
       const schoolReceiptCache = new Map();
       let studentGrowthTasks = [];
       let studentGrowthTaskSyncError = '';
+      let studentClassBindings = [];
+      let activeStudentBindingId = '';
+      let studentBindingSyncError = '';
       // 云端持久化相关
       let teacherCloudStore = null;
       let teacherCloudSaveQueue = Promise.resolve();
@@ -567,14 +576,105 @@
         guardianAllowlist: (Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist : []).map(normalizeKeepworkUsername).filter(Boolean).sort()
       });
       const isFamilySetupPublished = student => Boolean(student?.familyPublishedAt && !student?.familyPublishError && student.familyPublishFingerprint === familyPublishFingerprint(student));
-      const studentBinding = () => {
+      const invitationStudentBinding = () => {
         const params = new URLSearchParams(location.search);
         const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
         const sitePath = String(params.get('studentSite') || savedLogin?.studentSite || '').trim().replace(/^\/+|\/+$/g, '');
-        const studentId = String(params.get('studentId') || '').trim();
+        const studentId = String(params.get('studentId') || savedLogin?.studentId || '').trim();
         const username = normalizeKeepworkUsername(params.get('studentAccount') || savedLogin?.studentAccount || '');
         return validFamilySitePath(sitePath) && studentId ? { sitePath, studentId, username } : null;
       };
+      const studentBinding = () => studentClassBindings.find(binding => binding.bindingId === activeStudentBindingId)
+        || invitationStudentBinding();
+      const growthApiBase = () => String(window.MAGIC_HAQI_GROWTH_API_BASE || 'https://magic-haqi-growth-api.86903020.workers.dev').replace(/\/$/, '');
+      async function growthApiRequest(path, options = {}) {
+        const sdk = await getKeepworkSdk();
+        if (!sdk?.token) throw new Error('KeepWork 登录状态无效');
+        const response = await fetch(`${growthApiBase()}${path}`, {
+          ...options,
+          headers: { authorization: `Bearer ${sdk.token}`, 'content-type': 'application/json', ...(options.headers || {}) }
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error || `成长绑定服务请求失败（${response.status}）`);
+        return payload;
+      }
+      function normalizeStudentClassBinding(binding, username) {
+        const sitePath = String(binding?.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
+        const studentId = String(binding?.studentId || '').trim();
+        if (!binding?.bindingId || !validFamilySitePath(sitePath) || !studentId) return null;
+        return {
+          bindingId: String(binding.bindingId), sitePath, studentId,
+          username: normalizeKeepworkUsername(username),
+          teacherUsername: normalizeKeepworkUsername(binding.teacherUsername),
+          teacherName: String(binding.teacherName || binding.teacherUsername || '老师').trim(),
+          classId: String(binding.classId || '').trim(),
+          className: String(binding.className || '').trim()
+        };
+      }
+      async function loadStudentClassBindings(user) {
+        const username = normalizeKeepworkUsername(user?.username || user?.name);
+        const invitation = invitationStudentBinding();
+        try {
+          const payload = await growthApiRequest('/api/v1/students/me/class-bindings');
+          studentClassBindings = (Array.isArray(payload?.bindings) ? payload.bindings : [])
+            .map(binding => normalizeStudentClassBinding(binding, username)).filter(Boolean);
+          const invited = invitation && studentClassBindings.find(binding => binding.sitePath === invitation.sitePath && binding.studentId === invitation.studentId);
+          const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
+          activeStudentBindingId = invited?.bindingId
+            || studentClassBindings.find(binding => binding.bindingId === savedLogin?.bindingId)?.bindingId
+            || studentClassBindings[0]?.bindingId || '';
+          studentBindingSyncError = '';
+        } catch (error) {
+          studentClassBindings = [];
+          activeStudentBindingId = '';
+          studentBindingSyncError = error?.message || String(error);
+          if (!invitation) throw new Error(`无法读取老师绑定列表：${studentBindingSyncError}`);
+        }
+      }
+      async function registerStudentClassBinding(student) {
+        await growthApiRequest('/api/v1/teacher/class-bindings', {
+          method: 'POST',
+          body: JSON.stringify({
+            studentUsername: normalizeKeepworkUsername(student.keepworkUsername),
+            studentId: student.id,
+            sitePath: schoolSitePath(),
+            classId: classId(),
+            className: game_config.className,
+            teacherName: authenticatedUsername
+          })
+        });
+      }
+      async function switchStudentClassBinding(bindingId) {
+        const nextBinding = studentClassBindings.find(binding => binding.bindingId === bindingId);
+        if (!nextBinding || nextBinding.bindingId === activeStudentBindingId) return;
+        const previousBindingId = activeStudentBindingId;
+        try {
+          const sdk = await getKeepworkSdk();
+          const user = await getKeepworkUser(sdk);
+          if (!user) throw new Error('登录状态已失效');
+          const boundStudent = await loadBoundStudent(user, nextBinding);
+          activeStudentBindingId = nextBinding.bindingId;
+          state.students = [boundStudent];
+          state.selectedStudentId = boundStudent.id;
+          studentGrowthTasks = [];
+          studentGrowthTaskSyncError = '';
+          const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return {}; } })();
+          localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({
+            ...savedLogin,
+            bindingId: activeStudentBindingId,
+            studentSite: nextBinding.sitePath,
+            studentId: nextBinding.studentId,
+            studentAccount: nextBinding.username
+          }));
+          render();
+          await refreshStudentGrowthTasks();
+          showToast(`已切换到${nextBinding.teacherName}${nextBinding.className ? ` · ${nextBinding.className}` : ''}`);
+        } catch (error) {
+          activeStudentBindingId = previousBindingId;
+          render();
+          showToast(`切换失败：${error?.message || error}`);
+        }
+      }
       const studentLoginLink = student => {
         if (!validFamilySitePath(schoolSitePath()) || !student.id || !normalizeKeepworkUsername(student.keepworkUsername)) return '';
         const url = sharePageUrl('haqi_personal_pet_points_c.html');
@@ -787,8 +887,7 @@
           throw new Error('该学生课堂档案已属于其他教师、班级或不兼容协议，已停止覆盖');
         }
       }
-      async function loadBoundStudent(user) {
-        const binding = studentBinding();
+      async function loadBoundStudent(user, binding = studentBinding()) {
         if (!binding) throw new Error('请使用教师提供的学生登录链接');
         const username = normalizeKeepworkUsername(user?.username || user?.name);
         if (!username) throw new Error('无法识别当前 KeepWork 用户名');
@@ -926,6 +1025,7 @@
         if (missing.length) throw new Error(`请先补全${missing.join('、')}`);
         await verifyFamilySiteForPublishing(schoolSitePath());
         await Promise.all([publishFamilyPolicy(student), publishStudentProfile(student)]);
+        await registerStudentClassBinding(student);
         student.familyPublishedAt = Date.now();
         student.familyPublishFingerprint = familyPublishFingerprint(student);
         student.familyPublishError = '';
@@ -1277,7 +1377,11 @@
         const pet = petOf(student), prog = progression(student.points);
         const tasks = studentGrowthTasks.filter(item => item.action?.status !== 'submitted');
         const submitted = studentGrowthTasks.filter(item => item.action?.status === 'submitted');
-        return `<aside class="card h-fit"><div class="flex items-start justify-between gap-3"><div><p class="mb-1 text-xs font-black tracking-widest text-orange-500">我的成长任务</p><h2 class="m-0 text-xl font-black">${tasks.length ? '把课堂的进步带回家' : submitted.length ? '已提交，等待家长确认' : '今天的成长行动已完成'}</h2></div><button class="shrink-0 text-xs" data-action="refresh-growth-tasks">刷新任务</button></div><p class="mt-1 text-sm text-slate-500">课堂积分由老师记录；完成一个小行动后，请家长确认是否计入家庭成长。</p><div class="mt-4 rounded-2xl bg-orange-50 p-4"><span class="text-xs text-slate-500">${esc(student.name)} 的课堂伙伴</span><strong class="mt-1 block text-lg">${esc(pet.name)} · Lv.${prog.level}</strong><span class="mt-2 block text-sm text-orange-600">${student.points} 课堂积分</span></div><div class="mt-3 space-y-2">${tasks.length ? tasks.map(item => `<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3"><b class="block text-sm text-emerald-800">${esc(item.event.reason || '课堂成长记录')}</b><span class="mt-1 block text-xs leading-5 text-slate-600">今天试试：${esc(actionSuggestion(item.event.reason || ''))}</span><button class="primary mt-3 w-full" data-action="complete-growth-task" data-event-id="${esc(item.event.id)}">我完成了，告诉家长</button></div>`).join('') : '<p class="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">暂时没有新的课堂成长任务，和宠物一起保持好状态吧。</p>'}${submitted.length ? `<p class="rounded-xl bg-sky-50 p-3 text-xs font-bold text-sky-700">已提交 ${submitted.length} 个小行动，等待家长确认。</p>` : ''}</div></aside>`;
+        const activeBinding = studentBinding();
+        const bindingSwitcher = studentClassBindings.length > 1
+          ? `<div class="mb-4"><label class="block text-xs font-black text-slate-500" for="studentTeacherBinding">查看老师</label><select id="studentTeacherBinding" class="mt-1 w-full" data-student-binding-select>${studentClassBindings.map(binding => `<option value="${esc(binding.bindingId)}" ${binding.bindingId === activeStudentBindingId ? 'selected' : ''}>${esc(binding.teacherName)}${binding.className ? ` · ${esc(binding.className)}` : ''}</option>`).join('')}</select></div>`
+          : `<p class="mb-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">当前来源：${esc(activeBinding?.teacherName || activeBinding?.teacherUsername || activeBinding?.sitePath || '教师专属入口')}</p>`;
+        return `<aside class="card h-fit">${bindingSwitcher}${studentBindingSyncError ? `<p class="mb-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">老师列表暂不可用，当前仍可通过专属链接查看。</p>` : ''}<div class="flex items-start justify-between gap-3"><div><p class="mb-1 text-xs font-black tracking-widest text-orange-500">我的成长任务</p><h2 class="m-0 text-xl font-black">${tasks.length ? '把课堂的进步带回家' : submitted.length ? '已提交，等待家长确认' : '今天的成长行动已完成'}</h2></div><button class="shrink-0 text-xs" data-action="refresh-growth-tasks">刷新任务</button></div><p class="mt-1 text-sm text-slate-500">课堂积分由老师记录；完成一个小行动后，请家长确认是否计入家庭成长。</p><div class="mt-4 rounded-2xl bg-orange-50 p-4"><span class="text-xs text-slate-500">${esc(student.name)} 的课堂伙伴</span><strong class="mt-1 block text-lg">${esc(pet.name)} · Lv.${prog.level}</strong><span class="mt-2 block text-sm text-orange-600">${student.points} 课堂积分</span></div><div class="mt-3 space-y-2">${tasks.length ? tasks.map(item => `<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3"><b class="block text-sm text-emerald-800">${esc(item.event.reason || '课堂成长记录')}</b><span class="mt-1 block text-xs leading-5 text-slate-600">今天试试：${esc(actionSuggestion(item.event.reason || ''))}</span><button class="primary mt-3 w-full" data-action="complete-growth-task" data-event-id="${esc(item.event.id)}">我完成了，告诉家长</button></div>`).join('') : '<p class="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">暂时没有新的课堂成长任务，和宠物一起保持好状态吧。</p>'}${submitted.length ? `<p class="rounded-xl bg-sky-50 p-3 text-xs font-bold text-sky-700">已提交 ${submitted.length} 个小行动，等待家长确认。</p>` : ''}</div></aside>`;
       }
       function readonlyScreen() {
         const screen = document.getElementById('readonlyScreen');
@@ -1736,6 +1840,10 @@
         }
         if (action === 'reset' && state.role === 'teacher') { if (confirm('确定清空本地演示数据并恢复初始状态吗？')) { state = clone(defaultState); save(); render(); showToast('已恢复初始演示数据'); } }
       });
+      document.addEventListener('change', event => {
+        if (!event.target.matches('[data-student-binding-select]') || !window.studentLoginOnly) return;
+        switchStudentClassBinding(event.target.value);
+      });
       let searchRenderTimer = null;
       function refreshStudentSearch(input) {
         state.studentSearch = input.value;
@@ -1849,6 +1957,8 @@
       const loginGate = document.getElementById('loginGate');
       const loginGateHint = document.getElementById('loginGateHint');
       const keepworkLoginButton = document.getElementById('keepworkLoginButton');
+      const teacherPasswordLoginForm = document.getElementById('teacherPasswordLoginForm');
+      const teacherPasswordLoginButton = document.getElementById('teacherPasswordLoginButton');
       const studentPasswordLoginForm = document.getElementById('studentPasswordLoginForm');
       const studentPasswordLoginButton = document.getElementById('studentPasswordLoginButton');
       const pageContent = document.getElementById('pageContent');
@@ -1877,10 +1987,11 @@
           button.classList.toggle('text-slate-600', !selected);
         });
         const isStudentLogin = loginRole === 'student';
+        teacherPasswordLoginForm.classList.toggle('hidden', loginRole !== 'teacher');
         studentPasswordLoginForm.classList.toggle('hidden', !isStudentLogin);
-        keepworkLoginButton.classList.toggle('hidden', isStudentLogin);
+        keepworkLoginButton.classList.toggle('hidden', !loginRole || isStudentLogin);
         keepworkLoginButton.disabled = !loginRole;
-        keepworkLoginButton.textContent = loginRole ? '使用 KeepWork 登录 / 注册' : '请先选择登录身份';
+        keepworkLoginButton.textContent = loginRole === 'teacher' ? '使用微信、Google 登录 / 注册' : '请先选择登录身份';
         const binding = studentBinding();
         const sitePathInput = document.getElementById('studentLoginSitePath');
         const usernameInput = document.getElementById('studentLoginUsername');
@@ -2010,6 +2121,40 @@
         clearKeepworkAuthParams();
         return user;
       }
+      async function requestKeepworkPasswordToken(username, password) {
+        const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, platform: 'WEB' })
+        });
+        const payload = await response.json().catch(() => null);
+        const token = payload?.token || payload?.data?.token;
+        if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || payload?.error || '账号或密码错误');
+        return token;
+      }
+      async function loginTeacherWithPassword() {
+        const username = String(document.getElementById('teacherLoginUsername')?.value || '').trim();
+        const passwordInput = document.getElementById('teacherLoginPassword');
+        const password = String(passwordInput?.value || '');
+        if (!validKeepworkUsername(username) || !password) { loginGateHint.textContent = '请完整输入 KeepWork 账号和密码。'; return; }
+        teacherPasswordLoginButton.disabled = true;
+        loginGateHint.textContent = '正在安全验证教师 KeepWork 账号…';
+        try {
+          const token = await requestKeepworkPasswordToken(username, password);
+          const sdk = await getKeepworkSdk();
+          if (typeof sdk.setToken === 'function') sdk.setToken(token);
+          else sdk.token = token;
+          const user = await getKeepworkUser(sdk).catch(() => null);
+          if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          await enterAfterLogin(user, sdk);
+        } catch (error) {
+          loginGateHint.textContent = error?.message || '登录失败，请重试。';
+        } finally {
+          if (passwordInput) passwordInput.value = '';
+          teacherPasswordLoginButton.disabled = false;
+        }
+      }
       async function loginStudentWithPassword() {
         const sitePath = String(document.getElementById('studentLoginSitePath')?.value || '').trim().replace(/^\/+|\/+$/g, '');
         const username = String(document.getElementById('studentLoginUsername')?.value || '').trim();
@@ -2022,14 +2167,7 @@
         studentPasswordLoginButton.disabled = true;
         loginGateHint.textContent = '正在验证学生 KeepWork 账号…';
         try {
-          const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, platform: 'WEB' })
-          });
-          const payload = await response.json().catch(() => null);
-          const token = payload?.token || payload?.data?.token;
-          if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+          const token = await requestKeepworkPasswordToken(username, password);
           passwordInput.value = '';
           const sdk = await getKeepworkSdk();
           if (typeof sdk.setToken === 'function') sdk.setToken(token);
@@ -2137,7 +2275,9 @@
           active: true,
           role: loginRole,
           username: user?.username || user?.name || 'KeepWork 用户',
+          bindingId: window.studentLoginOnly ? activeStudentBindingId : '',
           studentSite: window.studentLoginOnly ? studentBinding()?.sitePath || '' : '',
+          studentId: window.studentLoginOnly ? studentBinding()?.studentId || '' : '',
           studentAccount: window.studentLoginOnly ? studentBinding()?.username || '' : ''
         }));
         loginGate.classList.add('hidden');
@@ -2174,6 +2314,7 @@
           let user = await ensureKeepworkLogin(sdk);
           if (loginRole === 'student') {
             loginGateHint.textContent = '正在校验学生绑定并读取个人档案…';
+            await loadStudentClassBindings(user);
             const boundStudent = await loadBoundStudent(user);
             window.studentSessionSnapshot ||= {
               students: state.students,
@@ -2208,6 +2349,7 @@
             if (savedToken && !sdk.token) sdk.token = savedToken;
             const user = await getKeepworkUser(sdk);
             if (!user) throw new Error('登录状态已失效');
+            await loadStudentClassBindings(user);
             const boundStudent = await loadBoundStudent(user);
             window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
             state.students = [boundStudent];
@@ -2252,6 +2394,7 @@
               if (studentBinding()) {
                 loginRole = 'student';
                 loginGateHint.textContent = '正在校验学生绑定并读取个人档案…';
+                await loadStudentClassBindings(user);
                 const boundStudent = await loadBoundStudent(user);
                 window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
                 state.students = [boundStudent];
@@ -2273,6 +2416,7 @@
         });
       });
       keepworkLoginButton.addEventListener('click', loginWithKeepwork);
+      teacherPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginTeacherWithPassword(); });
       studentPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginStudentWithPassword(); });
       if (new URL(location.href).searchParams.has('studentSite')) loginRole = 'student';
       updateLoginRoleButtons();

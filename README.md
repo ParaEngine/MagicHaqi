@@ -39,6 +39,41 @@ Do not use localhost, raw GitHub files, or CDN source-file URLs as public login
 pages. They are intended for local development or file distribution, not hosting
 an authenticated application.
 
+### Growth identity and class binding API
+
+Multi-teacher student discovery uses the Cloudflare Worker and D1 schema under
+`growth-api/`. The Worker resolves the caller from the KeepWork bearer token,
+verifies teacher and class authorization in D1, resolves a student's immutable
+KeepWork user ID from the supplied username, and returns only bindings belonging
+to the authenticated student.
+
+1. Create a D1 database and apply `growth-api/schema.sql`.
+2. Copy `growth-api/wrangler.toml.example` to `growth-api/wrangler.toml`, set the
+  D1 `database_id`, KeepWork API URLs, and the exact production Pages origin in
+  `ALLOWED_ORIGINS`.
+3. Seed `teacher_qualifications` and `class_memberships` from an administrator
+  process. Browser clients must never grant these records to themselves.
+4. Deploy the Worker and preferably route `/api/*` on the Pages production
+  domain to it. For a separate Worker domain, set this before the page script:
+
+```html
+<script>
+  window.MAGIC_HAQI_GROWTH_API_BASE = 'https://your-growth-api.example.workers.dev';
+</script>
+```
+
+The production rollout must verify that `KEEPWORK_PROFILE_URL` returns the
+authenticated account's immutable ID and username, and that one of the user
+directory routes under `KEEPWORK_API_BASE` resolves an exact username to the
+same immutable ID. Failed resolution blocks binding creation; it never falls
+back to a client-supplied user ID.
+
+Student links containing `studentSite`, `studentId`, and `studentAccount` remain
+a compatibility path while the API is unavailable. Once the API is reachable,
+the student page lists every active teacher/class binding and allows the student
+to switch sources; each selected shared site still passes the existing policy
+and account checks before its data is displayed.
+
 ## Build & Deploy
 
 The game ships as a single HTML entry served from keepwork.com, with all static

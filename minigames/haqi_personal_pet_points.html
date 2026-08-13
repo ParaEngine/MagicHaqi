@@ -157,6 +157,12 @@
         <button type="button" data-login-role="teacher" class="login-role border-orange-500 bg-orange-50 text-orange-700"><span class="block text-base font-black">教师登录</span><span class="mt-1 block text-xs font-medium">管理班级、学生与积分</span></button>
         <button type="button" data-login-role="student" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">学生登录</span><span class="mt-1 block text-xs font-medium">仅查看名单和个人宠物</span></button>
       </div>
+      <form id="teacherPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="teacherLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="teacherLoginPassword" name="password" type="password" class="mt-1 w-full" autocomplete="current-password" required></label>
+        <button id="teacherPasswordLoginButton" class="primary w-full" type="submit">登录教师账号</button>
+        <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅用于本次 KeepWork 官方登录验证，不会保存在本页面。</p>
+      </form>
       <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
         <label class="block text-sm font-bold text-slate-600">学校共享 KeepWork 站点路径<input id="studentLoginSitePath" name="sitePath" class="mt-1 w-full" maxlength="160" autocomplete="off" required placeholder="例如：teacher_zhang/class-growth"></label>
         <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required placeholder="点击教师链接后自动填入"></label>
@@ -1490,12 +1496,15 @@
       const loginGate = document.getElementById('loginGate');
       const loginGateHint = document.getElementById('loginGateHint');
       const keepworkLoginButton = document.getElementById('keepworkLoginButton');
+      const teacherPasswordLoginForm = document.getElementById('teacherPasswordLoginForm');
+      const teacherPasswordLoginButton = document.getElementById('teacherPasswordLoginButton');
       const studentPasswordLoginForm = document.getElementById('studentPasswordLoginForm');
       const studentPasswordLoginButton = document.getElementById('studentPasswordLoginButton');
       const pageContent = document.getElementById('pageContent');
       const LOGIN_STATE_KEY = 'MagicHaqi.personalPetPoints.loginState.v1';
       const AUTH_TOKEN_KEY = 'MagicHaqi.personalPetPoints.authToken.v1';
       const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
+      const KEEPWORK_API_BASE_URL = 'https://api.keepwork.com/core/v0';
       let keepworkSdk = null;
       let keepworkSdkLoadPromise = null;
       let loginRole = 'teacher';
@@ -1517,8 +1526,10 @@
           button.classList.toggle('text-slate-600', !selected);
         });
         const isStudentLogin = loginRole === 'student';
+        teacherPasswordLoginForm.classList.toggle('hidden', loginRole !== 'teacher');
         studentPasswordLoginForm.classList.toggle('hidden', !isStudentLogin);
         keepworkLoginButton.classList.toggle('hidden', isStudentLogin);
+        keepworkLoginButton.textContent = loginRole === 'teacher' ? '使用微信、Google 登录 / 注册' : '使用 KeepWork 登录 / 注册';
         const binding = studentBinding();
         const sitePathInput = document.getElementById('studentLoginSitePath');
         const usernameInput = document.getElementById('studentLoginUsername');
@@ -1574,9 +1585,14 @@
         } catch (_) {}
       }
       async function loadKeepworkSdk() {
-        if (window.keepwork || window.KeepworkSDK) return;
+        if (window.KeepworkSDK) window.KeepworkSDK._API_BASE_URL = KEEPWORK_API_BASE_URL;
+        if (window.keepwork) {
+          window.keepwork.baseURL = KEEPWORK_API_BASE_URL;
+          return;
+        }
         keepworkSdkLoadPromise ||= (async () => {
           window.KEEPWORK_DEFAULT_OPTIONS = {
+            baseURL: KEEPWORK_API_BASE_URL,
             timeout: 30000,
             autoReloadAfterRedirectLogin: false,
             wxAuth: { scope: 'snsapi_base' }
@@ -1586,6 +1602,8 @@
             try {
               if (/(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src)) await importRuntimeModule(src);
               else await loadKeepworkScript(src);
+              if (window.KeepworkSDK) window.KeepworkSDK._API_BASE_URL = KEEPWORK_API_BASE_URL;
+              if (window.keepwork) window.keepwork.baseURL = KEEPWORK_API_BASE_URL;
               if (window.keepwork || window.KeepworkSDK) return;
             } catch (error) {
               lastError = error;
@@ -1599,10 +1617,12 @@
         await loadKeepworkSdk();
         if (!window.KeepworkSDK && !window.keepwork) throw new Error('未找到 KeepWork 登录服务');
         keepworkSdk = window.keepwork || new window.KeepworkSDK({
+          baseURL: KEEPWORK_API_BASE_URL,
           timeout: 30000,
           autoReloadAfterRedirectLogin: false,
           wxAuth: { scope: 'snsapi_base' }
         });
+        keepworkSdk.baseURL = KEEPWORK_API_BASE_URL;
         if (keepworkSdk) keepworkSdk._autoReloadAfterRedirectLogin = false;
         keepworkSdk?.wxAuth?.setScope?.('snsapi_base');
         if (keepworkSdk?.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
@@ -1613,18 +1633,25 @@
       }
       async function getKeepworkUser(sdk) {
         if (!sdk?.token) return null;
-        if (typeof sdk.getUserProfile === 'function') {
-          const profile = await sdk.getUserProfile();
-          return profile?.user || profile;
-        }
-        if (typeof sdk.getCurrentUser === 'function') return sdk.getCurrentUser();
-        return sdk.user || null;
+        const response = await fetch(`${KEEPWORK_API_BASE_URL}/users/profile`, {
+          headers: { Authorization: `Bearer ${sdk.token}` }
+        });
+        if (!response.ok) throw new Error(`KeepWork 用户资料请求失败（${response.status}）`);
+        const profile = await response.json();
+        const user = profile?.user || profile;
+        sdk.setCachedUser?.(user);
+        if (!sdk.setCachedUser) sdk.user = user;
+        return user;
+      }
+      function setKeepworkToken(sdk, token) {
+        if (typeof sdk?.setToken === 'function') sdk.setToken(token || null);
+        else if (sdk) sdk.token = token || null;
       }
       async function ensureKeepworkLogin(sdk) {
         try {
           const urlToken = new URL(location.href).searchParams.get('token');
           const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
-          if (!sdk.token && (urlToken || savedToken)) sdk.token = urlToken || savedToken;
+          if (!sdk.token && (urlToken || savedToken)) setKeepworkToken(sdk, urlToken || savedToken);
           await sdk.whenRedirectLoginSettled?.();
         } catch (_) {}
         let user = await getKeepworkUser(sdk).catch(() => null);
@@ -1633,7 +1660,7 @@
           clearKeepworkAuthParams();
           return user;
         }
-        sdk.token = null;
+        setKeepworkToken(sdk, null);
         localStorage.removeItem(AUTH_TOKEN_KEY);
         loginGateHint.textContent = '请在 KeepWork 安全窗口中登录或注册。';
         if (typeof sdk.showLoginWindow === 'function') {
@@ -1650,6 +1677,39 @@
         clearKeepworkAuthParams();
         return user;
       }
+      async function requestKeepworkPasswordToken(username, password) {
+        const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, platform: 'WEB' })
+        });
+        const payload = await response.json().catch(() => null);
+        const token = payload?.token || payload?.data?.token;
+        if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+        return token;
+      }
+      async function loginTeacherWithPassword() {
+        const username = String(document.getElementById('teacherLoginUsername')?.value || '').trim();
+        const passwordInput = document.getElementById('teacherLoginPassword');
+        const password = String(passwordInput?.value || '');
+        if (!/^[a-zA-Z0-9_-]{3,80}$/.test(username) || !password) { loginGateHint.textContent = '请完整输入 KeepWork 账号和密码。'; return; }
+        teacherPasswordLoginButton.disabled = true;
+        loginGateHint.textContent = '正在验证教师 KeepWork 账号…';
+        try {
+          const token = await requestKeepworkPasswordToken(username, password);
+          const sdk = await getKeepworkSdk();
+          setKeepworkToken(sdk, token);
+          const user = await getKeepworkUser(sdk).catch(() => null);
+          if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          enterAfterLogin(user, sdk);
+        } catch (error) {
+          loginGateHint.textContent = error?.message || '登录失败，请重试。';
+        } finally {
+          if (passwordInput) passwordInput.value = '';
+          teacherPasswordLoginButton.disabled = false;
+        }
+      }
       async function loginStudentWithPassword() {
         const sitePath = String(document.getElementById('studentLoginSitePath')?.value || '').trim().replace(/^\/+|\/+$/g, '');
         const username = String(document.getElementById('studentLoginUsername')?.value || '').trim();
@@ -1659,17 +1719,10 @@
         studentPasswordLoginButton.disabled = true;
         loginGateHint.textContent = '正在验证学生 KeepWork 账号…';
         try {
-          const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, platform: 'WEB' })
-          });
-          const payload = await response.json().catch(() => null);
-          const token = payload?.token || payload?.data?.token;
-          if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+          const token = await requestKeepworkPasswordToken(username, password);
           passwordInput.value = '';
           const sdk = await getKeepworkSdk();
-          sdk.token = token;
+          setKeepworkToken(sdk, token);
           const user = await getKeepworkUser(sdk).catch(() => null);
           if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
           const url = new URL(location.href);
@@ -1855,6 +1908,7 @@
         });
       });
       keepworkLoginButton.addEventListener('click', loginWithKeepwork);
+      teacherPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginTeacherWithPassword(); });
       studentPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginStudentWithPassword(); });
       if (new URL(location.href).searchParams.has('studentSite')) loginRole = 'student';
       updateLoginRoleButtons();
