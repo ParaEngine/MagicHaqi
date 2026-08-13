@@ -1,5 +1,10 @@
 const app = getApp()
 const WORKBUDDY_APP_ID = 'wx907c65e5e107ddcf'
+const GROWTH_BASE_URL = 'https://magic-haqi-growth.pages.dev'
+const GROWTH_PARAMS = {
+  student: ['studentSite', 'studentId', 'studentAccount'],
+  guardian: ['guardianSite', 'guardianClass', 'guardianStudent', 'guardianName', 'guardianTeacher']
+}
 
 function getReferrerExtraData() {
   try {
@@ -22,6 +27,20 @@ function getImportGameDraft(options = {}) {
     || extra.wbDraft
     || extra.draftId
     || ''
+}
+
+function getGrowthLaunch(options = {}) {
+  const extra = getReferrerExtraData()
+  const source = { ...extra, ...options }
+  const inferredRole = source.guardianSite ? 'guardian' : source.studentSite ? 'student' : ''
+  const role = String(source.growthRole || inferredRole).toLowerCase()
+  if (!['teacher', 'student', 'guardian'].includes(role)) return null
+  const page = role === 'guardian' ? 'haqi_growth_guardian_c.html' : 'haqi_personal_pet_points_c.html'
+  const params = [`growthRole=${encodeURIComponent(role)}`]
+  for (const key of GROWTH_PARAMS[role] || []) {
+    if (source[key]) params.push(`${key}=${encodeURIComponent(String(source[key]))}`)
+  }
+  return `${GROWTH_BASE_URL}/${page}?${params.join('&')}`
 }
 
 function openWorkBuddy(promptText) {
@@ -57,6 +76,12 @@ Page({
   _lastImportGameDraft: '',
 
   onLoad(options) {
+    const growthUrl = getGrowthLaunch(options || {})
+    if (growthUrl) {
+      this._growthUrl = growthUrl
+      this.setData({ url: growthUrl })
+      return
+    }
     const importGameDraft = getImportGameDraft(options || {})
     if (importGameDraft) this._lastImportGameDraft = importGameDraft
     const suffix = importGameDraft ? '?importGameDraft=' + encodeURIComponent(importGameDraft) : ''
@@ -66,6 +91,7 @@ Page({
   },
 
   onShow() {
+    if (this._growthUrl) return
     const importGameDraft = getImportGameDraft()
     if (!importGameDraft) return
     if (this._lastImportGameDraft === importGameDraft) return
