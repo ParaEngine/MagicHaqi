@@ -1223,27 +1223,8 @@ art_assets = [];
     setTimeout(() => element.remove(), 2800);
   }
 
-  const mobileHostParams = new URLSearchParams(location.search);
-  const isWechatMiniProgramHost = mobileHostParams.get('host') === 'wechat-miniprogram';
-  const mobileProtocolChannel = mobileHostParams.get('channel') === 'haqi.growth.mobile.v1' ? 'haqi.growth.mobile.v1' : '';
-  let wechatBridgePromise = null;
-  function loadWechatBridge() {
-    if (!isWechatMiniProgramHost || !mobileProtocolChannel) return Promise.resolve(null);
-    if (window.wx?.miniProgram?.postMessage) return Promise.resolve(window.wx.miniProgram);
-    if (wechatBridgePromise) return wechatBridgePromise;
-    wechatBridgePromise = new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
-      script.onload = () => resolve(window.wx?.miniProgram || null);
-      script.onerror = () => resolve(null);
-      document.head.appendChild(script);
-    });
-    return wechatBridgePromise;
-  }
-
   function post(type, data = {}) {
     try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
-    loadWechatBridge().then(bridge => bridge?.postMessage({ data: { channel: mobileProtocolChannel, type, data } }));
   }
 
   function render() {
@@ -1514,6 +1495,33 @@ art_assets = [];
     return safeCloudPart(guardianUser?.username || guardianUser?.name || '');
   }
 
+  const growthApiBase = () => String(window.MAGIC_HAQI_GROWTH_API_BASE || 'https://magic-haqi-growth-api.86903020.workers.dev').replace(/\/$/, '');
+
+  async function growthApiRequest(path) {
+    if (!guardianSdk?.token) throw new Error('KeepWork 登录状态无效');
+    const response = await fetch(`${growthApiBase()}${path}`, {
+      headers: { authorization: `Bearer ${guardianSdk.token}`, accept: 'application/json' }
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error || `成长授权服务请求失败（${response.status}）`);
+    return payload;
+  }
+
+  async function authorizeGuardianSchoolLink(link) {
+    if (!link?.sitePath || !link?.classId || !link?.studentId) return null;
+    const payload = await growthApiRequest('/api/v1/guardians/me/student-bindings');
+    const binding = (Array.isArray(payload?.bindings) ? payload.bindings : []).find(item =>
+      item?.sitePath === link.sitePath && item?.classId === link.classId && item?.studentId === link.studentId
+    );
+    if (!binding) throw new Error('当前家长账号未绑定该学生，分享链接不能代替家长授权');
+    return {
+      ...link,
+      teacherUsername: safeCloudPart(binding.teacherUsername),
+      teacherName: String(binding.teacherName || binding.teacherUsername || ''),
+      className: String(binding.className || '')
+    };
+  }
+
   function validateSchoolAccessPolicy(policy, link) {
     const account = guardianUsername();
     if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
@@ -1532,6 +1540,8 @@ art_assets = [];
   }
 
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
+    const authorizedLink = await authorizeGuardianSchoolLink(state.schoolLink);
+    Object.assign(state.schoolLink, authorizedLink);
     const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
     const receiptPath = personalGrowthPath(state.schoolLink.teacherUsername, state.schoolLink.studentId, 'receipts', event.id);
     await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
@@ -1571,6 +1581,8 @@ art_assets = [];
     schoolInboxLoadError = '';
     schoolStudentProfile = null;
     try {
+      const authorizedLink = await authorizeGuardianSchoolLink(link);
+      Object.assign(link, authorizedLink);
       const policyText = await readSchoolSharedPage(link, schoolPolicyPath(link));
       let policy = null;
       try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
@@ -1871,8 +1883,12 @@ art_assets = [];
     clearGuardianAuthParams();
     await Promise.all([loadCloudData(sdk), loadFamousPets()]);
     const incomingSchoolLink = schoolLinkFromUrl();
-    if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
-      Object.assign(state.schoolLink, incomingSchoolLink);
+    const requestedSchoolLink = incomingSchoolLink || (state.schoolLink?.sitePath ? state.schoolLink : null);
+    const authorizedSchoolLink = role === 'parent' && requestedSchoolLink
+      ? await authorizeGuardianSchoolLink(requestedSchoolLink)
+      : null;
+    if (authorizedSchoolLink && (state.schoolLink.sitePath !== authorizedSchoolLink.sitePath || state.schoolLink.studentId !== authorizedSchoolLink.studentId || state.schoolLink.classId !== authorizedSchoolLink.classId)) {
+      Object.assign(state.schoolLink, authorizedSchoolLink);
       if (role === 'parent') parentTab = 'school';
       saveState();
     }
@@ -2292,7 +2308,7 @@ art_assets = [];
     return record;
   }
 
-  function saveSchoolLink(event) {
+  async function saveSchoolLink(event) {
     event.preventDefault();
     const teacherUsername = safeCloudPart(document.getElementById('schoolTeacherUsername').value);
     const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
@@ -2300,13 +2316,16 @@ art_assets = [];
     const studentId = document.getElementById('schoolStudentId').value.trim();
     if (!validSchoolSitePath(sitePath) || !teacherUsername || !classId || !studentId) return toast('请填写有效的共享站点路径、教师账号、班级编号和学生编号');
     if (safeCloudPart(sitePath.split('/')[0]) !== teacherUsername) return toast('教师账号必须与共享站点所有者一致');
+    let authorizedLink;
+    try {
+      authorizedLink = await authorizeGuardianSchoolLink({ sitePath, classId, studentId, teacherUsername });
+    } catch (error) {
+      return toast(error?.message || '当前家长账号没有该学生的访问权限');
+    }
     const targetChanged = state.schoolLink.sitePath !== sitePath
       || state.schoolLink.classId !== classId
       || state.schoolLink.studentId !== studentId;
-    state.schoolLink.teacherUsername = teacherUsername;
-    state.schoolLink.sitePath = sitePath;
-    state.schoolLink.classId = classId;
-    state.schoolLink.studentId = studentId;
+    Object.assign(state.schoolLink, authorizedLink);
     state.schoolLink.studentName = document.getElementById('schoolStudentName').value.trim();
     if (targetChanged) {
       state.schoolLink.appliedEventIds = [];
