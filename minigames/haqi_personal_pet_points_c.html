@@ -160,16 +160,16 @@
         <button type="button" data-login-role="teacher" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">教师登录</span><span class="mt-1 block text-xs font-medium">管理班级、学生与积分</span></button>
         <button type="button" data-login-role="student" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">学生登录</span><span class="mt-1 block text-xs font-medium">仅查看名单和个人宠物</span></button>
       </div>
-      <form id="teacherPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
-        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="teacherLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required></label>
-        <label class="block text-sm font-bold text-slate-600">密码<input id="teacherLoginPassword" name="password" type="password" class="mt-1 w-full" autocomplete="current-password" required></label>
+      <form id="teacherPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="off">
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="teacherLoginUsername" name="keepwork-account" class="mt-1 w-full" maxlength="80" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="teacherLoginPassword" name="keepwork-secret" type="password" class="mt-1 w-full" autocomplete="new-password" required></label>
         <button id="teacherPasswordLoginButton" class="primary w-full" type="submit">登录教师账号</button>
         <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅转发给 KeepWork 官方登录接口，不会保存到本页面或成长平台数据库。</p>
       </form>
-      <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
+      <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="off">
         <label class="hidden text-sm font-bold text-slate-600">学校共享 KeepWork 站点路径<input id="studentLoginSitePath" name="sitePath" class="mt-1 w-full" maxlength="160" autocomplete="off"></label>
-        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required placeholder="点击教师链接后自动填入"></label>
-        <label class="block text-sm font-bold text-slate-600">密码<input id="studentLoginPassword" name="password" type="password" class="mt-1 w-full" autocomplete="current-password" required placeholder="输入密码"></label>
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="keepwork-account" class="mt-1 w-full" maxlength="80" autocomplete="off" autocapitalize="none" spellcheck="false" required placeholder="点击教师链接后自动填入"></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="studentLoginPassword" name="keepwork-secret" type="password" class="mt-1 w-full" autocomplete="new-password" required placeholder="输入密码"></label>
         <button id="studentPasswordLoginButton" class="primary w-full" type="submit">登录学生账号</button>
         <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅用于本次 KeepWork 官方登录验证，不会保存在本页面。</p>
       </form>
@@ -2121,9 +2121,9 @@
         const isStudentLogin = loginRole === 'student';
         teacherPasswordLoginForm.classList.toggle('hidden', loginRole !== 'teacher');
         studentPasswordLoginForm.classList.toggle('hidden', !isStudentLogin);
-        keepworkLoginButton.classList.toggle('hidden', !loginRole || isStudentLogin);
+        keepworkLoginButton.classList.toggle('hidden', !loginRole);
         keepworkLoginButton.disabled = !loginRole;
-        keepworkLoginButton.textContent = loginRole === 'teacher' ? '使用微信、Google 登录 / 注册' : '请先选择登录身份';
+        keepworkLoginButton.textContent = loginRole ? '使用微信、Google 登录 / 注册' : '请先选择登录身份';
         const binding = studentBinding();
         const sitePathInput = document.getElementById('studentLoginSitePath');
         const usernameInput = document.getElementById('studentLoginUsername');
@@ -2135,7 +2135,7 @@
         if (sitePathInput) sitePathInput.readOnly = lockedInvitation;
         if (usernameInput) usernameInput.readOnly = lockedInvitation;
         loginGateHint.textContent = isStudentLogin
-          ? binding?.username ? `欢迎 ${binding.username}，请输入密码即可进入自己的宠物。` : '请打开教师发送的学生入口；首次只需输入账号和密码。'
+          ? binding?.username ? `欢迎 ${binding.username}，可输入密码或使用安全窗口登录。` : '已有账号可直接登录；首次使用请注册 KeepWork 账号，再接受邀请或输入班级邀请码。'
           : loginRole === 'teacher' ? '将以教师身份进入班级管理，请使用教师 KeepWork 账号。' : '请选择登录身份，再使用 KeepWork 账号登录。';
       }
 
