@@ -2013,7 +2013,19 @@ art_assets = [];
         const payload = await response.json().catch(() => null);
         return { response, payload };
       };
-      let { response, payload } = await requestLogin(true);
+      let response;
+      let payload;
+      try {
+        ({ response, payload } = await requestLogin(true));
+      } catch (_) {
+        try {
+          ({ response, payload } = await requestLogin(false));
+        } catch (_) {
+          const error = new Error('暂时无法连接 KeepWork 登录服务，请检查网络后重试。');
+          error.isNetworkFailure = true;
+          throw error;
+        }
+      }
       if (response.status >= 500) ({ response, payload } = await requestLogin(false));
       const token = payload?.token || payload?.data?.token;
       if (!response.ok || !token) {
@@ -2037,6 +2049,17 @@ art_assets = [];
         officialButton.classList.add('btn-primary');
         officialButton.disabled = false;
         officialButton.focus();
+        status.textContent = '账号密码服务暂时异常，正在打开 KeepWork 安全登录…';
+        button.disabled = false;
+        passwordInput.value = '';
+        await loginGuardianWithOfficialWindow();
+        return;
+      }
+      if (error?.isNetworkFailure) {
+        officialButton.textContent = '尝试 KeepWork 安全登录 / 注册';
+        officialButton.classList.remove('btn-soft');
+        officialButton.classList.add('btn-primary');
+        officialButton.disabled = false;
       }
       button.disabled = false;
     } finally {
