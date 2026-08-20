@@ -55,6 +55,8 @@
     .btn-soft { color: var(--ink); background: #edf5f7; border: 1px solid var(--line); }
     .btn-danger { color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; }
     .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+    .notification-btn { position: relative; }
+    .notification-btn sup { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; display: grid; place-items: center; border: 2px solid white; border-radius: 9px; background: #dc2626; color: white; font-size: 10px; line-height: 1; }
     .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
     .login-panel { width: min(460px, 100%); padding: 28px; }
     .login-heading { margin: 8px 0 0; font-size: 26px; font-weight: 900; text-align: center; }
@@ -81,7 +83,7 @@
     .pet-name { margin-top: 2px; font-size: 27px; font-weight: 900; }
     .stage-actions { display: grid; justify-items: end; gap: 7px; }
     .stage-badge { padding: 7px 10px; border-radius: 999px; color: #65410a; background: rgba(255,244,194,.9); border: 1px solid #ebc454; box-shadow: 0 5px 12px rgba(138,91,13,.11); font-weight: 900; font-size: 12px; backdrop-filter: blur(8px); }
-    .today-change-badge { display: none; min-height: 30px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid rgba(8,118,108,.22); border-radius: 7px; color: var(--aqua-deep); background: rgba(255,255,255,.88); font-size: 10px; font-weight: 800; box-shadow: 0 5px 12px rgba(26,73,70,.1); }
+    .today-change-badge { display: flex; min-height: 30px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid rgba(8,118,108,.22); border-radius: 7px; color: var(--aqua-deep); background: rgba(255,255,255,.88); font-size: 10px; font-weight: 800; box-shadow: 0 5px 12px rgba(26,73,70,.1); }
     .today-change-badge strong { font-size: 13px; }
     .today-change-badge.positive strong { color: #087a52; }
     .today-change-badge.negative strong { color: #be3348; }
@@ -329,6 +331,11 @@
     .pet-stage.pet_sunset { background: linear-gradient(180deg, #ffb37d 0%, #ffe1b4 49%, #f7df8d 49.2%, #d4b46d 100%); }
     .pet-stage.pet_space { color: #eefbff; border-color: #506d92; background: radial-gradient(circle at 18% 20%, rgba(255,255,255,.9) 0 1px, transparent 2px), radial-gradient(circle at 82% 32%, rgba(253,230,138,.9) 0 1.5px, transparent 2.5px), linear-gradient(155deg, #111a36, #24435f 54%, #365e67); background-size: 150px 150px, 210px 210px, 100% 100%; }
     .pet-stage.pet_space .eyebrow, .pet-stage.pet_space .next-copy { color: #c4e5e1; }
+    .environment-cue { position: absolute; z-index: 1; inset: auto 18px 108px; display: flex; justify-content: space-between; align-items: end; color: rgba(35,105,77,.72); font-size: 25px; letter-spacing: 0; pointer-events: none; }
+    .environment-cue span:last-child { font-size: 12px; font-weight: 900; }
+    .pet-stage.environment-growing .environment-cue { color: #087a52; animation: twinkle 2.4s ease-in-out infinite; }
+    .pet-stage.environment-bloom .environment-cue { color: #be185d; font-size: 30px; animation: twinkle 1.8s ease-in-out infinite; }
+    .pet-stage.environment-recovering .environment-cue { color: #286c78; }
     .frame_stars { border: 7px solid #f6c94c !important; border-radius: 50% !important; box-shadow: 0 0 0 4px rgba(255,255,255,.76), 0 0 28px rgba(246,201,76,.55); }
     .frame_mint { border: 8px double #19bba2 !important; border-radius: 50% !important; box-shadow: 0 0 0 4px rgba(255,255,255,.7), 0 12px 30px rgba(8,118,108,.25); }
     .focus-content { width: min(720px, 100%); text-align: center; }
@@ -538,12 +545,20 @@ art_assets = [];
   const LEGACY_OWNER_KEY = 'haqiGrowthGuardianLegacyOwnerV1';
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
   const LOGIN_STATE_KEY = 'haqiGrowthGuardianLoginStateV1';
+  const OFFLINE_QUEUE_KEY = 'haqiGrowthGuardianOfflineQueueV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
   const CLOUD_HANDOFF_PATH = 'minigames/haqi-growth-guardian/handoff.json';
   const DEVICE_ID_KEY = 'haqiGrowthGuardianDeviceIdV1';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
+  const PET_ABILITIES = [
+    { name: '安静陪伴', description: '专注时陪你完成眼前这一件事' },
+    { name: '元气回应', description: '互动时会说出更多成长鼓励' },
+    { name: '中途加油', description: '专注过半时会提醒你已经走了很远' },
+    { name: '星辉冲刺', description: '专注最后四分之一进入冲刺陪伴' },
+    { name: '传奇肯定', description: '完成专注后送上专属肯定' }
+  ];
   const DEFAULT_METRICS = [
     { id: 'p_homework', name: '主动完成作业', category: '学习', delta: 3, active: true },
     { id: 'p_answer', name: '课堂或家庭学习主动回答', category: '学习', delta: 2, active: true },
@@ -730,9 +745,11 @@ art_assets = [];
       focusSessions: [],
       calendarItems: [],
       calendarCompletions: [],
+      weeklyNotes: {},
+      notificationsSeenAt: { child: 0, parent: 0 },
       rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
       redemptions: [],
-      schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
+      schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', dataConsent: { growthPoints: false, focusMinutes: false, taskCompletion: true }, appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
       generatedPets: [],
       cosmeticPurchases: [],
       equippedCosmetics: { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' }
@@ -752,12 +769,21 @@ art_assets = [];
     });
     if (!Array.isArray(parsed.calendarItems)) parsed.calendarItems = [];
     if (!Array.isArray(parsed.calendarCompletions)) parsed.calendarCompletions = [];
+    if (!parsed.weeklyNotes || typeof parsed.weeklyNotes !== 'object') parsed.weeklyNotes = {};
+    const legacyNotificationsSeenAt = Math.max(0, Number(parsed.notificationsSeenAt) || 0);
+    parsed.notificationsSeenAt = parsed.notificationsSeenAt && typeof parsed.notificationsSeenAt === 'object'
+      ? { child: Math.max(0, Number(parsed.notificationsSeenAt.child) || 0), parent: Math.max(0, Number(parsed.notificationsSeenAt.parent) || 0) }
+      : { child: legacyNotificationsSeenAt, parent: legacyNotificationsSeenAt };
     if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
     parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
     parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
     parsed.schoolLink.classId = String(parsed.schoolLink.classId || '');
     parsed.schoolLink.studentId = String(parsed.schoolLink.studentId || '');
     parsed.schoolLink.studentName = String(parsed.schoolLink.studentName || '');
+    if (!parsed.schoolLink.dataConsent || typeof parsed.schoolLink.dataConsent !== 'object') parsed.schoolLink.dataConsent = {};
+    parsed.schoolLink.dataConsent.growthPoints = parsed.schoolLink.dataConsent.growthPoints === true;
+    parsed.schoolLink.dataConsent.focusMinutes = parsed.schoolLink.dataConsent.focusMinutes === true;
+    parsed.schoolLink.dataConsent.taskCompletion = parsed.schoolLink.dataConsent.taskCompletion !== false;
     if (!Array.isArray(parsed.schoolLink.appliedEventIds)) parsed.schoolLink.appliedEventIds = [];
     if (!Array.isArray(parsed.schoolLink.ignoredEventIds)) parsed.schoolLink.ignoredEventIds = [];
     if (!Array.isArray(parsed.schoolLink.pendingReceipts)) parsed.schoolLink.pendingReceipts = [];
@@ -813,6 +839,22 @@ art_assets = [];
     return queueStateWrite();
   }
 
+  function offlineQueueKey() {
+    return `${OFFLINE_QUEUE_KEY}:${String(guardianUser?.username || guardianUser?.name || 'unknown').toLowerCase()}`;
+  }
+
+  function pendingStateWrite() {
+    try { return JSON.parse(localStorage.getItem(offlineQueueKey()) || 'null'); } catch (_) { return null; }
+  }
+
+  function rememberStateWrite(write) {
+    localStorage.setItem(offlineQueueKey(), JSON.stringify(write));
+  }
+
+  function clearStateWrite(writeId) {
+    if (pendingStateWrite()?.id === writeId) localStorage.removeItem(offlineQueueKey());
+  }
+
   function queueStateWrite() {
     if (stateWriteConflict) {
       const conflictError = new Error('本设备存在未解决的数据冲突，请刷新页面后重试');
@@ -821,29 +863,39 @@ art_assets = [];
       rejectedWrite.catch(() => undefined);
       return rejectedWrite;
     }
-    const baseRevision = Math.max(0, Number(state.syncRevision) || 0);
+    const existingWrite = pendingStateWrite();
+    const baseRevision = existingWrite ? Math.max(0, Number(existingWrite.baseRevision) || 0) : Math.max(0, Number(state.syncRevision) || 0);
     state.syncBaseRevision = baseRevision;
     state.syncRevision = baseRevision + 1;
     state.syncWriterDeviceId = deviceId;
     const snapshot = JSON.stringify(state);
+    const pendingWrite = { id: `write_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, baseRevision, targetRevision: baseRevision + 1, snapshot, queuedAt: Date.now() };
+    rememberStateWrite(pendingWrite);
     saveQueue = saveQueue
       .catch(() => undefined)
       .then(async () => {
-        const remoteText = await readCloudFile(CLOUD_STATE_PATH);
+        if (!navigator.onLine) throw new Error('当前离线，修改已排队并将在联网后同步');
+        const remoteText = await readCloudFileStrict(CLOUD_STATE_PATH);
         let remoteRevision = 0;
-        try { remoteRevision = Math.max(0, Number(JSON.parse(remoteText || 'null')?.syncRevision) || 0); } catch (_) {}
-        if (remoteRevision > baseRevision) {
+        let remoteWriter = '';
+        try {
+          const remote = JSON.parse(remoteText || 'null');
+          remoteRevision = Math.max(0, Number(remote?.syncRevision) || 0);
+          remoteWriter = String(remote?.syncWriterDeviceId || '');
+        } catch (_) {}
+        if (remoteRevision > baseRevision && !(remoteRevision === baseRevision + 1 && remoteWriter === deviceId)) {
           stateWriteConflict = true;
           throw new Error('检测到另一设备已更新成长数据，请刷新页面后重试本次操作');
         }
         await guardianStore.createFile(CLOUD_STATE_PATH, snapshot);
-        const verifiedText = await readCloudFile(CLOUD_STATE_PATH);
+        const verifiedText = await readCloudFileStrict(CLOUD_STATE_PATH);
         let verified = null;
         try { verified = JSON.parse(verifiedText || 'null'); } catch (_) {}
         if (Number(verified?.syncRevision) !== baseRevision + 1 || verified?.syncWriterDeviceId !== deviceId) {
           stateWriteConflict = true;
           throw new Error('成长数据发生并发写入，当前操作未安全保存，请刷新页面确认');
         }
+        clearStateWrite(pendingWrite.id);
       });
     saveQueue.catch(error => toast(`Keepwork 保存失败：${error?.message || error}`));
     return saveQueue;
@@ -865,8 +917,29 @@ art_assets = [];
     }
   }
 
+  async function readCloudFileStrict(path) {
+    try {
+      return (await guardianStore.readFile(path, 1, 99999)) || '';
+    } catch (firstError) {
+      try { return (await guardianStore.readFile(path)) || ''; } catch (_) { throw firstError; }
+    }
+  }
+
+  function retryPendingStateWrite() {
+    const pending = pendingStateWrite();
+    if (!pending || stateWriteConflict || !guardianStore || !navigator.onLine) return Promise.resolve();
+    try {
+      const queuedState = normalizeState(JSON.parse(pending.snapshot));
+      if (queuedState && Number(queuedState.syncRevision) >= Number(state.syncRevision)) state = queuedState;
+    } catch (_) {
+      localStorage.removeItem(offlineQueueKey());
+      return Promise.resolve();
+    }
+    return queueStateWrite();
+  }
+
   async function refreshGuardianCloudState() {
-    if (!guardianStore || document.hidden || saveTimer) return;
+    if (!guardianStore || document.hidden || saveTimer || pendingStateWrite()) return;
     try {
       const cloudStateText = await readCloudFile(CLOUD_STATE_PATH);
       if (!cloudStateText) return;
@@ -958,6 +1031,15 @@ art_assets = [];
     try { cloudState = normalizeState(JSON.parse(cloudStateText || 'null')); } catch (_) {}
     const legacyState = cloudState ? null : loadLegacyState();
     state = cloudState || legacyState || freshState();
+    const pendingWrite = pendingStateWrite();
+    if (pendingWrite) {
+      try {
+        const queuedState = normalizeState(JSON.parse(pendingWrite.snapshot));
+        const cloudRevision = Math.max(0, Number(cloudState?.syncRevision) || 0);
+        if (queuedState && cloudRevision <= Number(pendingWrite.targetRevision || 0)) state = queuedState;
+        else if (cloudRevision > Number(pendingWrite.targetRevision || 0)) stateWriteConflict = true;
+      } catch (_) { localStorage.removeItem(offlineQueueKey()); }
+    }
     parentPinHash = cloudPin.trim() || localStorage.getItem(PIN_KEY) || '';
     if (legacyState || (!cloudPin.trim() && parentPinHash)) {
       await Promise.all([
@@ -1234,6 +1316,15 @@ art_assets = [];
     return dailyEnergyStats().change;
   }
 
+  function dailyEnvironment(child = activeChild()) {
+    const entries = todayEntries(child.id);
+    const positive = entries.filter(item => item.delta > 0).length;
+    if (entries.some(item => item.delta < 0)) return { className: 'environment-recovering', icon: '☂ · 🌱', label: '雨后修整，随时可以重新出发' };
+    if (positive >= 3) return { className: 'environment-bloom', icon: '✿ · ✾ · ✿', label: '今天的努力让花园盛开了' };
+    if (positive > 0) return { className: 'environment-growing', icon: '🌱 · ✦', label: '新的成长正在发芽' };
+    return { className: 'environment-calm', icon: '☀ · ♧', label: '清晨草地，等待今天的故事' };
+  }
+
   function autoPointsToday() {
     return todayEntries().filter(item => item.source === 'focus_session').reduce((sum, item) => sum + Math.max(0, item.delta), 0);
   }
@@ -1283,10 +1374,20 @@ art_assets = [];
   function post(type, data = {}) {
     try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
   }
+  function trackOperation(event, properties = {}) {
+    try {
+      guardianSdk?.remoteLog?.track?.(`haqi_growth_guardian_${event}`, {
+        mode,
+        viewport: matchMedia('(max-width: 720px)').matches ? 'mobile' : 'desktop',
+        ...properties
+      });
+    } catch (_) {}
+  }
 
   function render() {
     const topbarCoins = coinStats(activeChild().id).balance;
     const roleLabel = mode === 'parent' ? '家长端' : '孩子端';
+    const unreadNotifications = appNotifications().filter(item => item.createdAt > state.notificationsSeenAt[mode]).length;
     document.getElementById('app').innerHTML = `
       <div class="app-shell">
         <header class="topbar">
@@ -1298,6 +1399,7 @@ art_assets = [];
             <div class="currency-display" aria-label="金币余额 ${topbarCoins}"><span class="currency-icon">🪙</span><strong class="currency-value">${topbarCoins}</strong></div>
             <div class="account-chip" title="当前 KeepWork 登录身份">${mode === 'parent' ? '🔐' : '🐾'} ${escapeHtml(roleLabel)} · ${escapeHtml(guardianLoginName() || 'KeepWork 用户')}</div>
             <button class="btn btn-soft" id="modeSwitchBtn" type="button">${mode === 'parent' ? '返回孩子端' : '进入家长端'}</button>
+            <button class="icon-btn notification-btn" id="notificationsBtn" title="通知" aria-label="通知${unreadNotifications ? `，${unreadNotifications} 条未读` : ''}">🔔${unreadNotifications ? `<sup>${unreadNotifications}</sup>` : ''}</button>
             <button class="icon-btn" id="handoffBtn" title="在手机或电脑继续" aria-label="跨端接力">⇄</button>
             <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
             <button class="icon-btn" id="topbarLogoutBtn" title="退出登录" aria-label="退出登录">↪</button>
@@ -1324,9 +1426,10 @@ art_assets = [];
     const todayTasks = calendarItemsForDate();
     const submittedCount = todayTasks.filter(item => calendarCompletion(item.id, localDateKey())).length;
     const companionGoal = dailyCompanionGoal(todayTasks, submittedCount);
+    const environment = dailyEnvironment(child);
     return `
       <div class="child-layout">
-        <section class="panel pet-stage ${equippedCosmetic('petBackground')}">
+        <section class="panel pet-stage ${equippedCosmetic('petBackground')} ${environment.className}">
           <div class="pet-head">
             <div><div class="eyebrow">${escapeHtml(child.name)}的成长伙伴</div><div class="pet-name">${escapeHtml(child.petName)}</div></div>
             <div class="stage-actions"><div class="stage-badge">${level.name}</div><div class="today-change-badge ${dailyEnergy.change > 0 ? 'positive' : dailyEnergy.change < 0 ? 'negative' : ''}" aria-label="今日变化 ${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}"><span>今日变化</span><strong>${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}</strong></div></div>
@@ -1335,6 +1438,7 @@ art_assets = [];
             <div class="stage-spark">✦ · ✧ · ✦</div>
             <div class="${currentPetArtClass(equippedCosmetic('petFrame'))}" style="${petArtStyle(child.energy)}" role="button" tabindex="0" data-pet-interactive aria-label="和${escapeHtml(child.petName)}互动"></div>
           </div>
+          <div class="environment-cue" aria-label="${escapeHtml(environment.label)}"><span>${environment.icon}</span><span>${escapeHtml(environment.label)}</span></div>
           <nav class="mobile-pet-actions" aria-label="成长功能">
             <a class="mobile-pet-action" href="#mobileFocus"><span>⏱</span>专注守护</a>
             <button class="mobile-pet-action" type="button" data-open-shop><span>🛍</span>商店</button>
@@ -1352,12 +1456,13 @@ art_assets = [];
             <div class="energy-scale" aria-hidden="true">${energyScale.map(mark => `<span style="left:${mark.percent}%">${mark.value}</span>`).join('')}</div>
             <div class="energy-daily"><span>零点基准 ${dailyEnergy.baseline}</span><span class="energy-change ${dailyEnergy.change > 0 ? 'positive' : dailyEnergy.change < 0 ? 'negative' : ''}">今日 ${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}</span></div>
             <div class="next-copy">${next ? `再获得 ${next.min - child.energy} 点，解锁${next.name}` : '已到达最高形态，继续保持好习惯吧'}</div>
+            <div class="next-copy"><strong>伙伴能力 · ${escapeHtml(PET_ABILITIES[level.index].name)}</strong>：${escapeHtml(PET_ABILITIES[level.index].description)}</div>
           </div>
         </section>
         <div class="child-main">
           <section class="panel hero-copy">
             <div><div class="eyebrow" style="color:#5eead4">今日成长计划 · ${submittedCount}/${todayTasks.length}</div><h1>${todayTasks.length ? `今天有 ${todayTasks.length} 件小事` : (todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发')}</h1>${todayTasks.length ? `<div class="today-tasks">${todayTasks.slice(0, 3).map(item => { const completion = calendarCompletion(item.id, localDateKey()); return `<div class="today-task"><span>${escapeHtml(item.time || '全天')}</span><strong>${escapeHtml(item.title)}</strong>${completion ? `<span>${calendarStatusLabel(completion)}</span>` : `<button data-open-calendar-task="${item.id}">查看</button>`}</div>`; }).join('')}</div>` : '<p>家长还没有安排今天的任务，可以先完成一件自己的小目标。</p>'}<div class="companion-goal"><div class="companion-goal-head"><span>🤝 ${escapeHtml(companionGoal.label)}</span><strong>${companionGoal.current}/${companionGoal.target}</strong></div><div class="companion-goal-track" role="progressbar" aria-label="今日共同目标" aria-valuemin="0" aria-valuemax="${companionGoal.target}" aria-valuenow="${companionGoal.current}"><div style="width:${companionGoal.percent}%"></div></div></div></div>
-            <div class="hero-actions"><button class="btn hero-start" type="button" data-start-today>${submittedCount < todayTasks.length ? '开始现在这件事' : '开始一次专注'}</button><button class="shop-launch" type="button" data-open-growth-album><span>🖼</span>成长相册</button><button class="shop-launch" type="button" data-open-shop><span>🛍</span>哈奇商店</button></div>
+            <div class="hero-actions"><button class="btn hero-start" type="button" data-start-today>${submittedCount < todayTasks.length ? '开始现在这件事' : '开始一次专注'}</button><button class="shop-launch" type="button" data-create-child-goal><span>＋</span>我的目标</button><button class="shop-launch" type="button" data-open-growth-album><span>🖼</span>成长相册</button><button class="shop-launch" type="button" data-open-shop><span>🛍</span>哈奇商店</button></div>
           </section>
           <section class="panel focus-panel" id="mobileFocus">
             <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
@@ -1407,7 +1512,7 @@ art_assets = [];
     const level = levelForEnergy(child.energy);
     const readySchoolEvents = schoolInboxEvents().filter(event => event.childAction);
     const secondaryTabs = [
-      ['history', '历史记录'], ['metrics', '指标管理'], ['rewards', '奖励管理'], ['pets', '宠物形象'], ['settings', '家庭设置']
+      ['weekly', '周成长摘要'], ['history', '历史记录'], ['metrics', '指标管理'], ['rewards', '奖励管理'], ['pets', '宠物形象'], ['settings', '家庭设置']
     ];
     return `
       <div class="parent-layout">
@@ -1417,7 +1522,7 @@ art_assets = [];
         </aside>
         <div class="parent-main">
           <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'calendar' ? 'active' : ''}" data-parent-tab="calendar">家庭日历</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'calendar', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
-          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'calendar' ? calendarView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'calendar' ? calendarView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'weekly' ? weeklySummaryView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
         </div>
       </div>`;
   }
@@ -1602,7 +1707,12 @@ art_assets = [];
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
     const authorizedLink = await authorizeGuardianSchoolLink(state.schoolLink);
     Object.assign(state.schoolLink, authorizedLink);
-    const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    const consent = state.schoolLink.dataConsent || {};
+    const child = activeChild();
+    const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId };
+    if (consent.taskCompletion) receipt.childAction = childAction;
+    if (consent.growthPoints) receipt.familyGrowthPoints = child.energy;
+    if (consent.focusMinutes) receipt.focusMinutesThisWeek = weeklyFocusMinutes(child.id);
     const receiptPath = personalGrowthPath(state.schoolLink.teacherUsername, state.schoolLink.studentId, 'receipts', event.id);
     await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
     state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
@@ -1723,7 +1833,8 @@ art_assets = [];
     const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
     const readyEvents = events.filter(event => event.childAction);
     const bulkApprove = readyEvents.length > 1 ? `<button class="btn btn-primary" id="approveAllSchoolEventsBtn">全部计入 (${readyEvents.length})</button>` : '';
-    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
+    const consent = link.dataConsent || {};
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div><form id="schoolConsentForm" class="panel" style="margin:16px 0;padding:16px"><strong>学校数据授权</strong><p class="section-desc">只在发送家庭处理回执时附加已允许的数据，可随时关闭。</p><label><input type="checkbox" name="taskCompletion" ${consent.taskCompletion !== false ? 'checked' : ''}> 任务完成状态（协议必需，建议保留）</label><label style="margin-left:14px"><input type="checkbox" name="growthPoints" ${consent.growthPoints ? 'checked' : ''}> 当前成长积分</label><label style="margin-left:14px"><input type="checkbox" name="focusMinutes" ${consent.focusMinutes ? 'checked' : ''}> 本周专注时长</label><button class="btn btn-soft" type="submit" style="margin-left:14px;min-height:32px">保存授权</button></form>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
   }
 
   function metricCards(metrics) {
@@ -1748,12 +1859,37 @@ art_assets = [];
       return { key, day: date.getDate(), currentMonth: date.getMonth() === selected.getMonth(), hasTasks: calendarItemsForDate(key).length > 0 };
     });
     const tasks = calendarItemsForDate(calendarSelectedDate);
-    return `<div class="calendar-layout"><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">家庭日历</h2><p class="section-desc">设置一次或每天重复的任务，孩子登录时会提醒今日待办。</p></div><div class="calendar-nav"><button class="btn btn-soft" data-calendar-month="-1" aria-label="上个月">‹</button><strong>${selected.getFullYear()}年${selected.getMonth() + 1}月</strong><button class="btn btn-soft" data-calendar-month="1" aria-label="下个月">›</button></div></div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(day => `<div class="calendar-weekday">${day}</div>`).join('')}${days.map(day => `<button class="calendar-day ${day.currentMonth ? '' : 'outside'} ${day.key === calendarSelectedDate ? 'selected' : ''} ${day.key === localDateKey() ? 'today' : ''}" data-calendar-date="${day.key}">${day.day}${day.hasTasks ? '<i></i>' : ''}</button>`).join('')}</div></section><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">${selected.getMonth() + 1}月${selected.getDate()}日</h2><p class="section-desc">${tasks.length} 项安排</p></div><button class="btn btn-primary" id="addCalendarTaskBtn">＋ 添加任务</button></div><div class="calendar-task-list">${tasks.length ? tasks.map(item => { const completion = calendarCompletion(item.id, calendarSelectedDate); return `<article class="calendar-task"><div class="calendar-task-head"><strong>${escapeHtml(item.time || '未设置')} · ${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div><div class="calendar-task-meta">${recurrenceLabel(item)} · 家长确认后 +${Math.max(0, Number(item.points) || 0)}</div><div class="calendar-task-actions">${completion?.status === 'submitted' || completion?.status === 'needs_help' ? `<button class="btn btn-primary" data-confirm-calendar="${completion.id}">确认完成</button>` : ''}<button class="btn btn-soft" data-edit-calendar="${item.id}">编辑</button><button class="btn btn-soft" data-delete-calendar="${item.id}">删除</button></div></article>`; }).join('') : '<div class="empty">这一天还没有安排。</div>'}</div></section></div>`;
+    return `<div class="calendar-layout"><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">家庭日历</h2><p class="section-desc">设置一次或每天重复的任务，孩子登录时会提醒今日待办。</p></div><div class="calendar-nav"><button class="btn btn-soft" data-calendar-month="-1" aria-label="上个月">‹</button><strong>${selected.getFullYear()}年${selected.getMonth() + 1}月</strong><button class="btn btn-soft" data-calendar-month="1" aria-label="下个月">›</button></div></div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(day => `<div class="calendar-weekday">${day}</div>`).join('')}${days.map(day => `<button class="calendar-day ${day.currentMonth ? '' : 'outside'} ${day.key === calendarSelectedDate ? 'selected' : ''} ${day.key === localDateKey() ? 'today' : ''}" data-calendar-date="${day.key}">${day.day}${day.hasTasks ? '<i></i>' : ''}</button>`).join('')}</div></section><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">${selected.getMonth() + 1}月${selected.getDate()}日</h2><p class="section-desc">${tasks.length} 项安排</p></div><button class="btn btn-primary" id="addCalendarTaskBtn">＋ 添加任务</button></div><div class="calendar-task-list">${tasks.length ? tasks.map(item => { const completion = calendarCompletion(item.id, calendarSelectedDate); return `<article class="calendar-task"><div class="calendar-task-head"><strong>${escapeHtml(item.time || '未设置')} · ${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div><div class="calendar-task-meta">${item.owner === 'student' ? '孩子自主提出' : recurrenceLabel(item)} · 家长确认后 +${Math.max(0, Number(item.points) || 0)}</div><div class="calendar-task-actions">${completion?.status === 'submitted' || completion?.status === 'needs_help' ? `<button class="btn btn-primary" data-confirm-calendar="${completion.id}">确认完成</button>` : ''}${item.owner === 'student' ? '' : `<button class="btn btn-soft" data-edit-calendar="${item.id}">编辑</button>`}<button class="btn btn-soft" data-delete-calendar="${item.id}">删除</button></div></article>`; }).join('') : '<div class="empty">这一天还没有安排。</div>'}</div></section></div>`;
   }
 
   function historyView() {
     const entries = state.ledger.filter(item => item.childId === activeChild().id && item.petKey === petKeyForChild());
     return `<section class="panel"><div style="padding:18px"><h2 class="section-title">积分账本</h2><p class="section-desc">撤销不会删除记录，确保每次变化都有依据。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>时间</th><th>行为</th><th>来源</th><th>备注</th><th>变化</th><th>操作</th></tr></thead><tbody>${entries.length ? entries.map(entry => `<tr style="${entry.revokedAt ? 'opacity:.45' : ''}"><td>${formatTime(entry.createdAt)}</td><td><strong>${escapeHtml(entry.reason)}</strong><br><span style="color:var(--muted)">${escapeHtml(entry.category)}</span></td><td>${entry.source === 'focus_session' ? '专注守护' : entry.source === 'school_sync' ? '学校同步' : '家长记录'}</td><td>${escapeHtml(entry.note || '—')}</td><td class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}${entry.revokedAt ? '（已撤销）' : ''}</td><td>${!entry.revokedAt ? `<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-revoke="${entry.id}">撤销</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">暂无记录</td></tr>'}</tbody></table></div></section>`;
+  }
+
+  function weeklySummaryView() {
+    const child = activeChild();
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+    const startAt = start.getTime();
+    const endAt = end.getTime();
+    const weekKey = localDateKey(start);
+    const confirmed = state.calendarCompletions.filter(item => item.childId === child.id && item.status === 'confirmed' && Number(item.confirmedAt) >= startAt && Number(item.confirmedAt) < endAt);
+    const completedTaskIds = new Set(confirmed.map(item => item.itemId));
+    const selfGoals = state.calendarItems.filter(item => item.childId === child.id && item.owner === 'student' && completedTaskIds.has(item.id)).length;
+    const focusMinutes = state.focusSessions.filter(item => item.childId === child.id && item.completed && Number(item.finishedAt) >= startAt && Number(item.finishedAt) < endAt).reduce((sum, item) => sum + Math.max(0, Number(item.elapsedMinutes || item.plannedMinutes) || 0), 0);
+    const positiveEntries = state.ledger.filter(item => item.childId === child.id && !item.revokedAt && item.delta > 0 && Number(item.createdAt) >= startAt && Number(item.createdAt) < endAt);
+    const categoryCounts = positiveEntries.reduce((counts, item) => ({ ...counts, [item.category || '日常']: (counts[item.category || '日常'] || 0) + 1 }), {});
+    const topCategory = Object.entries(categoryCounts).sort((left, right) => right[1] - left[1])[0]?.[0] || '还在积累';
+    const note = state.weeklyNotes[`${child.id}:${weekKey}`] || '';
+    return `<section class="panel" style="padding:22px"><div><div class="eyebrow">${escapeHtml(localDateKey(start))} 至 ${escapeHtml(localDateKey(new Date(endAt - 1)))}</div><h2 class="section-title">${escapeHtml(child.name)}的周成长摘要</h2><p class="section-desc">只归纳本周发生的事实，不与其他孩子比较。</p></div><div class="mini-stat" style="margin-top:18px"><div><span>已确认任务</span><strong>${confirmed.length}</strong></div><div><span>专注时间</span><strong>${Math.round(focusMinutes)} 分钟</strong></div><div><span>正向记录</span><strong>${positiveEntries.length}</strong></div><div><span>自主目标</span><strong>${selfGoals}</strong></div></div><div class="panel" style="margin-top:16px;padding:16px"><strong>本周最常见的成长类别</strong><div class="next-copy" style="margin-top:5px">${escapeHtml(topCategory)}</div></div><form id="weeklyNoteForm" style="margin-top:16px"><div class="field"><label>给孩子的一句鼓励</label><textarea class="input" id="weeklyNoteInput" maxlength="120" rows="3" placeholder="记录具体的努力，不评价人格。">${escapeHtml(note)}</textarea></div><div class="modal-actions"><button class="btn btn-primary" type="submit">保存鼓励</button></div></form></section>`;
+  }
+
+  function weeklyFocusMinutes(childId = activeChild().id) {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7)).getTime();
+    return Math.round(state.focusSessions.filter(item => item.childId === childId && item.completed && Number(item.finishedAt) >= start).reduce((sum, item) => sum + Math.max(0, Number(item.elapsedMinutes || item.plannedMinutes) || 0), 0));
   }
 
   function metricsView() {
@@ -2126,8 +2262,38 @@ art_assets = [];
     return `<div class="settings-grid"><section class="panel setting-card"><h3>当前家庭账号</h3><p>${escapeHtml(guardianLoginName() || 'KeepWork 用户')} · 已通过 KeepWork 验证。返回孩子端后，家长端会立即重新锁定。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>重新开始</h3><p>清除 Keepwork 中的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除云端数据</button></section></div>`;
   }
 
+  function appNotifications() {
+    const child = activeChild();
+    const items = [];
+    if (mode === 'parent') {
+      state.calendarCompletions.filter(item => item.childId === child.id && ['submitted', 'needs_help'].includes(item.status)).forEach(item => items.push({ createdAt: Number(item.completedAt) || 0, title: item.status === 'needs_help' ? '孩子在任务中需要帮助' : '孩子提交了任务，等待家长确认', target: 'calendar' }));
+      schoolInboxEvents().forEach(item => items.push({ createdAt: Number(item.createdAt) || 0, title: `学校消息：${item.reason || '新的成长记录'}`, target: 'school' }));
+    }
+    state.redemptions.filter(item => item.childId === child.id && !item.cancelledAt && !item.fulfilledAt).forEach(item => items.push({ createdAt: Number(item.requestedAt) || 0, title: item.approvedAt ? `奖励待兑现：${item.rewardName}` : `${mode === 'parent' ? '新的' : '已提交'}奖励申请：${item.rewardName}`, target: 'rewards' }));
+    const pendingWrite = pendingStateWrite();
+    if (pendingWrite) items.push({ createdAt: Number(pendingWrite.queuedAt) || Date.now(), title: '本机有修改等待联网同步', target: 'settings' });
+    return items.sort((left, right) => right.createdAt - left.createdAt);
+  }
+
+  function showNotifications() {
+    const notifications = appNotifications();
+    trackOperation('notifications_opened', { count: notifications.length });
+    state.notificationsSeenAt[mode] = Date.now();
+    saveState();
+    modal(`<h2>家庭通知</h2><p class="section-desc">通知会随任务确认、奖励兑现或同步完成自动消失。</p><div class="redemption-list" style="padding:0;margin-top:16px">${notifications.length ? notifications.map(item => `<button class="redemption-item" data-notification-target="${item.target}" style="width:100%;text-align:left"><div><strong>${escapeHtml(item.title)}</strong><div class="next-copy">${formatTime(item.createdAt)}</div></div></button>`).join('') : '<div class="empty">现在没有需要处理的消息。</div>'}</div><div class="modal-actions"><button class="btn btn-primary" id="closeNotificationsBtn">知道了</button></div>`);
+    document.getElementById('closeNotificationsBtn')?.addEventListener('click', () => { closeModal(); render(); });
+    document.querySelectorAll('[data-notification-target]').forEach(button => button.addEventListener('click', () => {
+      closeModal();
+      parentTab = button.dataset.notificationTarget;
+      if (mode !== 'parent') return showPinModal();
+      render();
+      if (parentTab === 'school') refreshSchoolInbox();
+    }));
+  }
+
   function bindGlobal() {
     document.getElementById('modeSwitchBtn')?.addEventListener('click', () => switchMode(mode === 'parent' ? 'child' : 'parent'));
+    document.getElementById('notificationsBtn')?.addEventListener('click', showNotifications);
     document.getElementById('handoffBtn')?.addEventListener('click', showHandoff);
     document.getElementById('helpBtn')?.addEventListener('click', showHelp);
     document.getElementById('topbarLogoutBtn')?.addEventListener('click', showLogoutConfirm);
@@ -2145,6 +2311,7 @@ art_assets = [];
     mode = nextMode;
     scheduleHandoffWrite();
     render();
+    trackOperation('login_succeeded');
   }
 
   function bindChild() {
@@ -2171,6 +2338,7 @@ art_assets = [];
     });
     document.getElementById('startFocusBtn')?.addEventListener('click', () => startFocus());
     document.querySelectorAll('[data-open-calendar-task]').forEach(button => button.addEventListener('click', () => showChildCalendarTask(button.dataset.openCalendarTask)));
+    document.querySelectorAll('[data-create-child-goal]').forEach(button => button.addEventListener('click', showChildGoalModal));
     document.querySelectorAll('[data-open-shop]').forEach(button => button.addEventListener('click', showShopModal));
     document.querySelectorAll('[data-open-growth-album]').forEach(button => button.addEventListener('click', showGrowthAlbum));
     document.querySelectorAll('[data-start-today]').forEach(button => button.addEventListener('click', startTodayAction));
@@ -2183,11 +2351,14 @@ art_assets = [];
     const wrap = pet?.closest('.pet-art-wrap');
     if (!pet || !wrap || pet.dataset.reacting === 'true') return;
     const child = activeChild();
+    const level = levelForEnergy(child.energy);
     const reactions = [
       { motion: 'pet-react-hop', message: `${child.name}，我们一起加油！` },
       { motion: 'pet-react-wiggle', message: '摸摸收到啦，我很开心！' },
-      { motion: 'pet-react-cheer', message: '再坚持一点，就更接近下一次进化！' },
-      { motion: 'pet-react-hop', message: `今天也要和${child.petName}一起成长呀！` }
+      ...(level.index >= 1 ? [
+        { motion: 'pet-react-cheer', message: '再坚持一点，就更接近下一次进化！' },
+        { motion: 'pet-react-hop', message: `今天也要和${child.petName}一起成长呀！` }
+      ] : [])
     ];
     const reaction = reactions[Math.floor(Math.random() * reactions.length)];
     wrap.querySelector('.pet-reply')?.remove();
@@ -2258,6 +2429,20 @@ art_assets = [];
     startFocus();
   }
 
+  function showChildGoalModal() {
+    modal(`<h2>定下今天的小目标</h2><p class="section-desc">选择一件你自己想完成的小事。完成后告诉家长，由家长确认并记录成长。</p><form id="childGoalForm"><div class="field"><label>我今天想完成</label><input class="input" id="childGoalTitle" maxlength="40" required placeholder="例如：读完一本绘本"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">定下目标</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('childGoalForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const title = document.getElementById('childGoalTitle').value.trim();
+      if (!title) return;
+      const now = Date.now();
+      state.calendarItems.push({ id: `goal_${now}_${Math.random().toString(36).slice(2, 6)}`, childId: activeChild().id, title, category: '自主目标', time: '', points: 3, owner: 'student', recurrence: { type: 'once', days: [] }, startDate: localDateKey(), endDate: '', active: true, createdAt: now, updatedAt: now });
+      saveState(); closeModal(); render(); toast('目标已加入今天的成长计划');
+    });
+    document.getElementById('childGoalTitle').focus();
+  }
+
   function showGrowthAlbum() {
     const child = activeChild();
     const currentLevel = levelForEnergy(child.energy);
@@ -2275,6 +2460,13 @@ art_assets = [];
     document.querySelectorAll('[data-parent-tab]').forEach(button => button.addEventListener('click', () => { parentTab = button.dataset.parentTab; render(); if (parentTab === 'school') refreshSchoolInbox(); }));
     document.querySelectorAll('[data-open-school-inbox]').forEach(button => button.addEventListener('click', () => { parentTab = 'school'; render(); refreshSchoolInbox(); }));
     document.getElementById('parentMoreTabs')?.addEventListener('change', event => { if (!event.target.value) return; parentTab = event.target.value; render(); });
+    document.getElementById('weeklyNoteForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+      state.weeklyNotes[`${activeChild().id}:${localDateKey(start)}`] = document.getElementById('weeklyNoteInput').value.trim().slice(0, 120);
+      saveState(); toast('本周鼓励已保存');
+    });
     document.getElementById('metricSearch')?.addEventListener('input', event => { metricQuery = event.target.value; render(); document.getElementById('metricSearch')?.focus(); });
     document.querySelectorAll('[data-score-metric]').forEach(button => button.addEventListener('click', () => showScoreModal(button.dataset.scoreMetric)));
     document.querySelectorAll('[data-revoke]').forEach(button => button.addEventListener('click', () => revokeEntry(button.dataset.revoke)));
@@ -2296,6 +2488,12 @@ art_assets = [];
     document.getElementById('changeSchoolLinkBtn')?.addEventListener('click', showSchoolLinkModal);
     document.getElementById('refreshSchoolInboxBtn')?.addEventListener('click', refreshSchoolInbox);
     document.getElementById('schoolLinkForm')?.addEventListener('submit', saveSchoolLink);
+    document.getElementById('schoolConsentForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      state.schoolLink.dataConsent = { taskCompletion: form.has('taskCompletion'), growthPoints: form.has('growthPoints'), focusMinutes: form.has('focusMinutes') };
+      saveState(); render(); toast('学校数据授权已更新');
+    });
     document.getElementById('addMetricBtn')?.addEventListener('click', showAddMetricModal);
     document.getElementById('addRewardBtn')?.addEventListener('click', showAddRewardModal);
     document.getElementById('addCalendarTaskBtn')?.addEventListener('click', () => showCalendarTaskModal());
@@ -2399,6 +2597,7 @@ art_assets = [];
     completion.status = 'confirmed';
     completion.confirmedAt = Date.now();
     completion.ledgerEntryId = record.id;
+    trackOperation('calendar_completion_confirmed', { points: Math.max(0, Number(task.points) || 0) });
     saveState(); render(); toast(`已确认“${task.title}”并计入成长`);
   }
 
@@ -2580,6 +2779,7 @@ art_assets = [];
       }
       state.schoolLink.appliedEventIds.unshift(event.id);
       const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id }, options);
+      trackOperation('school_event_processed', { decision: 'approved', points: Math.max(0, Math.trunc(Number(event.delta) || 0)) });
       await queueSchoolReceipt(event, 'approved', record.id, event.childAction || null);
       if (options.toast !== false) toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
       return true;
@@ -2613,6 +2813,7 @@ art_assets = [];
     if (!event) return toast('这条学校消息已处理或不存在');
     try {
       state.schoolLink.ignoredEventIds.unshift(event.id);
+      trackOperation('school_event_processed', { decision: 'ignored' });
       await queueSchoolReceipt(event, 'ignored');
       toast(state.schoolLink.pendingReceipts.length ? '决定已保存，回执等待同步' : '已通知教师暂不计入家庭成长');
     } catch (error) {
@@ -2659,6 +2860,7 @@ art_assets = [];
       if (coinStats(child.id).balance < reward.cost) return closeModal();
       const requestedAt = Date.now();
       state.redemptions.unshift({ id: `redeem_${requestedAt}_${Math.random().toString(36).slice(2, 7)}`, childId: child.id, rewardId: reward.id, rewardName: reward.name, rewardIcon: reward.icon, cost: reward.cost, createdAt: requestedAt, requestedAt, approvedAt: null, fulfilledAt: null, cancelledAt: null });
+        trackOperation('reward_requested', { cost: reward.cost });
       saveState();
       closeModal();
       render();
@@ -2824,6 +3026,7 @@ art_assets = [];
     if (selectedTask === '__custom__') customFocusTask = task;
     const durationMs = selectedDuration * 60 * 1000;
     focusSession = { id: `focus_${Date.now()}`, task, calendarItemId, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    trackOperation('focus_started', { plannedMinutes: selectedDuration, calendarLinked: Boolean(calendarItemId) });
     scheduleHandoffWrite(0);
     renderFocusScreen();
     post('gameStarted', { task, duration: selectedDuration });
@@ -2856,8 +3059,10 @@ art_assets = [];
   function focusCompanionState(session) {
     if (session.paused) return { phase: 'paused', motion: 'focus-settle', text: '哈奇在这里等你，准备好再继续' };
     const percent = 1 - session.remainingMs / session.durationMs;
+    const levelIndex = levelForEnergy(activeChild().energy).index;
     if (percent < .08) return { phase: 'settle', motion: 'focus-settle', text: '哈奇已经坐好，和你一起进入状态' };
-    if (percent >= .85) return { phase: 'sprint', motion: 'focus-sprint', text: '快到终点啦，哈奇陪你完成最后一点' };
+    if (percent >= (levelIndex >= 3 ? .75 : .85)) return { phase: 'sprint', motion: 'focus-sprint', text: '快到终点啦，哈奇陪你完成最后一点' };
+    if (levelIndex >= 2 && percent >= .5) return { phase: 'halfway', motion: 'focus-steady', text: '已经完成一半啦，按自己的节奏继续就好' };
     return { phase: 'steady', motion: 'focus-steady', text: '安静陪伴中，你只需要做好眼前这一件事' };
   }
 
@@ -2935,11 +3140,14 @@ art_assets = [];
     closeModal();
     const elapsedMinutes = Math.max(0, Math.round((session.durationMs - Math.max(0, session.remainingMs)) / 60000));
     const reward = completed ? Math.max(0, Math.min(focusReward(session.duration), game_config.dailyAutoPointCap - autoPointsToday())) : 0;
+    trackOperation('focus_finished', { completed: Boolean(completed), plannedMinutes: session.duration, elapsedMinutes, reward });
     state.focusSessions.unshift({ id: session.id, childId: activeChild().id, task: session.task, plannedMinutes: session.duration, elapsedMinutes, completed, reward, startedAt: session.startedAt, finishedAt: Date.now() });
     if (completed && session.calendarItemId) submitCalendarCompletion(session.calendarItemId);
     saveState();
     if (reward > 0) {
-      addLedgerEntry({ metricId: 'focus_guard', category: '自律', delta: reward, source: 'focus_session', reason: `${session.task} · 专注守护 ${session.duration} 分钟`, note: '自动奖励' });
+      const legendary = levelForEnergy(activeChild().energy).index >= 4;
+      addLedgerEntry({ metricId: 'focus_guard', category: '自律', delta: reward, source: 'focus_session', reason: `${session.task} · 专注守护 ${session.duration} 分钟`, note: '自动奖励' }, { toast: !legendary });
+      if (legendary) toast(`${activeChild().petName}看见了你完整坚持的过程：${session.task}完成啦`);
       post('gameFinished', { completed: true, passed: true, earnedPoints: reward, score: reward, focusMinutes: session.duration, task: session.task, roundId: session.id, finishedAt: Date.now() });
     } else {
       render();
@@ -3020,6 +3228,7 @@ art_assets = [];
       if (!focusSession) render();
       scheduleDailyEnergyReset();
     }
+    if (!document.hidden) retryPendingStateWrite();
     if (!document.hidden) publishPendingSchoolReceipts();
     if (!document.hidden) refreshVisibleSchoolInbox();
     if (!document.hidden) refreshGuardianCloudState();
@@ -3028,6 +3237,7 @@ art_assets = [];
   });
 
   window.addEventListener('online', () => {
+    retryPendingStateWrite();
     publishPendingSchoolReceipts();
     refreshVisibleSchoolInbox();
     refreshGuardianCloudState();
