@@ -2255,7 +2255,7 @@ art_assets = [];
     const today = localDateKey();
     const nextTask = calendarItemsForDate(today).find(item => !calendarCompletion(item.id, today));
     if (nextTask) return showChildCalendarTask(nextTask.id);
-    document.getElementById('mobileFocus')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+    startFocus();
   }
 
   function showGrowthAlbum() {
