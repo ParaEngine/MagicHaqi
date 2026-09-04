@@ -3,6 +3,13 @@ const app = getApp()
 // web-view 加载超时时间（毫秒）
 const WEB_VIEW_TIMEOUT = 15000
 const WORKBUDDY_APP_ID = 'wx907c65e5e107ddcf'
+const GROWTH_BASE_URL = 'https://magic-haqi-growth.pages.dev'
+const GROWTH_MOBILE_CHANNEL = 'haqi.growth.mobile.v1'
+const GROWTH_MESSAGE_TYPES = new Set(['gameLoaded', 'gameStarted', 'gameFinished', 'growthStatus'])
+const GROWTH_PARAMS = {
+  student: ['studentSite', 'studentId', 'studentAccount'],
+  guardian: ['guardianSite', 'guardianClass', 'guardianStudent', 'guardianName', 'guardianTeacher']
+}
 
 function getReferrerExtraData() {
   try {
@@ -25,6 +32,24 @@ function getImportGameDraft(options = {}) {
     || extra.wbDraft
     || extra.draftId
     || ''
+}
+
+function getGrowthLaunch(options = {}) {
+  const extra = getReferrerExtraData()
+  const source = { ...extra, ...options }
+  const inferredRole = source.guardianSite ? 'guardian' : source.studentSite ? 'student' : ''
+  const role = String(source.growthRole || inferredRole).toLowerCase()
+  if (!['teacher', 'student', 'guardian'].includes(role)) return null
+  const page = role === 'guardian' ? 'haqi_growth_guardian_c.html' : 'haqi_personal_pet_points_c.html'
+  const params = [
+    `growthRole=${encodeURIComponent(role)}`,
+    'host=wechat-miniprogram',
+    `channel=${encodeURIComponent(GROWTH_MOBILE_CHANNEL)}`
+  ]
+  for (const key of GROWTH_PARAMS[role] || []) {
+    if (source[key]) params.push(`${key}=${encodeURIComponent(String(source[key]))}`)
+  }
+  return `${GROWTH_BASE_URL}/${page}?${params.join('&')}`
 }
 
 function openWorkBuddy(promptText) {
@@ -76,23 +101,27 @@ Page({
   _lastImportGameDraft: '',
 
   onLoad(options) {
+    const growthUrl = getGrowthLaunch(options || {})
+    if (growthUrl) {
+      this._growthUrl = growthUrl
+      this._loadWebView()
+      return
+    }
     const parts = []
     if (options && options.gameFrom) parts.push('gameFrom=' + encodeURIComponent(options.gameFrom))
     if (options && options.game) parts.push('game=' + encodeURIComponent(options.game))
-<<<<<<< HEAD
     if (options && options.msg) parts.push('msg=' + encodeURIComponent(options.msg))
-=======
     const importGameDraft = getImportGameDraft(options || {})
     if (importGameDraft) {
       this._lastImportGameDraft = importGameDraft
       parts.push('importGameDraft=' + encodeURIComponent(importGameDraft))
     }
->>>>>>> origin/main
     this._shareParams = parts.join('&')
     this._loadWebView()
   },
 
   onShow() {
+    if (this._growthUrl) return
     const importGameDraft = getImportGameDraft()
     if (!importGameDraft) return
     if (this._lastImportGameDraft === importGameDraft) return
@@ -117,9 +146,10 @@ Page({
   _loadWebView() {
     this._clearTimer()
     const query = (this._shareParams ? this._shareParams + '&' : '') + '_t=' + Date.now()
+    const separator = this._growthUrl?.includes('?') ? '&' : '?'
     this.setData({
       loading: true,
-      url: app.globalData.gameUrl + '?' + query
+      url: this._growthUrl ? this._growthUrl + separator + '_t=' + Date.now() : app.globalData.gameUrl + '?' + query
     })
 
     // 手动超时检测：如果 web-view 在规定时间内没有 bindload，主动提示
@@ -167,6 +197,14 @@ Page({
     const msg = e?.detail?.data
     if (!Array.isArray(msg) || !msg.length) return
     const latest = msg[msg.length - 1]
+    if (latest?.channel === GROWTH_MOBILE_CHANNEL && GROWTH_MESSAGE_TYPES.has(latest.type)) {
+      this._growthProtocolState = { type: latest.type, data: latest.data || {}, receivedAt: Date.now() }
+      if (latest.type === 'gameLoaded') this.onWebLoad()
+      if (latest.type === 'gameFinished') {
+        wx.showToast({ title: latest.data?.completed === false ? '成长记录已更新' : '成长任务已完成', icon: 'none' })
+      }
+      return
+    }
     if (latest?.type === 'openWorkBuddy') {
       openWorkBuddy(latest.prompt || '')
       return

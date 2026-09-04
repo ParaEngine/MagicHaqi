@@ -160,10 +160,16 @@
         <button type="button" data-login-role="teacher" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">教师登录</span><span class="mt-1 block text-xs font-medium">管理班级、学生与积分</span></button>
         <button type="button" data-login-role="student" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">学生登录</span><span class="mt-1 block text-xs font-medium">仅查看名单和个人宠物</span></button>
       </div>
-      <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="on">
-        <label class="block text-sm font-bold text-slate-600">学校共享 KeepWork 站点路径<input id="studentLoginSitePath" name="sitePath" class="mt-1 w-full" maxlength="160" autocomplete="off" required placeholder="例如：teacher_zhang/class-growth"></label>
-        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="username" class="mt-1 w-full" maxlength="80" autocomplete="username" required placeholder="点击教师链接后自动填入"></label>
-        <label class="block text-sm font-bold text-slate-600">密码<input id="studentLoginPassword" name="password" type="password" class="mt-1 w-full" autocomplete="current-password" required placeholder="输入密码"></label>
+      <form id="teacherPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="off">
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="teacherLoginUsername" name="keepwork-account" class="mt-1 w-full" maxlength="80" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="teacherLoginPassword" name="keepwork-secret" type="password" class="mt-1 w-full" autocomplete="new-password" required></label>
+        <button id="teacherPasswordLoginButton" class="primary w-full" type="submit">登录教师账号</button>
+        <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅转发给 KeepWork 官方登录接口，不会保存到本页面或成长平台数据库。</p>
+      </form>
+      <form id="studentPasswordLoginForm" class="mt-4 hidden space-y-3 text-left" autocomplete="off">
+        <label class="hidden text-sm font-bold text-slate-600">学校共享 KeepWork 站点路径<input id="studentLoginSitePath" name="sitePath" class="mt-1 w-full" maxlength="160" autocomplete="off"></label>
+        <label class="block text-sm font-bold text-slate-600">KeepWork 账号<input id="studentLoginUsername" name="keepwork-account" class="mt-1 w-full" maxlength="80" autocomplete="off" autocapitalize="none" spellcheck="false" required placeholder="点击教师链接后自动填入"></label>
+        <label class="block text-sm font-bold text-slate-600">密码<input id="studentLoginPassword" name="keepwork-secret" type="password" class="mt-1 w-full" autocomplete="new-password" required placeholder="输入密码"></label>
         <button id="studentPasswordLoginButton" class="primary w-full" type="submit">登录学生账号</button>
         <p class="m-0 text-center text-xs leading-5 text-slate-400">密码仅用于本次 KeepWork 官方登录验证，不会保存在本页面。</p>
       </form>
@@ -252,6 +258,11 @@
       const schoolReceiptCache = new Map();
       let studentGrowthTasks = [];
       let studentGrowthTaskSyncError = '';
+      let studentClassBindings = [];
+      let activeStudentBindingId = '';
+      let studentBindingSyncError = '';
+      let studentClassInvitations = [];
+      let teacherClassMembers = [];
       // 云端持久化相关
       let teacherCloudStore = null;
       let teacherCloudSaveQueue = Promise.resolve();
@@ -344,12 +355,12 @@
         }
         state = nextState && Array.isArray(nextState.students) ? nextState : clone(defaultState);
         pendingAwards = Array.isArray(nextAwards) ? nextAwards : [];
-        const defaultClassConfig = { grade: '', classNumber: '', schoolSitePath: '', className: '未设置班级' };
+        const defaultClassConfig = { grade: '', classNumber: '', schoolSitePath: '', className: '未设置班级', inviteCode: '' };
         Object.assign(game_config, defaultClassConfig, nextClassConfig || {});
         game_config.className = classLabel();
         localStorage.setItem(activeStateStorageKey, JSON.stringify(state));
         localStorage.setItem(activeAwardsStorageKey, JSON.stringify(pendingAwards));
-        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade: game_config.grade, classNumber: game_config.classNumber, schoolSitePath: game_config.schoolSitePath }));
+        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade: game_config.grade, classNumber: game_config.classNumber, schoolSitePath: game_config.schoolSitePath, inviteCode: game_config.inviteCode }));
         if (mayMigrateLegacyData) localStorage.setItem(LOCAL_DATA_OWNER_KEY, normalizeKeepworkUsername(username));
       }
 
@@ -357,7 +368,11 @@
       const toast = document.getElementById('toast');
       const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[c]);
       const petOf = student => pets.find(pet => pet.id === student.petId) || pets[0];
-      const xpNeed = () => 50;
+      const xpNeed = level => {
+        const base = Math.max(1, Number(game_config.xpCurve?.base) || 50);
+        const perLevel = Math.max(0, Number(game_config.xpCurve?.perLevel) || 0);
+        return base + Math.max(0, Number(level) - 1) * perLevel;
+      };
       function progression(points) {
         let level = 1, remaining = Math.max(0, Number(points) || 0);
         while (remaining >= xpNeed(level)) { remaining -= xpNeed(level); level++; }
@@ -507,20 +522,33 @@
         clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.add('hidden'), 2200);
       }
       function currentStudent() { return state.students.find(item => item.id === state.selectedStudentId) || state.students[0]; }
+      const classMemberFor = student => teacherClassMembers.find(member => member.studentId === student?.id || normalizeKeepworkUsername(member.studentUsername) === normalizeKeepworkUsername(student?.keepworkUsername));
+      const isAcceptedClassMember = student => classMemberFor(student)?.status === 'accepted';
       function setAction(student, action, message) {
         student.action = action; student.message = message;
         if (action !== 'sleep') setTimeout(() => { if (student.action === action) { student.action = 'idle'; save(); render(); } }, 1900);
         save(); render();
       }
-      function changePoints(student, delta, reason) {
+      async function changePoints(student, delta, reason) {
+        if (!isAcceptedClassMember(student)) { showToast('学生尚未确认加入班级，暂不能记分'); return false; }
         const before = Math.max(0, Number(student.points) || 0);
         const requested = Math.trunc(Number(delta) || 0);
         const after = Math.max(0, before + requested);
         const actual = after - before;
-        if (!actual) { showToast('积分已经无法再扣除'); return; }
+        if (!actual) { showToast('积分已经无法再扣除'); return false; }
+        const eventId = `points_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        try {
+          await growthApiRequest('/api/v1/teacher/point-events', {
+            method: 'POST',
+            body: JSON.stringify({ eventId, classId: classId(), studentId: student.id, delta: actual, reason })
+          });
+        } catch (error) {
+          showToast(`积分未变更：${error?.message || error}`);
+          return false;
+        }
         student.points = after;
         student.lastPointsAt = Date.now();
-        const ledgerRecord = { id: `p_${Date.now()}`, studentId: student.id, reason, points: actual, at: new Date().toLocaleString('zh-CN', { hour12: false }) };
+        const ledgerRecord = { id: eventId, studentId: student.id, reason, points: actual, at: new Date().toLocaleString('zh-CN', { hour12: false }) };
         state.ledger.unshift(ledgerRecord);
         if (actual > 0) {
           student.mood = Math.min(100, (student.mood || 0) + 8);
@@ -536,6 +564,7 @@
         }
         syncStudentProfile(student);
         save();
+        return true;
       }
       const safeCloudPart = value => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
       const validFamilySitePath = sitePath => /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/.test(String(sitePath || '').trim());
@@ -567,14 +596,188 @@
         guardianAllowlist: (Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist : []).map(normalizeKeepworkUsername).filter(Boolean).sort()
       });
       const isFamilySetupPublished = student => Boolean(student?.familyPublishedAt && !student?.familyPublishError && student.familyPublishFingerprint === familyPublishFingerprint(student));
-      const studentBinding = () => {
+      const invitationStudentBinding = () => {
         const params = new URLSearchParams(location.search);
         const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
         const sitePath = String(params.get('studentSite') || savedLogin?.studentSite || '').trim().replace(/^\/+|\/+$/g, '');
-        const studentId = String(params.get('studentId') || '').trim();
+        const studentId = String(params.get('studentId') || savedLogin?.studentId || '').trim();
         const username = normalizeKeepworkUsername(params.get('studentAccount') || savedLogin?.studentAccount || '');
         return validFamilySitePath(sitePath) && studentId ? { sitePath, studentId, username } : null;
       };
+      const studentBinding = () => studentClassBindings.find(binding => binding.bindingId === activeStudentBindingId)
+        || invitationStudentBinding();
+      const growthApiBase = () => String(window.MAGIC_HAQI_GROWTH_API_BASE || 'https://magic-haqi-growth-api.86903020.workers.dev').replace(/\/$/, '');
+      async function growthApiRequest(path, options = {}) {
+        const sdk = await getKeepworkSdk();
+        if (!sdk?.token) throw new Error('KeepWork 登录状态无效');
+        const response = await fetch(`${growthApiBase()}${path}`, {
+          ...options,
+          headers: { authorization: `Bearer ${sdk.token}`, 'content-type': 'application/json', ...(options.headers || {}) }
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error || `成长绑定服务请求失败（${response.status}）`);
+        return payload;
+      }
+      function normalizeStudentClassBinding(binding, username) {
+        const sitePath = String(binding?.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
+        const studentId = String(binding?.studentId || '').trim();
+        if (!binding?.bindingId || !validFamilySitePath(sitePath) || !studentId) return null;
+        return {
+          bindingId: String(binding.bindingId), sitePath, studentId,
+          username: normalizeKeepworkUsername(username),
+          teacherUsername: normalizeKeepworkUsername(binding.teacherUsername),
+          teacherName: String(binding.teacherName || binding.teacherUsername || '老师').trim(),
+          classId: String(binding.classId || '').trim(),
+          className: String(binding.className || '').trim(),
+          updatedAt: Number(binding.updatedAt) || 0
+        };
+      }
+      function membershipTimeLabel(timestamp) {
+        const value = Number(timestamp) || 0;
+        if (!value) return '';
+        const elapsed = Math.max(0, Date.now() - value);
+        if (elapsed < 60000) return '刚刚更新';
+        if (elapsed < 3600000) return `${Math.floor(elapsed / 60000)} 分钟前更新`;
+        if (elapsed < 86400000) return `${Math.floor(elapsed / 3600000)} 小时前更新`;
+        return `${new Date(value).toLocaleDateString('zh-CN')} 更新`;
+      }
+      async function loadStudentClassBindings(user) {
+        const username = normalizeKeepworkUsername(user?.username || user?.name);
+        const invitation = invitationStudentBinding();
+        try {
+          const payload = await growthApiRequest('/api/v1/students/me/class-bindings');
+          studentClassBindings = (Array.isArray(payload?.bindings) ? payload.bindings : [])
+            .map(binding => normalizeStudentClassBinding(binding, username)).filter(Boolean);
+          const invited = invitation && studentClassBindings.find(binding => binding.sitePath === invitation.sitePath && binding.studentId === invitation.studentId);
+          const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
+          activeStudentBindingId = invited?.bindingId
+            || studentClassBindings.find(binding => binding.bindingId === savedLogin?.bindingId)?.bindingId
+            || studentClassBindings[0]?.bindingId || '';
+          studentBindingSyncError = '';
+        } catch (error) {
+          studentClassBindings = [];
+          activeStudentBindingId = '';
+          studentBindingSyncError = error?.message || String(error);
+          if (!invitation) throw new Error(`无法读取老师绑定列表：${studentBindingSyncError}`);
+        }
+      }
+      async function loadStudentClassInvitations() {
+        const payload = await growthApiRequest('/api/v1/students/me/class-invitations');
+        studentClassInvitations = Array.isArray(payload?.invitations) ? payload.invitations : [];
+      }
+      async function respondToClassInvitation(invitationId, decision) {
+        await growthApiRequest(`/api/v1/students/me/class-invitations/${encodeURIComponent(invitationId)}/${decision}`, { method: 'POST' });
+        await refreshStudentMembership();
+      }
+      async function joinClassByInviteCode(inviteCode) {
+        await growthApiRequest('/api/v1/students/join-by-code', {
+          method: 'POST',
+          body: JSON.stringify({ inviteCode: String(inviteCode || '').trim().toUpperCase() })
+        });
+        await refreshStudentMembership();
+      }
+      function pendingStudentProfile(user) {
+        const username = normalizeKeepworkUsername(user?.username || user?.name) || '学生';
+        return {
+          id: `pending_${safeCloudPart(username)}`, name: username, points: 0, mood: 80, bond: 0,
+          gender: '未填写', action: 'idle', message: '加入班级后，老师会为你初始化宠物档案。',
+          petId: pets[0].id, keepworkUsername: username, guardianAllowlist: [], pendingProfile: true
+        };
+      }
+      async function refreshStudentMembership() {
+        const sdk = await getKeepworkSdk();
+        const user = await getKeepworkUser(sdk);
+        if (!user) throw new Error('登录状态已失效');
+        await Promise.all([loadStudentClassBindings(user), loadStudentClassInvitations()]);
+        let student = pendingStudentProfile(user);
+        if (studentBinding()) {
+          try { student = await loadBoundStudent(user); }
+          catch (error) { student.profileSyncError = error?.message || String(error); }
+        }
+        state.students = [student];
+        state.selectedStudentId = student.id;
+        state.role = 'student';
+        render();
+      }
+      async function registerStudentClassBinding(student) {
+        return growthApiRequest('/api/v1/teacher/class-invitations', {
+          method: 'POST',
+          body: JSON.stringify({
+            studentUsername: normalizeKeepworkUsername(student.keepworkUsername),
+            studentId: student.id,
+            classId: classId()
+          })
+        });
+      }
+      async function loadTeacherClassMembers() {
+        if (!String(game_config.grade || '').trim() || !String(game_config.classNumber || '').trim()) {
+          teacherClassMembers = [];
+          return;
+        }
+        const payload = await growthApiRequest(`/api/v1/teacher/classes/${encodeURIComponent(classId())}/members`);
+        teacherClassMembers = Array.isArray(payload?.members) ? payload.members : [];
+        let changed = false;
+        teacherClassMembers.filter(member => member.status === 'accepted').forEach(member => {
+          const existing = state.students.find(student => student.id === member.studentId || normalizeKeepworkUsername(student.keepworkUsername) === normalizeKeepworkUsername(member.studentUsername));
+          if (existing) {
+            existing.classInvitationStatus = member.status;
+            return;
+          }
+          state.students.push({
+            id: member.studentId, uuid: generateUuid(), name: member.studentUsername, gender: '未填写',
+            points: 0, petId: pets[0].id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(),
+            message: '欢迎加入班级，请老师完善我的档案。', keepworkUsername: member.studentUsername,
+            guardianAllowlist: [], classInvitationStatus: 'accepted', needsTeacherSetup: true
+          });
+          changed = true;
+        });
+        state.students.forEach(student => {
+          const member = classMemberFor(student);
+          if (member) student.classInvitationStatus = member.status;
+        });
+        if (changed) save();
+      }
+      async function registerGuardianBindings(student) {
+        await growthApiRequest('/api/v1/teacher/guardian-bindings', {
+          method: 'POST',
+          body: JSON.stringify({
+            classId: classId(),
+            studentId: student.id,
+            guardianUsernames: student.guardianAllowlist.map(normalizeKeepworkUsername).filter(Boolean)
+          })
+        });
+      }
+      async function switchStudentClassBinding(bindingId) {
+        const nextBinding = studentClassBindings.find(binding => binding.bindingId === bindingId);
+        if (!nextBinding || nextBinding.bindingId === activeStudentBindingId) return;
+        const previousBindingId = activeStudentBindingId;
+        try {
+          const sdk = await getKeepworkSdk();
+          const user = await getKeepworkUser(sdk);
+          if (!user) throw new Error('登录状态已失效');
+          const boundStudent = await loadBoundStudent(user, nextBinding);
+          activeStudentBindingId = nextBinding.bindingId;
+          state.students = [boundStudent];
+          state.selectedStudentId = boundStudent.id;
+          studentGrowthTasks = [];
+          studentGrowthTaskSyncError = '';
+          const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return {}; } })();
+          localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({
+            ...savedLogin,
+            bindingId: activeStudentBindingId,
+            studentSite: nextBinding.sitePath,
+            studentId: nextBinding.studentId,
+            studentAccount: nextBinding.username
+          }));
+          render();
+          await refreshStudentGrowthTasks();
+          showToast(`已切换到${nextBinding.teacherName}${nextBinding.className ? ` · ${nextBinding.className}` : ''}`);
+        } catch (error) {
+          activeStudentBindingId = previousBindingId;
+          render();
+          showToast(`切换失败：${error?.message || error}`);
+        }
+      }
       const studentLoginLink = student => {
         if (!validFamilySitePath(schoolSitePath()) || !student.id || !normalizeKeepworkUsername(student.keepworkUsername)) return '';
         const url = sharePageUrl('haqi_personal_pet_points_c.html');
@@ -787,8 +990,7 @@
           throw new Error('该学生课堂档案已属于其他教师、班级或不兼容协议，已停止覆盖');
         }
       }
-      async function loadBoundStudent(user) {
-        const binding = studentBinding();
+      async function loadBoundStudent(user, binding = studentBinding()) {
         if (!binding) throw new Error('请使用教师提供的学生登录链接');
         const username = normalizeKeepworkUsername(user?.username || user?.name);
         if (!username) throw new Error('无法识别当前 KeepWork 用户名');
@@ -922,9 +1124,11 @@
         }, '同步学生课堂成长档案');
       }
       async function publishFamilySetup(student) {
+        if (!isAcceptedClassMember(student)) throw new Error('学生尚未确认加入班级');
         const missing = studentCloudSetup(student);
         if (missing.length) throw new Error(`请先补全${missing.join('、')}`);
         await verifyFamilySiteForPublishing(schoolSitePath());
+        await registerGuardianBindings(student);
         await Promise.all([publishFamilyPolicy(student), publishStudentProfile(student)]);
         student.familyPublishedAt = Date.now();
         student.familyPublishFingerprint = familyPublishFingerprint(student);
@@ -1220,21 +1424,28 @@
       }
       function studentList() {
         const visibleStudents = state.role === 'teacher'
-          ? state.students.filter(student => `${student.name} ${petOf(student).name}`.includes(state.studentSearch.trim()))
+          ? state.students.filter(student => isAcceptedClassMember(student) && `${student.name} ${petOf(student).name}`.includes(state.studentSearch.trim()))
           : state.students.filter(student => student.id === state.selectedStudentId);
+        const pendingMembers = teacherClassMembers.filter(member => member.status === 'pending');
+        const declinedMembers = teacherClassMembers.filter(member => member.status === 'declined');
+        const invitationStatus = pendingMembers.length || declinedMembers.length ? `<div class="border-t border-orange-100 bg-white px-4 py-3 text-xs">
+          ${pendingMembers.length ? `<div><b class="text-amber-700">等待学生确认：</b>${pendingMembers.map(member => `<span class="ml-2 inline-block rounded-full bg-amber-50 px-2 py-1 text-amber-800">${esc(member.studentUsername)}${membershipTimeLabel(member.updatedAt) ? ` · ${membershipTimeLabel(member.updatedAt)}` : ''}</span>`).join('')}</div>` : ''}
+          ${declinedMembers.length ? `<div class="${pendingMembers.length ? 'mt-2' : ''}"><b class="text-slate-500">已拒绝：</b>${declinedMembers.map(member => `<span class="ml-2 inline-block rounded-full bg-slate-100 px-2 py-1 text-slate-600">${esc(member.studentUsername)}${membershipTimeLabel(member.updatedAt) ? ` · ${membershipTimeLabel(member.updatedAt)}` : ''}</span>`).join('')}</div>` : ''}
+        </div>` : '';
         if (state.role === 'teacher') return `<section class="card lg:col-span-3 overflow-hidden p-0">
           <div class="flex flex-col gap-3 border-b border-orange-100 bg-gradient-to-r from-amber-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div class="flex items-center gap-2"><strong class="text-base text-slate-700">${esc(game_config.className)}</strong><span class="text-xs text-slate-400">${state.students.length} 人</span></div>
+            <div class="flex items-center gap-2"><strong class="text-base text-slate-700">${esc(game_config.className)}</strong><span class="text-xs text-slate-400">${visibleStudents.length} 人</span>${pendingMembers.length ? `<span class="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">${pendingMembers.length} 人待确认</span>` : ''}</div>
             <div class="flex flex-wrap items-center gap-2"><input id="studentSearch" value="${esc(state.studentSearch)}" placeholder="搜索学生" class="w-full sm:w-44"><button data-action="open-student-management" class="border-indigo-500 bg-indigo-500 text-white hover:bg-indigo-600">学生管理</button></div>
           </div>
           <div class="grid grid-cols-2 gap-2 bg-orange-50 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">${visibleStudents.map(student => {
             const prog = progression(student.points), pet = petOf(student), isCurrent = student.id === state.selectedStudentId;
             const missing = studentCloudSetup(student);
+            const membership = classMemberFor(student);
             return `<button class="student-card min-h-[256px] overflow-hidden rounded-2xl border-orange-200 bg-orange-50 p-0 ${isCurrent ? 'active' : ''}" data-action="select-student" data-id="${student.id}">
-              <span class="relative flex h-[162px] items-center justify-center overflow-hidden bg-orange-50"><span class="absolute left-2 top-2 z-10 flex max-w-[60%] items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-sm font-black text-slate-700"><span class="truncate">${esc(student.name)}</span><span class="shrink-0 text-base leading-none ${student.gender === '男' ? 'text-sky-800' : 'text-rose-700'}" aria-label="${student.gender}">${student.gender === '男' ? '♂' : '♀'}</span></span><span class="absolute right-2 top-2 z-10 rounded-md bg-indigo-100 px-2 py-1 text-sm font-black text-indigo-700">${prog.level}级</span><span class="pet-mini growth-${prog.stage} ${student.action || 'idle'} absolute left-1/2 -translate-x-1/2 -translate-y-1/2" style="${cardPetVisualStyle(pet, student.action, prog.level)}"></span></span>
+              <span class="relative flex h-[162px] items-center justify-center overflow-hidden bg-orange-50"><span class="absolute left-2 top-2 z-10 flex max-w-[60%] items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-sm font-black text-slate-700"><span class="truncate">${esc(student.name)}</span><span class="shrink-0 text-base leading-none ${student.gender === '男' ? 'text-sky-800' : 'text-rose-700'}" aria-label="${student.gender}">${student.gender === '男' ? '♂' : '♀'}</span></span><span class="absolute right-2 top-2 z-10 rounded-md bg-indigo-100 px-2 py-1 text-sm font-black text-indigo-700">${prog.level}级</span><span class="absolute bottom-2 left-2 z-10 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">✓ 已加入${membershipTimeLabel(membership?.updatedAt) ? ` · ${membershipTimeLabel(membership.updatedAt)}` : ''}</span><span class="pet-mini growth-${prog.stage} ${student.action || 'idle'} absolute left-1/2 -translate-x-1/2 -translate-y-1/2" style="${cardPetVisualStyle(pet, student.action, prog.level)}"></span></span>
               <span class="block bg-orange-50 px-3 pb-3 pt-2 text-left"><span class="block truncate text-[11px] font-bold ${missing.length ? 'text-amber-700' : 'text-emerald-700'}">${missing.length ? `待配置：${esc(missing.join('、'))}` : '家庭闭环已就绪'}</span><span class="mt-2 flex justify-end text-base font-bold text-slate-700">${prog.xp}/${prog.need}</span><span class="mt-1.5 block progress"><span style="width:${prog.percent}%"></span></span></span>
             </button>`;
-          }).join('') || '<p class="col-span-full py-12 text-center text-sm text-slate-400">没有找到符合条件的学生</p>'}</div>
+          }).join('') || '<p class="col-span-full py-12 text-center text-sm text-slate-400">暂无已确认加入的学生</p>'}</div>${invitationStatus}
         </section>`;
         return `<section class="card"><p class="mb-1 text-xs font-black tracking-widest text-orange-500">访问身份 · 仅查看自己</p>
           <h2 class="m-0 mb-4 text-3xl font-black">${esc(game_config.className)}</h2>
@@ -1277,7 +1488,14 @@
         const pet = petOf(student), prog = progression(student.points);
         const tasks = studentGrowthTasks.filter(item => item.action?.status !== 'submitted');
         const submitted = studentGrowthTasks.filter(item => item.action?.status === 'submitted');
-        return `<aside class="card h-fit"><div class="flex items-start justify-between gap-3"><div><p class="mb-1 text-xs font-black tracking-widest text-orange-500">我的成长任务</p><h2 class="m-0 text-xl font-black">${tasks.length ? '把课堂的进步带回家' : submitted.length ? '已提交，等待家长确认' : '今天的成长行动已完成'}</h2></div><button class="shrink-0 text-xs" data-action="refresh-growth-tasks">刷新任务</button></div><p class="mt-1 text-sm text-slate-500">课堂积分由老师记录；完成一个小行动后，请家长确认是否计入家庭成长。</p><div class="mt-4 rounded-2xl bg-orange-50 p-4"><span class="text-xs text-slate-500">${esc(student.name)} 的课堂伙伴</span><strong class="mt-1 block text-lg">${esc(pet.name)} · Lv.${prog.level}</strong><span class="mt-2 block text-sm text-orange-600">${student.points} 课堂积分</span></div><div class="mt-3 space-y-2">${tasks.length ? tasks.map(item => `<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3"><b class="block text-sm text-emerald-800">${esc(item.event.reason || '课堂成长记录')}</b><span class="mt-1 block text-xs leading-5 text-slate-600">今天试试：${esc(actionSuggestion(item.event.reason || ''))}</span><button class="primary mt-3 w-full" data-action="complete-growth-task" data-event-id="${esc(item.event.id)}">我完成了，告诉家长</button></div>`).join('') : '<p class="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">暂时没有新的课堂成长任务，和宠物一起保持好状态吧。</p>'}${submitted.length ? `<p class="rounded-xl bg-sky-50 p-3 text-xs font-bold text-sky-700">已提交 ${submitted.length} 个小行动，等待家长确认。</p>` : ''}</div></aside>`;
+        const activeBinding = studentBinding();
+        const bindingSwitcher = studentClassBindings.length > 1
+          ? `<div class="mb-4"><label class="block text-xs font-black text-slate-500" for="studentTeacherBinding">查看老师</label><select id="studentTeacherBinding" class="mt-1 w-full" data-student-binding-select>${studentClassBindings.map(binding => `<option value="${esc(binding.bindingId)}" ${binding.bindingId === activeStudentBindingId ? 'selected' : ''}>${esc(binding.teacherName)}${binding.className ? ` · ${esc(binding.className)}` : ''}</option>`).join('')}</select></div>`
+          : '';
+        const joinedStatus = activeBinding ? `<div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><div class="flex items-center justify-between gap-2"><b class="text-sm text-emerald-800">✓ 已加入 ${esc(activeBinding.className || game_config.className)}</b><span class="rounded-full bg-white px-2 py-1 text-[11px] font-bold text-emerald-700">已确认</span></div><span class="mt-1 block text-xs text-slate-600">老师：${esc(activeBinding.teacherName || activeBinding.teacherUsername || activeBinding.sitePath)}${membershipTimeLabel(activeBinding.updatedAt) ? ` · ${membershipTimeLabel(activeBinding.updatedAt)}` : ''}</span></div>` : '<p class="mb-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">尚未加入班级，可处理老师邀请或输入邀请码。</p>';
+        const invitations = studentClassInvitations.length ? `<div class="mb-4 space-y-2"><p class="m-0 text-xs font-black text-indigo-600">待处理入班邀请</p>${studentClassInvitations.map(invitation => `<div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3"><div class="flex items-center justify-between gap-2"><b class="block text-sm">${esc(invitation.className)}</b><span class="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-700">等待确认</span></div><span class="text-xs text-slate-500">老师：${esc(invitation.teacherUsername)}${membershipTimeLabel(invitation.updatedAt) ? ` · ${membershipTimeLabel(invitation.updatedAt)}` : ''}</span><div class="mt-2 flex gap-2"><button class="primary flex-1" data-action="accept-class-invitation" data-invitation-id="${esc(invitation.invitationId)}">同意加入</button><button class="flex-1" data-action="decline-class-invitation" data-invitation-id="${esc(invitation.invitationId)}">拒绝</button></div></div>`).join('')}</div>` : '';
+        const joinForm = `<form id="studentJoinClassForm" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><label class="block text-xs font-black text-emerald-700">使用邀请码加入班级</label><div class="mt-2 flex gap-2"><input id="studentClassInviteCode" class="min-w-0 flex-1 uppercase" maxlength="20" required placeholder="输入邀请码"><button class="primary shrink-0" type="submit">加入</button></div></form>`;
+        return `<aside class="card h-fit">${joinedStatus}${invitations}${joinForm}${student.profileSyncError ? `<p class="mb-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">已加入班级，老师尚未发布你的宠物档案。稍后点击刷新即可。</p>` : ''}${bindingSwitcher}${studentBindingSyncError ? `<p class="mb-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">老师列表暂不可用，请稍后重试。</p>` : ''}<div class="flex items-start justify-between gap-3"><div><p class="mb-1 text-xs font-black tracking-widest text-orange-500">我的成长任务</p><h2 class="m-0 text-xl font-black">${tasks.length ? '把课堂的进步带回家' : submitted.length ? '已提交，等待家长确认' : '今天的成长行动已完成'}</h2></div><button class="shrink-0 text-xs" data-action="refresh-student-membership">刷新</button></div><p class="mt-1 text-sm text-slate-500">课堂积分由老师记录；完成一个小行动后，请家长确认是否计入家庭成长。</p><div class="mt-4 rounded-2xl bg-orange-50 p-4"><span class="text-xs text-slate-500">${esc(student.name)} 的课堂伙伴</span><strong class="mt-1 block text-lg">${esc(pet.name)} · Lv.${prog.level}</strong><span class="mt-2 block text-sm text-orange-600">${student.points} 课堂积分</span></div><div class="mt-3 space-y-2">${tasks.length ? tasks.map(item => `<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3"><b class="block text-sm text-emerald-800">${esc(item.event.reason || '课堂成长记录')}</b><span class="mt-1 block text-xs leading-5 text-slate-600">今天试试：${esc(actionSuggestion(item.event.reason || ''))}</span><button class="primary mt-3 w-full" data-action="complete-growth-task" data-event-id="${esc(item.event.id)}">我完成了，告诉家长</button></div>`).join('') : '<p class="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">暂时没有新的课堂成长任务，和宠物一起保持好状态吧。</p>'}${submitted.length ? `<p class="rounded-xl bg-sky-50 p-3 text-xs font-bold text-sky-700">已提交 ${submitted.length} 个小行动，等待家长确认。</p>` : ''}</div></aside>`;
       }
       function readonlyScreen() {
         const screen = document.getElementById('readonlyScreen');
@@ -1407,11 +1625,11 @@
         const defaultPath = defaultSchoolSitePath();
         const actualPath = schoolSitePath();
         const spaceHint = configuredSchoolSitePath() ? '已使用管理员指定的数据空间。' : defaultPath ? '系统已按当前教师账号自动命名；首次发布前请由管理员开通该空间。' : '登录后会自动命名数据空间。';
-        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-indigo-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">年级与班级设置</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div><form id="classSettingsForm" class="mt-5 space-y-4"><label class="block text-sm font-bold text-slate-600">年级<input id="classGrade" class="mt-1 w-full" maxlength="12" required value="${esc(game_config.grade || '')}" placeholder="例如：三年级"></label><label class="block text-sm font-bold text-slate-600">班级<input id="classNumber" class="mt-1 w-full" maxlength="8" required value="${esc(game_config.classNumber || '')}" placeholder="例如：2"></label><div class="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-3"><span class="block text-sm font-bold text-slate-700">联动数据空间</span><strong class="mt-1 block break-all text-sm text-indigo-700">${esc(actualPath || '登录后自动命名')}</strong><p class="mb-0 mt-1 text-xs leading-5 text-indigo-800">${spaceHint} 全班数据按学生独立保存。</p></div><details class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><summary class="cursor-pointer text-sm font-bold text-slate-600">管理员设置</summary><label class="mt-3 block text-sm font-bold text-slate-600">实际 KeepWork 路径<input id="schoolSitePath" class="mt-1 w-full" maxlength="160" value="${esc(configuredSchoolSitePath() || defaultPath)}" placeholder="例如：teacher_zhang/haqi-growth"></label><p class="mb-0 mt-2 text-xs leading-5 text-slate-500">仅在学校统一分配数据空间时修改。路径格式为“账号/站点名”；首次使用需先在 KeepWork 开通该站点，并授予当前教师编辑权限。</p></details><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">保存设置</button></div></form></div>`;
+        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-indigo-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">年级与班级设置</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div>${game_config.inviteCode ? `<div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><span class="block text-xs font-bold text-emerald-700">学生邀请码</span><strong class="mt-1 block text-2xl tracking-widest text-emerald-800">${esc(game_config.inviteCode)}</strong><button type="button" class="mt-2 bg-white px-3 py-1.5 text-xs" data-action="copy-class-invite-code">复制邀请码</button></div>` : ''}<form id="classSettingsForm" class="mt-5 space-y-4"><label class="block text-sm font-bold text-slate-600">年级<input id="classGrade" class="mt-1 w-full" maxlength="12" required value="${esc(game_config.grade || '')}" placeholder="例如：三年级"></label><label class="block text-sm font-bold text-slate-600">班级<input id="classNumber" class="mt-1 w-full" maxlength="8" required value="${esc(game_config.classNumber || '')}" placeholder="例如：2"></label><div class="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-3"><span class="block text-sm font-bold text-slate-700">联动数据空间</span><strong class="mt-1 block break-all text-sm text-indigo-700">${esc(actualPath || '登录后自动命名')}</strong><p class="mb-0 mt-1 text-xs leading-5 text-indigo-800">${spaceHint} 全班数据按学生独立保存。</p></div><details class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><summary class="cursor-pointer text-sm font-bold text-slate-600">管理员设置</summary><label class="mt-3 block text-sm font-bold text-slate-600">实际 KeepWork 路径<input id="schoolSitePath" class="mt-1 w-full" maxlength="160" value="${esc(configuredSchoolSitePath() || defaultPath)}" placeholder="例如：teacher_zhang/haqi-growth"></label><p class="mb-0 mt-2 text-xs leading-5 text-slate-500">仅在学校统一分配数据空间时修改。路径格式为“账号/站点名”；首次使用需先在 KeepWork 开通该站点，并授予当前教师编辑权限。</p></details><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">保存并创建班级</button></div></form></div>`;
         screen.classList.remove('hidden');
         setTimeout(() => document.getElementById('classGrade')?.focus(), 0);
       }
-      function saveClassSettings(form) {
+      async function saveClassSettings(form) {
         const grade = document.getElementById('classGrade').value.trim();
         const classNumber = document.getElementById('classNumber').value.trim().replace(/班$/, '');
         const sharedSitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
@@ -1421,17 +1639,23 @@
         game_config.classNumber = classNumber;
         game_config.schoolSitePath = sharedSitePath === defaultSchoolSitePath() ? '' : sharedSitePath;
         game_config.className = classLabel();
+        const createdClass = await growthApiRequest('/api/v1/teacher/classes', {
+          method: 'POST',
+          body: JSON.stringify({ classId: classId(), className: game_config.className, sitePath: schoolSitePath() })
+        });
+        game_config.inviteCode = createdClass.inviteCode;
+        await loadTeacherClassMembers();
         state.students.forEach(student => {
           student.familyPublishedAt = 0;
           student.familyPublishFingerprint = '';
         });
-        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade, classNumber, schoolSitePath: game_config.schoolSitePath }));
+        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade, classNumber, schoolSitePath: game_config.schoolSitePath, inviteCode: game_config.inviteCode }));
         save();
         document.getElementById('studentFormScreen').classList.add('hidden');
         render();
-        showToast(`已更新为 ${game_config.className}`);
+        showToast(`已创建 ${game_config.className}，邀请码：${game_config.inviteCode}`);
       }
-      function saveStudentForm(form) {
+      async function saveStudentForm(form) {
         const id = form.dataset.studentId;
         const name = document.getElementById('studentName').value.trim();
         const gender = document.getElementById('studentGender').value === '男' ? '男' : '女';
@@ -1441,7 +1665,7 @@
         const guardianInputs = document.getElementById('guardianAllowlist').value.split(/[,，\s]+/).map(value => value.trim()).filter(Boolean);
         const guardianAllowlist = [...new Set(guardianInputs.map(normalizeKeepworkUsername))];
         if (!name) { showToast('请输入学生姓名'); return; }
-        if (!Number.isFinite(points) || points < 0) { showToast('积分需为不小于 0 的数字'); return; }
+        if (!Number.isFinite(points) || points < 0 || points > 20) { showToast('初始积分或单次调整需在 0 到 20 之间'); return; }
         if (!validKeepworkUsername(keepworkUsername)) { showToast('学生 KeepWork 账号格式不正确，请核对后重试'); return; }
         if (!guardianAllowlist.length || guardianInputs.some(account => !validKeepworkUsername(account))) { showToast('家长 KeepWork 账号格式不正确，请核对后重试'); return; }
         if (guardianAllowlist.includes(keepworkUsername)) { showToast('学生账号和家长账号不能相同'); return; }
@@ -1450,33 +1674,37 @@
         const pet = pets.find(item => item.id === petId) || pets[0];
         const existing = state.students.find(item => item.id === id);
         const isNewStudent = !existing;
+        const initialPoints = Math.floor(points);
         let savedStudent;
         if (existing) {
-          const difference = Math.floor(points) - existing.points;
+          const difference = initialPoints - existing.points;
+          if (Math.abs(difference) > 20) { showToast('单次积分调整不能超过 20 分'); return; }
           existing.name = name; existing.gender = gender; existing.petId = pet.id; existing.keepworkUsername = keepworkUsername; existing.guardianAllowlist = guardianAllowlist;
           existing.familyPublishedAt = 0;
           existing.familyPublishFingerprint = '';
           if (!existing.uuid) existing.uuid = generateUuid();
-          if (difference) changePoints(existing, difference, '教师调整积分');
           savedStudent = existing;
           showToast(`已更新 ${existing.name} 的资料`);
         } else {
-          const student = { id: `stu_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, uuid: generateUuid(), name, gender, points: Math.floor(points), petId: pet.id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(), message: `你好，我是${pet.name}！让我们一起积累成长积分吧。`, keepworkUsername, guardianAllowlist };
+          const student = { id: `stu_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, uuid: generateUuid(), name, gender, points: 0, petId: pet.id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(), message: `你好，我是${pet.name}！让我们一起积累成长积分吧。`, keepworkUsername, guardianAllowlist };
           state.students.push(student); state.selectedStudentId = student.id;
           savedStudent = student;
           showToast(`已添加学生：${student.name}`);
         }
         document.getElementById('studentFormScreen').classList.add('hidden');
         save(); render();
-        if (validFamilySitePath(schoolSitePath()) && JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').active) {
-          publishFamilySetup(savedStudent).then(() => {
-            showToast(isNewStudent ? `${savedStudent.name} 已绑定，请发送入口` : `${savedStudent.name} 的家庭授权已更新`);
-            if (isNewStudent) openAccessCards();
+        if (JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').active) {
+          registerStudentClassBinding(savedStudent).then(() => {
+            savedStudent.classInvitationStatus = 'pending';
+            save();
+            return loadTeacherClassMembers();
+          }).then(() => {
+            render();
+            showToast(`${savedStudent.name} 的入班邀请已发送，等待学生确认`);
           }).catch(error => {
             savedStudent.familyPublishError = error?.message || String(error);
             save();
-            showToast(`${isNewStudent ? '绑定' : '更新授权'}失败：${savedStudent.familyPublishError}`);
-            if (isNewStudent) openAccessCards();
+            showToast(`发送邀请失败：${savedStudent.familyPublishError}`);
           });
         }
       }
@@ -1505,10 +1733,10 @@
           if (!validKeepworkUsername(keepworkUsername)) { showToast(`第 ${index + 1} 行的学生 KeepWork 账号格式不正确`); return; }
           if (!guardianAllowlist.length || guardianInputs.some(account => !validKeepworkUsername(account))) { showToast(`第 ${index + 1} 行的家长 KeepWork 账号格式不正确`); return; }
           if (guardianAllowlist.includes(keepworkUsername)) { showToast(`第 ${index + 1} 行的学生账号和家长账号不能相同`); return; }
-          if (!Number.isFinite(points) || points < 0) { showToast(`第 ${index + 1} 行的初始积分无效`); return; }
+          if (!Number.isFinite(points) || points < 0 || points > 20) { showToast(`第 ${index + 1} 行的初始积分需在 0 到 20 之间`); return; }
           if (accountKey && (existingAccounts.has(accountKey) || importedAccounts.has(accountKey))) { showToast(`第 ${index + 1} 行的学生 KeepWork 账号重复`); return; }
           const pet = pets.find(item => item.id === petIdValue) || pets[0];
-          prepared.push({ id: `stu_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`, uuid: generateUuid(), name, gender: genderValue === '男' ? '男' : '女', points: Math.floor(points), petId: pet.id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(), message: `你好，我是${pet.name}！让我们一起积累成长积分吧。`, keepworkUsername, guardianAllowlist });
+          prepared.push({ id: `stu_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`, uuid: generateUuid(), name, gender: genderValue === '男' ? '男' : '女', points: 0, pendingInitialPoints: Math.floor(points), petId: pet.id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(), message: `你好，我是${pet.name}！让我们一起积累成长积分吧。`, keepworkUsername, guardianAllowlist });
           if (accountKey) importedAccounts.add(accountKey);
         }
         state.students.push(...prepared);
@@ -1518,7 +1746,12 @@
         showToast(`已导入 ${prepared.length} 名学生`);
         const active = JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').active;
         const readyStudents = prepared.filter(student => !studentCloudSetup(student).length);
-        if (active && readyStudents.length) Promise.allSettled(readyStudents.map(publishFamilySetup)).then(results => {
+        if (active && readyStudents.length) Promise.allSettled(readyStudents.map(async student => {
+          await publishFamilySetup(student);
+          if (student.pendingInitialPoints && !await changePoints(student, student.pendingInitialPoints, '教师设置初始积分')) throw new Error('积分登记未被服务端接受');
+          delete student.pendingInitialPoints;
+          save();
+        })).then(results => {
           const succeeded = results.filter(result => result.status === 'fulfilled').length;
           const failed = results.length - succeeded;
           showToast(failed ? `已发布 ${succeeded} 名，${failed} 名失败，请在家庭入口卡中重试` : `已发布 ${succeeded} 名学生的家庭云端授权`);
@@ -1539,8 +1772,14 @@
         return `【${game_config.className} · ${student.name}】\n学生入口：${studentLoginLink(student)}\n家长入口：${guardianLink(student)}`;
       }
       function copyText(text, successText) {
-        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => showToast(successText)).catch(() => showToast('复制失败，请手动复制'));
-        else showToast('当前浏览器不支持自动复制，请手动复制');
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => showToast(successText)).catch(() => showManualCopy(text));
+        else showManualCopy(text);
+      }
+      function showManualCopy(text) {
+        const screen = document.getElementById('studentFormScreen');
+        screen.innerHTML = `<div class="mx-auto mt-5 max-w-2xl rounded-3xl bg-white p-5 shadow-2xl sm:mt-12 sm:p-7"><div class="flex items-start justify-between gap-4"><div><h2 class="m-0 text-2xl font-black">手动复制入口</h2><p class="m-0 mt-2 text-sm text-slate-500">长按或全选下面的内容，再发送给对应用户。</p></div><button type="button" data-action="close-student-form" aria-label="关闭">×</button></div><textarea id="manualCopyText" class="mt-4 min-h-48 w-full rounded-xl border border-slate-200 p-3 text-sm leading-6" readonly>${esc(text)}</textarea></div>`;
+        screen.classList.remove('hidden');
+        document.getElementById('manualCopyText')?.select();
       }
       async function shareText(title, text) {
         if (navigator.share) {
@@ -1630,6 +1869,7 @@
         if (action === 'close-logout') { document.getElementById('logoutScreen').classList.add('hidden'); document.getElementById('logoutScreen').classList.remove('flex'); return; }
         if (action === 'confirm-logout') { button.disabled = true; logoutToLogin().finally(() => { button.disabled = false; }); return; }
         if (action === 'class-settings' && state.role === 'teacher') { openClassSettings(); return; }
+        if (action === 'copy-class-invite-code' && state.role === 'teacher') { copyText(game_config.inviteCode, '班级邀请码已复制'); return; }
         if (action === 'import-students' && state.role === 'teacher') { openStudentImport(); return; }
         if (action === 'open-access-cards' && state.role === 'teacher') { openAccessCards(); return; }
         if (action === 'publish-access-card' && state.role === 'teacher') {
@@ -1706,6 +1946,9 @@
           return;
         }
         if (action === 'refresh-growth-tasks' && window.studentLoginOnly) { refreshStudentGrowthTasks(); return; }
+        if (action === 'refresh-student-membership' && window.studentLoginOnly) { refreshStudentMembership().then(() => showToast('班级状态已刷新')).catch(error => showToast(`刷新失败：${error?.message || error}`)); return; }
+        if (action === 'accept-class-invitation' && window.studentLoginOnly) { respondToClassInvitation(button.dataset.invitationId, 'accept').then(() => showToast('已同意加入班级')).catch(error => showToast(`操作失败：${error?.message || error}`)); return; }
+        if (action === 'decline-class-invitation' && window.studentLoginOnly) { respondToClassInvitation(button.dataset.invitationId, 'decline').then(() => showToast('已拒绝该邀请')).catch(error => showToast(`操作失败：${error?.message || error}`)); return; }
         if (action === 'complete-growth-task' && window.studentLoginOnly) { submitStudentGrowthAction(button.dataset.eventId); return; }
         if (action === 'retry-pending-awards' && state.role === 'teacher') {
           pendingAwards.filter(item => item.event?.studentId === student.id && !item.abandonedAt).forEach(item => { item.nextRetryAt = 0; item.lastError = ''; });
@@ -1735,6 +1978,10 @@
           const [anim, message, mood, bond] = map[button.dataset.kind]; student.mood = Math.min(100, student.mood + mood); student.bond += bond; setAction(student, anim, message); showToast(`亲密度 +${bond}；课堂积分不变`); return;
         }
         if (action === 'reset' && state.role === 'teacher') { if (confirm('确定清空本地演示数据并恢复初始状态吗？')) { state = clone(defaultState); save(); render(); showToast('已恢复初始演示数据'); } }
+      });
+      document.addEventListener('change', event => {
+        if (!event.target.matches('[data-student-binding-select]') || !window.studentLoginOnly) return;
+        switchStudentClassBinding(event.target.value);
       });
       let searchRenderTimer = null;
       function refreshStudentSearch(input) {
@@ -1780,9 +2027,14 @@
         }
       });
       document.addEventListener('submit', event => {
+        if (event.target.id === 'studentJoinClassForm') {
+          event.preventDefault();
+          if (window.studentLoginOnly) joinClassByInviteCode(document.getElementById('studentClassInviteCode')?.value).then(() => showToast('已加入班级')).catch(error => showToast(`加入失败：${error?.message || error}`));
+          return;
+        }
         if (event.target.id === 'classSettingsForm') {
           event.preventDefault();
-          if (state.role === 'teacher') saveClassSettings(event.target);
+          if (state.role === 'teacher') saveClassSettings(event.target).catch(error => showToast(`创建班级失败：${error?.message || error}`));
           return;
         }
         if (event.target.id === 'studentImportForm') {
@@ -1849,6 +2101,8 @@
       const loginGate = document.getElementById('loginGate');
       const loginGateHint = document.getElementById('loginGateHint');
       const keepworkLoginButton = document.getElementById('keepworkLoginButton');
+      const teacherPasswordLoginForm = document.getElementById('teacherPasswordLoginForm');
+      const teacherPasswordLoginButton = document.getElementById('teacherPasswordLoginButton');
       const studentPasswordLoginForm = document.getElementById('studentPasswordLoginForm');
       const studentPasswordLoginButton = document.getElementById('studentPasswordLoginButton');
       const pageContent = document.getElementById('pageContent');
@@ -1877,10 +2131,11 @@
           button.classList.toggle('text-slate-600', !selected);
         });
         const isStudentLogin = loginRole === 'student';
+        teacherPasswordLoginForm.classList.toggle('hidden', loginRole !== 'teacher');
         studentPasswordLoginForm.classList.toggle('hidden', !isStudentLogin);
-        keepworkLoginButton.classList.toggle('hidden', isStudentLogin);
+        keepworkLoginButton.classList.toggle('hidden', !loginRole);
         keepworkLoginButton.disabled = !loginRole;
-        keepworkLoginButton.textContent = loginRole ? '使用 KeepWork 登录 / 注册' : '请先选择登录身份';
+        keepworkLoginButton.textContent = loginRole ? '使用微信、Google 登录 / 注册' : '请先选择登录身份';
         const binding = studentBinding();
         const sitePathInput = document.getElementById('studentLoginSitePath');
         const usernameInput = document.getElementById('studentLoginUsername');
@@ -1892,7 +2147,7 @@
         if (sitePathInput) sitePathInput.readOnly = lockedInvitation;
         if (usernameInput) usernameInput.readOnly = lockedInvitation;
         loginGateHint.textContent = isStudentLogin
-          ? binding?.username ? `欢迎 ${binding.username}，请输入密码即可进入自己的宠物。` : '请打开教师发送的学生入口；首次只需输入账号和密码。'
+          ? binding?.username ? `欢迎 ${binding.username}，可输入密码或使用安全窗口登录。` : '已有账号可直接登录；首次使用请注册 KeepWork 账号，再接受邀请或输入班级邀请码。'
           : loginRole === 'teacher' ? '将以教师身份进入班级管理，请使用教师 KeepWork 账号。' : '请选择登录身份，再使用 KeepWork 账号登录。';
       }
 
@@ -2010,43 +2265,99 @@
         clearKeepworkAuthParams();
         return user;
       }
-      async function loginStudentWithPassword() {
-        const sitePath = String(document.getElementById('studentLoginSitePath')?.value || '').trim().replace(/^\/+|\/+$/g, '');
-        const username = String(document.getElementById('studentLoginUsername')?.value || '').trim();
-        const passwordInput = document.getElementById('studentLoginPassword');
-        const password = String(passwordInput?.value || '');
-        const binding = studentBinding();
-        if (!binding) { loginGateHint.textContent = '学生入口链接不完整，请重新打开教师发送的专属链接。'; return; }
-        if (normalizeKeepworkUsername(username) !== binding.username) { loginGateHint.textContent = `请使用教师绑定的学生账号：${binding.username}`; return; }
-        if (!validFamilySitePath(sitePath) || !username || !password) { loginGateHint.textContent = '请完整输入站点路径、KeepWork 账号和密码。'; return; }
-        studentPasswordLoginButton.disabled = true;
-        loginGateHint.textContent = '正在验证学生 KeepWork 账号…';
-        try {
+      async function requestKeepworkPasswordToken(username, password) {
+        const requestLogin = async includePlatform => {
           const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, platform: 'WEB' })
+            body: JSON.stringify(includePlatform ? { username, password, platform: 'WEB' } : { username, password })
           });
           const payload = await response.json().catch(() => null);
-          const token = payload?.token || payload?.data?.token;
-          if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+          return { response, payload };
+        };
+        let response;
+        let payload;
+        try {
+          ({ response, payload } = await requestLogin(true));
+        } catch (_) {
+          try {
+            ({ response, payload } = await requestLogin(false));
+          } catch (_) {
+            const error = new Error('暂时无法连接 KeepWork 登录服务，请检查网络后重试。');
+            error.isNetworkFailure = true;
+            throw error;
+          }
+        }
+        if (response.status >= 500) ({ response, payload } = await requestLogin(false));
+        const token = payload?.token || payload?.data?.token;
+        if (!response.ok || !token) {
+          const serverFailure = response.status >= 500 || /internal server error/i.test(String(payload?.message || payload?.error?.message || ''));
+          const error = new Error(serverFailure ? 'KeepWork 账号密码服务暂时异常，请改用安全登录。' : payload?.message || payload?.error?.message || payload?.error || '账号或密码错误');
+          error.useOfficialLogin = serverFailure;
+          throw error;
+        }
+        return token;
+      }
+      async function loginTeacherWithPassword() {
+        const username = String(document.getElementById('teacherLoginUsername')?.value || '').trim();
+        const passwordInput = document.getElementById('teacherLoginPassword');
+        const password = String(passwordInput?.value || '');
+        if (!validKeepworkUsername(username) || !password) { loginGateHint.textContent = '请完整输入 KeepWork 账号和密码。'; return; }
+        teacherPasswordLoginButton.disabled = true;
+        loginGateHint.textContent = '正在安全验证教师 KeepWork 账号…';
+        try {
+          const token = await requestKeepworkPasswordToken(username, password);
+          const sdk = await getKeepworkSdk();
+          if (typeof sdk.setToken === 'function') sdk.setToken(token);
+          else sdk.token = token;
+          const user = await getKeepworkUser(sdk).catch(() => null);
+          if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          await enterAfterLogin(user, sdk);
+        } catch (error) {
+          loginGateHint.textContent = error?.message || '登录失败，请重试。';
+          if (error?.useOfficialLogin) {
+            loginGateHint.textContent = '账号密码服务暂时异常，正在打开 KeepWork 安全登录…';
+            passwordInput.value = '';
+            const sdk = await getKeepworkSdk();
+            sdk.token = null;
+            const user = await ensureKeepworkLogin(sdk);
+            await enterAfterLogin(user, sdk);
+          }
+        } finally {
+          if (passwordInput) passwordInput.value = '';
+          teacherPasswordLoginButton.disabled = false;
+        }
+      }
+      async function loginStudentWithPassword() {
+        const username = String(document.getElementById('studentLoginUsername')?.value || '').trim();
+        const passwordInput = document.getElementById('studentLoginPassword');
+        const password = String(passwordInput?.value || '');
+        if (!username || !password) { loginGateHint.textContent = '请输入 KeepWork 账号和密码。'; return; }
+        studentPasswordLoginButton.disabled = true;
+        loginGateHint.textContent = '正在验证学生 KeepWork 账号…';
+        try {
+          const token = await requestKeepworkPasswordToken(username, password);
           passwordInput.value = '';
           const sdk = await getKeepworkSdk();
           if (typeof sdk.setToken === 'function') sdk.setToken(token);
           else sdk.token = token;
           const user = await getKeepworkUser(sdk).catch(() => null);
           if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
-          const url = new URL(location.href);
-          url.searchParams.set('studentSite', sitePath);
-          history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-          const boundStudent = await loadBoundStudent(user);
           window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
-          state.students = [boundStudent];
-          state.selectedStudentId = boundStudent.id;
-          state.role = 'student';
+          await refreshStudentMembership();
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
           await enterAfterLogin(user, sdk);
         } catch (error) {
           loginGateHint.textContent = error?.message || '登录失败，请重试。';
+          if (error?.useOfficialLogin) {
+            loginGateHint.textContent = '账号密码服务暂时异常，正在打开 KeepWork 安全登录…';
+            passwordInput.value = '';
+            const sdk = await getKeepworkSdk();
+            sdk.token = null;
+            const user = await ensureKeepworkLogin(sdk);
+            await enterAfterLogin(user, sdk);
+          }
         } finally {
           if (passwordInput) passwordInput.value = '';
           studentPasswordLoginButton.disabled = false;
@@ -2095,7 +2406,8 @@
           const paths = getTeacherCloudPaths(authenticatedUsername);
           const [cloudStateText, cloudAwardsText] = await Promise.all([
             readTeacherCloudFile(paths.state),
-            readTeacherCloudFile(paths.awards)
+            readTeacherCloudFile(paths.awards),
+            loadTeacherClassMembers()
           ]);
           const localStateText = JSON.stringify(state);
           const localAwardsText = JSON.stringify(pendingAwards);
@@ -2132,12 +2444,15 @@
           loadTeacherLocalState(authenticatedUsername);
           loginGateHint.textContent = '正在同步当前教师的班级数据…';
           await loadTeacherCloudState(sdk);
+          await loadTeacherClassMembers().catch(error => console.warn('班级成员尚不可用:', error));
         }
         localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({
           active: true,
           role: loginRole,
           username: user?.username || user?.name || 'KeepWork 用户',
+          bindingId: window.studentLoginOnly ? activeStudentBindingId : '',
           studentSite: window.studentLoginOnly ? studentBinding()?.sitePath || '' : '',
+          studentId: window.studentLoginOnly ? studentBinding()?.studentId || '' : '',
           studentAccount: window.studentLoginOnly ? studentBinding()?.username || '' : ''
         }));
         loginGate.classList.add('hidden');
@@ -2173,16 +2488,13 @@
           const sdk = await getKeepworkSdk();
           let user = await ensureKeepworkLogin(sdk);
           if (loginRole === 'student') {
-            loginGateHint.textContent = '正在校验学生绑定并读取个人档案…';
-            const boundStudent = await loadBoundStudent(user);
+            loginGateHint.textContent = '正在读取班级关系和邀请…';
             window.studentSessionSnapshot ||= {
               students: state.students,
               selectedStudentId: state.selectedStudentId,
               role: state.role
             };
-            state.students = [boundStudent];
-            state.selectedStudentId = boundStudent.id;
-            state.role = 'student';
+            await refreshStudentMembership();
           }
           await enterAfterLogin(user, sdk);
           if (loginRole === 'student') refreshStudentGrowthTasks();
@@ -2208,11 +2520,8 @@
             if (savedToken && !sdk.token) sdk.token = savedToken;
             const user = await getKeepworkUser(sdk);
             if (!user) throw new Error('登录状态已失效');
-            const boundStudent = await loadBoundStudent(user);
             window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
-            state.students = [boundStudent];
-            state.selectedStudentId = boundStudent.id;
-            state.role = 'student';
+            await refreshStudentMembership();
             await enterAfterLogin(user, sdk);
           } catch (_) {
             localStorage.removeItem(LOGIN_STATE_KEY);
@@ -2252,6 +2561,7 @@
               if (studentBinding()) {
                 loginRole = 'student';
                 loginGateHint.textContent = '正在校验学生绑定并读取个人档案…';
+                await loadStudentClassBindings(user);
                 const boundStudent = await loadBoundStudent(user);
                 window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
                 state.students = [boundStudent];
@@ -2273,6 +2583,7 @@
         });
       });
       keepworkLoginButton.addEventListener('click', loginWithKeepwork);
+      teacherPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginTeacherWithPassword(); });
       studentPasswordLoginForm.addEventListener('submit', event => { event.preventDefault(); loginStudentWithPassword(); });
       if (new URL(location.href).searchParams.has('studentSite')) loginRole = 'student';
       updateLoginRoleButtons();
