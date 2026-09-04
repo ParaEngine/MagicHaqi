@@ -4,7 +4,8 @@ import { decodeDna } from './dna.js';
 import { localizeFieldName, localizeRoomName, t } from './i18n.js';
 import { state } from './state.js';
 
-export const MAX_PLANET_PETS = 10;
+export const MAX_PLANET_PETS = 30;
+export const VIP_MAX_PLANET_PETS = 50;
 export const RELEASED_PET_FIELD_CHANCE = 0.9;
 export const RELEASED_AUTO_CARE_STATS = { hunger: 85, mood: 85, clean: 90, bond: 85 };
 
@@ -134,8 +135,8 @@ const ATTRIBUTE_ROOM_PREFS = {
     雷: ['living', 'garden'],
 };
 
-export function getPlanetPetLimit() {
-    return MAX_PLANET_PETS;
+export function getPlanetPetLimit(isVip = state.isPaid) {
+    return isVip ? VIP_MAX_PLANET_PETS : MAX_PLANET_PETS;
 }
 
 export function getPetLocationType(pet) {
@@ -231,6 +232,20 @@ export function isPetOnCurrentPlanet(pet) {
 
 export function isPetSelectable(pet) {
     return getPetLocationType(pet) === 'home';
+}
+
+/** VIP 可召回：放养在当前星球表面的宠物（哈奇岛 / 其它星球仍不可召回）。 */
+export function canVipRecallPet(pet) {
+    return getPetLocationType(pet) === 'released';
+}
+
+/** 将会员召回的放养宠物恢复为可照看的 home 状态。 */
+export function markPetRecalled(pet) {
+    if (!pet || !canVipRecallPet(pet)) return null;
+    pet.status = 'home';
+    delete pet.location;
+    delete pet.releasedAt;
+    return pet;
 }
 
 export function getPetFindTarget(pet) {
@@ -496,11 +511,16 @@ export function getNannyCareEligibility(pet) {
     const minHunger = Number(cfg.minHunger) || 50;
     const mood = Number(stats.mood) || 0;
     const hunger = Number(stats.hunger) || 0;
+    const needs = {
+        average: average <= minAverage,
+        mood: mood <= minMood,
+        hunger: hunger <= minHunger,
+    };
     const reasons = [];
-    if (average <= minAverage) reasons.push(`整体状态平均值需要高于 ${minAverage}`);
-    if (mood <= minMood) reasons.push(`心情需要高于 ${minMood}`);
-    if (hunger <= minHunger) reasons.push(`体力需要高于 ${minHunger}`);
-    return { ok: reasons.length === 0, reasons, average, mood, hunger };
+    if (needs.average) reasons.push(`整体状态平均值需要高于 ${minAverage}`);
+    if (needs.mood) reasons.push(`心情需要高于 ${minMood}`);
+    if (needs.hunger) reasons.push(`体力需要高于 ${minHunger}`);
+    return { ok: reasons.length === 0, reasons, needs, average, mood, hunger };
 }
 
 export function hireNannyForPet(pet, days = 1, now = Date.now()) {

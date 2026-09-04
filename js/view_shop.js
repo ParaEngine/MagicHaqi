@@ -8,23 +8,25 @@ const OUTDOOR_AREAS = OUTDOOR_FIELD_IDS;
 const INDOOR_AREAS = CONFIG.rooms.map(room => room.id);
 
 const SHOP_FILTERS = [
-    { id: 'all', labelKey: 'catAll', matches: () => true },
-    { id: 'food', labelKey: 'catFood', matches: item => item.type === 'food' },
-    { id: 'outdoor', labelKey: 'catOutdoor', matches: item => isFurnitureItem(item) && OUTDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
-    { id: 'indoor', labelKey: 'catIndoor', matches: item => isFurnitureItem(item) && INDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
-    { id: 'toy', labelKey: 'catToy', matches: item => item.type === 'toy' },
-    { id: 'house', labelKey: 'catHouse', matches: item => item.type === 'house' },
-    { id: 'furniture', labelKey: 'catFurniture', matches: isFurnitureItem },
-    { id: 'land', labelKey: 'catLand', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'land') },
-    { id: 'water', labelKey: 'catWater', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'water') },
-    { id: 'sky', labelKey: 'catSky', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'sky') },
+    { id: 'all', icon: '▦', labelKey: 'catAll', matches: () => true },
+    { id: 'food', icon: '🍎', labelKey: 'catFood', matches: item => item.type === 'food' },
+    { id: 'outdoor', icon: '🍃', labelKey: 'catOutdoor', matches: item => isFurnitureItem(item) && OUTDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
+    { id: 'indoor', icon: '♟', labelKey: 'catIndoor', matches: item => isFurnitureItem(item) && INDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
+    { id: 'toy', icon: '🧸', labelKey: 'catToy', matches: item => item.type === 'toy' },
+    { id: 'house', icon: '⌂', labelKey: 'catHouse', matches: item => item.type === 'house' },
+    { id: 'furniture', icon: '▰', labelKey: 'catFurniture', matches: isFurnitureItem },
+    { id: 'land', icon: '▲', labelKey: 'catLand', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'land') },
+    { id: 'water', icon: '💧', labelKey: 'catWater', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'water') },
+    { id: 'sky', icon: '☁', labelKey: 'catSky', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'sky') },
 ];
 
 let currentShopFilter = 'all';
+let currentShopPage = 0;
 let suppressInitialShopClickUntil = 0;
 
 export function setShopFilter(filterId = 'all') {
     currentShopFilter = SHOP_FILTERS.some(filter => filter.id === filterId) ? filterId : 'all';
+    currentShopPage = 0;
 }
 
 export function suppressShopInitialClick(durationMs = 450) {
@@ -32,32 +34,53 @@ export function suppressShopInitialClick(durationMs = 450) {
 }
 
 export function renderShop(panel, _data, { onBuy, onBack } = {}) {
+    panel.__mhShopResizeCleanup?.();
     panel.innerHTML = `
-        <div class="topbar">
-            <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">🛒 ${escapeHtml(t('shop'))}</span>
-            <span class="font-bold text-sm mh-coin-amount" style="color:var(--accent-dark)">${coinIconSvg()} ${state.coins}</span>
-        </div>
-        <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px">
+        <section class="mh-shop-view">
+            <header class="mh-shop-header">
+                <h1 class="mh-shop-title" aria-label="${escapeHtml(t('shop'))}"></h1>
+                <div class="mh-shop-wallet"><span>${state.coins}</span></div>
+            </header>
             <div class="shop-filter-panel">
                 <div class="shop-filter-row" aria-label="${escapeHtml(t('shopFilterAria'))}">
                     ${SHOP_FILTERS.map(filter => renderFilterButton(filter)).join('')}
                 </div>
             </div>
-            <div class="grid grid-cols-3 gap-2" id="mhShopGrid"></div>
-        </div>`;
+            <main class="mh-shop-grid" id="mhShopGrid"></main>
+            <footer class="mh-shop-footer">
+                <button class="mh-shop-back" id="mhBack" type="button" aria-label="${escapeHtml(t('back'))}"></button>
+                <nav class="mh-shop-pager" id="mhShopPager" aria-label="${escapeHtml(t('shop'))}"></nav>
+                <div class="mh-shop-corner" aria-hidden="true"></div>
+            </footer>
+        </section>`;
     bindInitialClickBlocker(panel);
     if ($('mhBack')) $('mhBack').onclick = () => onBack?.();
 
     $$('[data-shop-filter]').forEach(el => {
         el.onclick = () => {
             currentShopFilter = el.dataset.value || 'all';
+            currentShopPage = 0;
             renderShopItems(onBuy);
             refreshFilterButtons(panel);
         };
     });
 
     renderShopItems(onBuy);
+    bindShopResize(panel, onBuy);
+}
+
+function bindShopResize(panel, onBuy) {
+    let pageSize = getShopPageSize();
+    const handleResize = () => {
+        const nextPageSize = getShopPageSize();
+        if (nextPageSize === pageSize || !panel.querySelector('#mhShopGrid')) return;
+        pageSize = nextPageSize;
+        renderShopItems(onBuy);
+    };
+    window.addEventListener('resize', handleResize, { passive: true });
+    panel.__mhShopResizeCleanup = () => {
+        window.removeEventListener('resize', handleResize);
+    };
 }
 
 function bindInitialClickBlocker(panel) {
@@ -75,8 +98,9 @@ function bindInitialClickBlocker(panel) {
 function renderFilterButton(filter) {
     const active = filter.id === currentShopFilter ? ' active' : '';
     return `
-        <button class="btn-secondary shop-filter-chip${active}" type="button" data-shop-filter="preset" data-value="${escapeHtml(filter.id)}">
-            ${escapeHtml(t(filter.labelKey))}
+        <button class="shop-filter-chip${active}" type="button" data-shop-filter="preset" data-value="${escapeHtml(filter.id)}">
+            <span class="shop-filter-icon" aria-hidden="true">${escapeHtml(filter.icon)}</span>
+            <span>${escapeHtml(t(filter.labelKey))}</span>
         </button>`;
 }
 
@@ -90,17 +114,21 @@ function renderShopItems(onBuy) {
     const grid = $('mhShopGrid');
     if (!grid) return;
     const items = SHOP_ITEMS.filter(item => !item.remoteOnly && !item.hiddenFromShop && matchesShopFilter(item));
+    const pageSize = getShopPageSize();
+    const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+    currentShopPage = Math.min(currentShopPage, pageCount - 1);
+    const visibleItems = items.slice(currentShopPage * pageSize, (currentShopPage + 1) * pageSize);
     const inv = state.inventory || {};
-    grid.innerHTML = items.length ? items.map(item => {
+    grid.innerHTML = visibleItems.length ? visibleItems.map(item => {
         const owned = item.uniqueItem && (inv[item.id] || 0) > 0;
         const name = itemName(item.name);
         return `
         <div class="shop-item${owned ? ' is-owned' : ''}" data-buy="${escapeHtml(item.id)}"${owned ? ' data-owned="1"' : ''}>
             ${renderShopItemIcon(item)}
             <div class="name">${escapeHtml(name)}</div>
-            <div class="price mh-coin-amount">${owned ? escapeHtml(t('owned')) : `${coinIconSvg()} ${item.price}`}</div>
+            <div class="price mh-coin-amount">${owned ? escapeHtml(t('owned')) : item.price}</div>
         </div>`;
-    }).join('') : `<div class="shop-empty col-span-3">${escapeHtml(t('shopEmpty'))}</div>`;
+    }).join('') : `<div class="shop-empty">${escapeHtml(t('shopEmpty'))}</div>`;
 
     grid.querySelectorAll('[data-buy]').forEach(el => {
         el.onclick = () => {
@@ -110,6 +138,28 @@ function renderShopItems(onBuy) {
             if (!item) return;
             if (state.coins < item.price) { showToast(t('notEnoughCoins'), 'error'); return; }
             showBuyConfirm(item, onBuy);
+        };
+    });
+    renderShopPager(pageCount, onBuy);
+}
+
+function getShopPageSize() {
+    if (window.matchMedia('(max-width: 520px)').matches) return 8;
+    if (window.matchMedia('(max-width: 1024px)').matches) return 12;
+    return 15;
+}
+
+function renderShopPager(pageCount, onBuy) {
+    const pager = $('mhShopPager');
+    if (!pager) return;
+    pager.innerHTML = `
+        <button type="button" data-shop-page="prev" aria-label="Previous page"${currentShopPage === 0 ? ' disabled' : ''}></button>
+        <span>${currentShopPage + 1} / ${pageCount}</span>
+        <button type="button" data-shop-page="next" aria-label="Next page"${currentShopPage >= pageCount - 1 ? ' disabled' : ''}></button>`;
+    pager.querySelectorAll('[data-shop-page]').forEach(button => {
+        button.onclick = () => {
+            currentShopPage += button.dataset.shopPage === 'next' ? 1 : -1;
+            renderShopItems(onBuy);
         };
     });
 }

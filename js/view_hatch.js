@@ -6,7 +6,7 @@ import { randomDna, normalizeDna, formatDna, decodeDna, crossover, dnaRarity, dn
 import { generatePetSheet, getCachedSheetUrl, petArtHtml, preloadPetAssets } from './pet.js';
 import { defaultPermanentTrauma, defaultStats, applyStage } from './petTick.js';
 import { savePet, setCurrentPetPersisted } from './storage.js';
-import { state } from './state.js';
+import { addCoins, state } from './state.js';
 import { CONFIG } from './config.js';
 import { findLargestHouseAcrossLayouts } from './config.js';
 import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
@@ -106,7 +106,7 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
             preloadPetAssets(pet, { includeAll: false });
             await setCurrentPetPersisted(pet.id);
             if (isBreed) {
-                state.coins = Math.max(0, state.coins - CONFIG.breedCost);
+                addCoins(-CONFIG.breedCost, { source: 'pet-breeding-hatch', category: 'pet' });
                 const { saveUserProfileDebounced } = await import('./storage.js');
                 saveUserProfileDebounced();
             }

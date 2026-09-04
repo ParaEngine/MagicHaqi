@@ -1501,6 +1501,7 @@
         if (C && C.applyCellType) C.applyCellType(window.game_config.cellType || 'animal');
         if (window.__CELL_resetLOD) window.__CELL_resetLOD();
         if (C && C.hideLoader) C.hideLoader();   // scene is ready → drop the spinner
+        window.parent.postMessage({ type: 'gameLoaded' }, '*');
       } catch (e) {
         try { console.error('[cell finalize]', e); } catch (_) {}
       }

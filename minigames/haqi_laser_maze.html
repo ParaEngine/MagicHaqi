@@ -1167,6 +1167,11 @@
 		state.best = Math.max(state.best, earnedPoints);
 		localStorage.setItem(STORAGE_BEST, String(state.best));
 		post('gameFinished', {
+			status: 'completed',
+			completed: true,
+			passed: true,
+			success: true,
+			outcome: 'victory',
 			earnedPoints,
 			score: earnedPoints,
 			difficulty: state.difficulty,

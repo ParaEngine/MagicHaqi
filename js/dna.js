@@ -449,6 +449,7 @@ export function isAdultStage(stage) {
 /** UI 用：成年前隐藏真名，显示一个 DNA 前缀的占位符。 */
 export function displayPetName(pet) {
     if (!pet) return '';
+    if (Number(pet.renameCount) > 0 && pet.name) return pet.name;
     if (isAdultStage(pet.stage)) return pet.name || dnaToName(pet.dna || '');
     const tag = normalizeDna(pet.dna || '').slice(0, 4);
     return `幼崽 #${tag}`;

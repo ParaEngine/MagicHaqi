@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>哈奇星球冒险与养成指南</title>
+  <style>
+    :root {
+      --ink: #17211b;
+      --muted: #5e6a61;
+      --paper: #f6f8f3;
+      --surface: #ffffff;
+      --line: #dce3da;
+      --forest: #1f6749;
+      --forest-dark: #124630;
+      --sun: #f5b83d;
+      --coral: #dc654c;
+      --sky: #287b9b;
+      --shadow: 0 10px 28px rgba(25, 47, 34, 0.09);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(31, 103, 73, 0.035) 1px, transparent 1px),
+        linear-gradient(rgba(31, 103, 73, 0.035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 32px 32px;
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      line-height: 1.75;
+      letter-spacing: 0;
+    }
+    a { color: inherit; }
+    strong { color: var(--forest-dark); }
+
+    .hero {
+      min-height: 360px;
+      display: flex;
+      align-items: flex-end;
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+      background-image:
+        linear-gradient(90deg, rgba(12, 39, 27, 0.91) 0%, rgba(12, 39, 27, 0.67) 52%, rgba(12, 39, 27, 0.16) 100%),
+        url("https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_planet_grassland-1779950916879.webp");
+      background-position: center;
+      background-size: cover;
+      border-bottom: 6px solid var(--sun);
+    }
+    .hero-inner {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 58px 0 52px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      width: 28px;
+      height: 3px;
+      content: "";
+      background: var(--sun);
+    }
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+    .hero p {
+      max-width: 650px;
+      margin: 18px 0 0;
+      color: rgba(255,255,255,.88);
+      font-size: 17px;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 34px auto 72px;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 28px;
+      align-items: start;
+    }
+    .toc {
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--forest);
+      border-radius: 6px;
+      background: rgba(255,255,255,.96);
+      box-shadow: var(--shadow);
+    }
+    .toc h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .toc ol { margin: 0; padding: 0; list-style: none; }
+    .toc a {
+      display: block;
+      padding: 7px 8px;
+      border-left: 2px solid transparent;
+      color: #465249;
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .toc a:hover, .toc a:focus {
+      border-left-color: var(--sun);
+      color: var(--forest);
+      background: #f2f7f1;
+      outline: none;
+    }
+
+    article { min-width: 0; }
+    .intro {
+      margin: 0 0 24px;
+      padding: 22px 24px;
+      border-left: 5px solid var(--sun);
+      background: #fff9e9;
+      color: #5b4a22;
+    }
+    section {
+      scroll-margin-top: 18px;
+      margin-bottom: 22px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    section > h2 {
+      margin: 0 0 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 27px;
+      line-height: 1.3;
+      color: var(--forest-dark);
+    }
+    h3 { margin: 26px 0 8px; font-size: 20px; line-height: 1.35; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 23px; }
+    li { margin: 5px 0; }
+
+    .quick-grid, .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .quick-item, .feature {
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f9fbf8;
+    }
+    .quick-item b, .feature b { display: block; color: var(--forest-dark); }
+    .quick-item span, .feature span { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; }
+    .quick-item:nth-child(2n) { border-top: 3px solid var(--sky); }
+    .quick-item:nth-child(2n+1) { border-top: 3px solid var(--sun); }
+
+    .callout {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--coral);
+      background: #fff3ef;
+      color: #6f352a;
+    }
+    .tip {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--sky);
+      background: #eef8fb;
+      color: #24566a;
+    }
+
+    .table-wrap { margin: 18px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+    table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--forest-dark); background: #edf4ed; }
+    tr:last-child td { border-bottom: 0; }
+
+    .route {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 18px 0;
+      counter-reset: route;
+    }
+    .route div {
+      position: relative;
+      min-width: 0;
+      padding: 34px 12px 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .route div::before {
+      counter-increment: route;
+      content: counter(route);
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      margin-left: -10px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--forest);
+      line-height: 20px;
+    }
+
+    .faq details { border-top: 1px solid var(--line); }
+    .faq details:last-child { border-bottom: 1px solid var(--line); }
+    .faq summary {
+      cursor: pointer;
+      padding: 15px 4px;
+      font-weight: 800;
+      color: var(--forest-dark);
+    }
+    .faq details p { margin: 0; padding: 0 4px 16px; color: var(--muted); }
+    footer { margin-top: 30px; color: var(--muted); text-align: center; font-size: 13px; }
+
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      .toc { position: static; max-height: none; }
+      .toc ol { columns: 2; }
+      .quick-grid, .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .route { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .hero { min-height: 330px; }
+      .hero-inner { width: min(100% - 28px, 1180px); padding: 46px 0 40px; }
+      .hero p { font-size: 15px; }
+      .shell { width: min(100% - 24px, 1180px); margin-top: 18px; }
+      .toc ol { columns: 1; }
+      section { padding: 21px 18px; }
+      section > h2 { font-size: 23px; }
+      .quick-grid, .feature-grid, .route { grid-template-columns: 1fr; }
+      .route div { text-align: left; padding: 14px 14px 14px 46px; }
+      .route div::before { top: 50%; left: 14px; margin: -10px 0 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Magic Haqi · 当前玩法版</div>
+      <h1>哈奇星球冒险与养成指南</h1>
+      <p>从照顾抱抱龙、经营家园，到今日星图、友好道馆与深空遗迹。本指南只介绍哈奇星球当前已经开放的玩法。</p>
+    </div>
+  </header>
+
+  <main class="shell">
+    <aside class="toc" aria-label="章节索引">
+      <h2>章节索引</h2>
+      <ol>
+        <li><a href="#start">1. 第一次来到哈奇星球</a></li>
+        <li><a href="#daily">2. 每天先做什么</a></li>
+        <li><a href="#views">3. 四层视角与小镇</a></li>
+        <li><a href="#care">4. 伙伴照料与健康</a></li>
+        <li><a href="#collection">5. 伙伴管理与容量</a></li>
+        <li><a href="#home">6. 家园、设施与资源</a></li>
+        <li><a href="#expedition">7. 今日星图远征</a></li>
+        <li><a href="#dojo">8. 友好道馆</a></li>
+        <li><a href="#ruins">9. 深空遗迹与矿区</a></li>
+        <li><a href="#growth">10. 品质、装备与繁育</a></li>
+        <li><a href="#create">11. 小游戏、创造与故事</a></li>
+        <li><a href="#social">12. 聊天、记忆与功能菜单</a></li>
+        <li><a href="#faq">13. 常见问题</a></li>
+      </ol>
+    </aside>
+
+    <article>
+      <p class="intro"><strong>哈奇星球以抱抱龙伙伴、小镇 NPC、每日远征、队伍培养和家园珍宝为核心。</strong>奖励数值、每日目的地和商店内容可能随版本与活动调整，请以游戏内实际显示为准。</p>
+
+      <section id="start">
+        <h2>1. 第一次来到哈奇星球</h2>
+        <p>进入哈奇星球后，先创建或选择一位伙伴。游戏会用五步航线带你认识主要入口，并为每一步提供金币奖励。</p>
+        <div class="route" aria-label="新手五步航线">
+          <div>查看伙伴属性</div>
+          <div>给伙伴取名</div>
+          <div>摆放第一处设施</div>
+          <div>完成首次远征</div>
+          <div>查看远征记录</div>
+        </div>
+        <p>建议先完成前三步，确认伙伴状态和家园都准备好，再进入“今日星图”。远征结束后，及时查看战利品、装配装备、放置珍宝，并照顾新带回的伙伴。</p>
+      </section>
+
+      <section id="daily">
+        <h2>2. 每天先做什么</h2>
+        <p>新手航线完成后的下一天，会解锁哈奇星球的<strong>每日回访航线</strong>。当天三项任务可以任意顺序完成：</p>
+        <div class="quick-grid">
+          <div class="quick-item"><b>照顾一次伙伴</b><span>成功喂食、玩耍等真实互动才会计入。</span></div>
+          <div class="quick-item"><b>打理一次家园</b><span>领取设施收益、摆放或移动设施均可。</span></div>
+          <div class="quick-item"><b>从每日星图启航</b><span>需要正式开始远征，仅打开页面不计入。</span></div>
+        </div>
+        <p>完成三项可领取 <strong>60 金币</strong>。每日航线按本地自然日刷新，同一项和同一天奖励不会重复结算。整条路线通常约需 5 至 8 分钟。</p>
+        <div class="tip">推荐顺序：先领取家园每日产出并检查低状态伙伴，再挑选状态良好的队伍启航。这样不会临出发才发现伙伴需要照料。</div>
+      </section>
+
+      <section id="views">
+        <h2>3. 四层视角与哈奇小镇</h2>
+        <p>手机可滑动或双指缩放，电脑可滚动鼠标滚轮，在四个视角间切换。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>视角</th><th>主要用途</th><th>常用操作</th></tr></thead>
+          <tbody>
+            <tr><td>宇宙</td><td>查看星球与离线产出</td><td>领取星球金币、进入星际功能</td></tr>
+            <tr><td>星球</td><td>游览哈奇小镇、经营家园</td><td>切换地点、找 NPC、摆设施、清理地表、进入探险或矿区</td></tr>
+            <tr><td>宠物</td><td>陪伴当前伙伴</td><td>喂食、玩耍、洗澡、睡觉、聊天、装饰房间</td></tr>
+            <tr><td>细胞</td><td>观察 DNA 与健康</td><td>查看食性；生病时进入细胞治疗</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>哈奇小镇七个地点</h3>
+        <p>小镇广场、阳光海滩、魔法密林、游乐场、雪山、魔法学院和跳跳农场都有不同背景、音乐、NPC 与经典小游戏。点击 NPC 阅读对话并确认，即可进入对应玩法。</p>
+        <div class="feature-grid">
+          <div class="feature"><b>小镇广场</b><span>哈奇岛大使、罗德镇长</span></div>
+          <div class="feature"><b>阳光海滩</b><span>咕噜大叔、冬冬</span></div>
+          <div class="feature"><b>魔法密林</b><span>多多、多克特博士</span></div>
+          <div class="feature"><b>游乐场</b><span>香蕉先生、YY 公主、丹瑟</span></div>
+          <div class="feature"><b>雪山</b><span>尤诺、古奇</span></div>
+          <div class="feature"><b>魔法学院</b><span>白龙导师、青龙导师</span></div>
+          <div class="feature"><b>跳跳农场</b><span>咕噜大叔、莫卡</span></div>
+        </div>
+      </section>
+
+      <section id="care">
+        <h2>4. 伙伴照料与健康</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>状态</th><th>如何提升</th><th>低状态直达</th></tr></thead>
+          <tbody>
+            <tr><td>体力</td><td>喂食、休息</td><td>属性详情可直接打开食物栏</td></tr>
+            <tr><td>心情</td><td>玩耍、陪伴、部分食物</td><td>属性详情可直达玩耍页</td></tr>
+            <tr><td>清洁</td><td>洗澡、保持地表干净</td><td>属性详情会引导回照料层洗澡</td></tr>
+            <tr><td>亲密度</td><td>玩耍、照顾、聊天与部分探索</td><td>属性详情可直达玩耍页</td></tr>
+          </tbody>
+        </table></div>
+        <p>点击四项属性可查看详情。只有低于 50 的项目会出现“立即照料”入口；入口只负责带你去正确位置，不会跳过食物消耗、金币、冷却或小游戏过程。</p>
+
+        <h3>喂食、食性与特征</h3>
+        <p>伙伴 DNA 决定肉食、素食或杂食偏好。不合偏好的食物可能被拒绝，且不会消耗。胡萝卜、烤肉、小鱼干、火焰椒等食物还会分别推动兔形、猫科、鱼形、龙形等特征。蛋阶段第一口成功喂食会触发孵化，也可能影响最初族系方向。</p>
+
+        <h3>保姆照看</h3>
+        <p>孵化仓可雇佣保姆，在离线时维持基础体力和心情。费用为每天 100 金币，最多连续雇佣 2 天。伙伴整体四项平均值、体力和心情都需要<strong>高于 50</strong>才能托管。</p>
+        <p>如果不满足条件，弹窗会直接提供“去喂食补体力”“去玩耍提心情”或对应最低状态的照料入口，不需要自己重新寻找页面。</p>
+
+        <h3>生病与细胞治疗</h3>
+        <p>状态较差时，当前照看的伙伴在每日登录判定中更容易生病。细胞层出现治疗入口后，完成“细胞免疫塔防”可降低病情；需要完全治好后，康复结果才会保存。</p>
+      </section>
+
+      <section id="collection">
+        <h2>5. 伙伴管理、派遣与容量</h2>
+        <p>伙伴列表集中展示当前星球的伙伴。属性面板可查看名称、阶段、品质、生命、魔力、防御、力量、魔法、幸运、技能、装备和来源。正在远征或矿区派遣的伙伴不能同时参加其他要求“在家”的活动。</p>
+        <div class="callout"><strong>星球容量会严格执行：</strong>普通用户最多收纳 30 只，VIP 用户最多 50 只。容量已满时，领养、繁育、故事伙伴奖励等新增伙伴操作会在扣金币、消耗催化剂或创建伙伴之前停止。</div>
+        <p>满仓后可进入孵化仓的“整理伙伴”：</p>
+        <ul>
+          <li>放养不再需要保留的伙伴。</li>
+          <li>使用一键研究，放归重复的 N / R 伙伴。</li>
+          <li>先整理出空位，再继续捕捉、领养或繁育。</li>
+        </ul>
+        <p>远征单局虽然最多可捕捉 3 只伙伴，但回到主星球时仍受总容量限制。出发前留出空位最稳妥。</p>
+      </section>
+
+      <section id="home">
+        <h2>6. 家园、设施与资源</h2>
+        <h3>金币与生物燃料</h3>
+        <p>金币用于购买食物、家具、繁育、设施研究和部分服务，可通过小游戏、离线产出、远征与家园设施获得。生物燃料主要来自清理星球地表，也可由部分家园珍宝每日产出，用于星际相关玩法。</p>
+
+        <h3>家园珍宝设施</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>设施</th><th>基础每日产出</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td>星轨矿阵</td><td>60 金币</td><td>稳定金币设施</td></tr>
+            <tr><td>清风滤芯</td><td>4 生物燃料</td><td>补充星际资源</td></tr>
+            <tr><td>星光温室</td><td>35 金币、2 生物燃料</td><td>混合型产出</td></tr>
+            <tr><td>余烬反应炉</td><td>100 金币</td><td>高金币产出</td></tr>
+          </tbody>
+        </table></div>
+        <p>设施需要先摆放到家园地块，之后才能领取每日效果。悬停、键盘聚焦或触屏点按场景中的设施，可查看主要用途、等级与实际产出。</p>
+
+        <h3>重复设施自动融合</h3>
+        <p>同一种设施只需摆放一件。后续获得的重复件会自动融合进已有设施，每多一件提高 10% 每日产出，重复融合加成最高 50%。建造栏以“强N”显示强化等级，不会要求你在场景里重复摆放。</p>
+        <p>重复融合强化与设施运行等级会共同影响最终收益，以场景提示和领取结算显示为准。</p>
+
+        <h3>研究与装饰</h3>
+        <p>系统菜单会在满足星球等级条件后显示“研究”，用于建设和升级星球设施。商店购买或活动获得的家具保存在背包，可在房间或适用的户外地块摆放。移动已有设施也会计入每日家园打理目标。</p>
+      </section>
+
+      <section id="expedition">
+        <h2>7. 哈奇专属：今日星图远征</h2>
+        <p>“今日星图”每天固定生成 3 颗目的地星球，每颗当天只能完成一次，次日刷新。出发时选择一位在家且可出战的伙伴；单纯打开星图不会消耗次数。</p>
+        <h3>30 层完整路线</h3>
+        <p>每次完整远征共两章、每章 15 层。途中会遇到普通战斗、精英、随机事件、流浪商人、营地和 Boss。出发时会安全快照伙伴状态，远征结束后再统一结算。</p>
+        <ul>
+          <li><strong>营地：</strong>在恢复生命与提高攻击之间选择。</li>
+          <li><strong>商人：</strong>消耗局内星币购买手雷或战术提升。</li>
+          <li><strong>事件：</strong>在治疗、暴击、资源与风险效果之间取舍。</li>
+          <li><strong>捕捉：</strong>使用胶囊收服遭遇伙伴，每局最多带回 3 只。</li>
+        </ul>
+
+        <h3>稀有伙伴何时出现</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>路线深度</th><th>可能遭遇</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>第 1 至 10 层</td><td>N、R，极低概率 SR</td><td>不会出现 SSR 或 UR</td></tr>
+            <tr><td>第 11 至 22 层</td><td>开始有极低概率 SSR</td><td>仍不会出现 UR</td></tr>
+            <tr><td>第 23 层以后</td><td>开放 UR 遭遇池</td><td>第 28 层后才有极低概率出现；30 层 Boss 不可捕捉</td></tr>
+          </tbody>
+        </table></div>
+        <p>各来源稀有度有独立捕获上限：N 45%、R 32%、SR 16%、SSR 7%、UR 2.5%。降低敌人生命并选择捕捉强化仍有帮助，但高品质目标不会变成必定捕获。</p>
+
+        <h3>本周研究与星图压力</h3>
+        <p>每周研究航线会标记当前生态目标，完成两次符合主题的成功远征后停止推荐。它汇总既有进度，不额外扣除资产。</p>
+        <p>高养成伙伴进入普通远征时可能出现“星图压力”。系统只吸收一部分超出基线的战力来增强敌人，最高 +80%；装备和物种专精仍然有效。道馆使用固定守卫，不受星图压力影响。</p>
+
+        <h3>结算与历史</h3>
+        <p>成功远征可带回材料、装备、家园珍宝和新伙伴。重复装备会转化为星核精粹。最近记录会显示出战伙伴、目的地、完成层数、战利品与时间；中途离开会丢失该局未结算进度。</p>
+      </section>
+
+      <section id="dojo">
+        <h2>8. 守护大师友好道馆</h2>
+        <p>每成功结算 2 次远征可获得 1 张挑战函，最多持有 2 张。道馆首版共 5 层，玩家与 NPC 各携带 3 位伙伴进行车轮战。</p>
+        <ul>
+          <li>新楼层必须按顺序首通，首次挑战会消耗 1 张挑战函。</li>
+          <li>一位伙伴倒下或击败对手后，自动换上队伍中的下一位。</li>
+          <li>首通永久解锁下一层，并获得完整首次奖励。</li>
+          <li>已通关楼层可免费练习，胜利奖励为首次奖励的 50%。</li>
+        </ul>
+        <p>道馆更看重出战顺序、克制和生存资源。培养多位伙伴会比只堆一位最高战力更有效。</p>
+      </section>
+
+      <section id="ruins">
+        <h2>9. 深空遗迹与星际矿区</h2>
+        <h3>深空遗迹</h3>
+        <p>深空遗迹是一局约 10 至 15 分钟的分支肉鸽挑战。每层选择可达节点后，同层其他路线会锁定；你需要在战斗、精英、事件、商人、营地和 Boss 之间规划路线。</p>
+        <p>局内可构筑攻击、暴击、护甲、吸血、生命、魔力、护盾和遗物技能。星核爆裂会消耗全部 MP；战术芯片则会结合攻击与魔法属性，高魔法伙伴也能形成明确流派。</p>
+
+        <h3>星际矿区</h3>
+        <p>矿区是一条独立的 12 层连续下潜路线，包含富集矿脉、失稳裂隙、安全前哨、流动补给站、精英矿核和主矿核。货舱与压力会随深入累积：</p>
+        <ul>
+          <li>主动撤离可保留全部货舱；压力达到 100% 坍塌时，只保留部分原石与研究进度。</li>
+          <li>补给站提供只影响本局的采矿、连击或安全强化。</li>
+          <li>工坊每日最多精炼 6 次，出售收益每日最多 30 星币。</li>
+          <li>矿区派遣、收藏与存档按星球隔离。</li>
+        </ul>
+        <div class="tip">矿区的核心选择是“带着当前货物撤离，还是继续深入换取更高收益”。它不是单纯比较伙伴攻击力。</div>
+      </section>
+
+      <section id="growth">
+        <h2>10. 品质、装备与繁育</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>品质</th><th>名称</th><th>长期定位</th></tr></thead>
+          <tbody>
+            <tr><td>N</td><td>初芽</td><td>入门伙伴，也可在满仓时研究整理</td></tr>
+            <tr><td>R</td><td>碧潮</td><td>常规成长伙伴</td></tr>
+            <tr><td>SR</td><td>幻晶</td><td>中阶战斗与繁育素材</td></tr>
+            <tr><td>SSR</td><td>耀阳</td><td>高阶属性与技能潜力</td></tr>
+            <tr><td>UR</td><td>星辉</td><td>长期收集与繁育目标</td></tr>
+          </tbody>
+        </table></div>
+        <p>品质影响生命、魔力、防御、力量、魔法、幸运等战斗属性模板，也影响被动技能槽位。远征装备可在伙伴战斗面板装配，提升派生能力。</p>
+        <h3>繁育规则</h3>
+        <p>选择两只符合阶段条件、不同且未锁定或派遣的伙伴繁育。子代会继承父母、世代、资质、被动技能和视觉数据，并产生随机浮动与突变。两只 SSR 伙伴繁育时，有 1% 概率触发 UR 突变。</p>
+        <p>繁育会消耗金币与可能使用的催化剂，并需要星球有空位。容量检查会先于扣费和消耗执行。</p>
+      </section>
+
+      <section id="create">
+        <h2>11. 小游戏、AI 创造与故事</h2>
+        <h3>官方小游戏</h3>
+        <p>宠物层“玩耍”和小镇 NPC 提供动作、反应、益智、棋类、经营与编程启蒙小游戏，例如贪吃蛇、祖玛、泡泡龙、三消、台球、推箱子、激光迷宫、象棋、五子棋和矩阵破解。结算会参考通关、得分、时长与难度，并通常提高心情和亲密度。</p>
+        <h3>AI 小游戏创造工坊</h3>
+        <ol>
+          <li>在玩耍页切换到“创造”，用自然语言描述想制作的游戏。</li>
+          <li>实时预览生成的 HTML5 小游戏。</li>
+          <li>继续对话调整玩法、画面、参数，或查看代码并修复错误。</li>
+          <li>保存到“我的”列表，之后试玩、编辑或分享。</li>
+        </ol>
+        <p>自制小游戏不会直接改写伙伴成长数据。</p>
+        <h3>故事创作器</h3>
+        <p>系统菜单中的“故事创作”可让自己的伙伴成为互动故事主角，安排场景、对白、动作、选择和简单任务。作品可以保存、回放和分享；故事玩法本身不会直接改变伙伴属性。</p>
+      </section>
+
+      <section id="social">
+        <h2>12. 聊天、独立记忆与功能菜单</h2>
+        <p>每位伙伴都有独立的聊天记录与长期记忆。文字对话会围绕当前伙伴展开；具备 VIP 权益时，还可使用数字人语音互动。</p>
+        <p>右上角系统菜单集中提供以下入口：</p>
+        <div class="feature-grid">
+          <div class="feature"><b>伙伴列表</b><span>切换、查看属性、装备和整理伙伴</span></div>
+          <div class="feature"><b>探索档案</b><span>哈奇专属冒险与收集记录</span></div>
+          <div class="feature"><b>商店与背包</b><span>购买、查看、使用和摆放物品</span></div>
+          <div class="feature"><b>研究</b><span>达到星球等级条件后建设设施</span></div>
+          <div class="feature"><b>邮箱</b><span>查看消息与可领取内容</span></div>
+          <div class="feature"><b>故事创作</b><span>制作和管理互动故事</span></div>
+          <div class="feature"><b>档案与设置</b><span>查看当前伙伴资料并调整游戏选项</span></div>
+        </div>
+      </section>
+
+      <section id="faq" class="faq">
+        <h2>13. 常见问题</h2>
+        <details open>
+          <summary>为什么我不能领养、捕捉结算或繁育新伙伴？</summary>
+          <p>先查看星球容量。普通用户上限 30 只，VIP 上限 50 只。满仓时进入孵化仓整理伙伴，放养不需要的伙伴或研究重复 N / R 伙伴。</p>
+        </details>
+        <details>
+          <summary>为什么保姆按钮不能雇佣？</summary>
+          <p>伙伴四项状态平均值、体力和心情都必须高于 50，而且需要足够金币。资格弹窗会给出可点击的照料入口。</p>
+        </details>
+        <details>
+          <summary>我有很多相同反应炉，为什么场景里只能放一个？</summary>
+          <p>这是设计规则。重复设施会自动融合到已摆放设施，每件增加 10% 产出，最高增加 50%。建造栏中的“强N”代表强化等级。</p>
+        </details>
+        <details>
+          <summary>为什么今天的三颗星球不能再探索？</summary>
+          <p>每颗今日目的地当天只能完成一次，三颗都完成后需等待次日刷新。深空遗迹、友好道馆和矿区是独立路线。</p>
+        </details>
+        <details>
+          <summary>为什么伙伴不能出战或繁育？</summary>
+          <p>伙伴可能正在远征或矿区派遣，也可能处于锁定、阶段不符等状态。先查看伙伴详情与当前派遣标记。</p>
+        </details>
+        <details>
+          <summary>为什么高战力伙伴的远征敌人也变强了？</summary>
+          <p>超过常规基线后会触发部分“星图压力”，最高 +80%。它不会一比一抵消成长，装备、技能与物种专精仍然有效。道馆不使用这套压力。</p>
+        </details>
+        <details>
+          <summary>为什么有些菜单入口没有出现？</summary>
+          <p>部分入口受星球类型、星球等级、账号权限、VIP 状态、网络和活动开放条件影响。哈奇专属远征只在哈奇星球会话中显示。</p>
+        </details>
+      </section>
+
+      <footer>哈奇星球帮助中心 · 内容随当前可玩系统持续更新</footer>
+    </article>
+  </main>
+</body>
+</html>

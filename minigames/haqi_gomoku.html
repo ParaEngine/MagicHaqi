@@ -756,7 +756,21 @@
         resultTimer = 0;
         if (finished && phase === 'result') showResult(title, reason, earnedPoints, config.name);
       }, 2400);
-      post('gameFinished', { earnedPoints, score, steps, difficulty: config.level, difficultyName: config.name, winner, reason, bondBonus: config.reward, finishedAt: Date.now() });
+      post('gameFinished', {
+        status: won ? 'success' : 'failed',
+        completed: won,
+        success: won,
+        outcome: won ? 'player-win' : draw ? 'draw' : 'pet-win',
+        earnedPoints,
+        score,
+        steps,
+        difficulty: config.level,
+        difficultyName: config.name,
+        winner,
+        reason,
+        bondBonus: config.reward,
+        finishedAt: Date.now(),
+      });
     }
     function showResult(title, reason, earnedPoints, difficultyName) {
       els.resultTitle.textContent = title;

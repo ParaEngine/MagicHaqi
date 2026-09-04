@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>哈奇星球运营看板</title>
+    <link rel="stylesheet" href="./dashboard.css">
+</head>
+<body>
+    <header class="topbar">
+        <div><span class="brand-mark" aria-hidden="true">H</span><div><strong>哈奇星球运营看板</strong><small id="dataStatus">尚未载入数据</small></div></div>
+        <nav aria-label="数据操作">
+            <button id="importButton" type="button">导入 JSON</button>
+            <button id="exportCsvButton" type="button" disabled>导出 CSV</button>
+            <button id="exportJsonButton" type="button" disabled>导出 JSON</button>
+            <input id="fileInput" type="file" accept="application/json,.json" hidden>
+        </nav>
+    </header>
+
+    <main>
+        <section class="filters" aria-label="数据筛选">
+            <label>开始日期<input id="startDate" type="date"></label>
+            <label>结束日期<input id="endDate" type="date"></label>
+            <label class="endpoint">聚合 API<input id="apiEndpoint" type="url" placeholder="https://example.com/api/haqi/analytics"></label>
+            <label>只读 API Key<input id="apiKey" type="password" autocomplete="off" placeholder="仅保留在当前页面内存"></label>
+            <button id="loadApiButton" class="primary" type="button">读取数据</button>
+        </section>
+
+        <section id="emptyState" class="empty-state">
+            <strong>等待真实运营数据</strong>
+            <p>配置聚合 API 或导入事件 JSON 后显示指标。看板不会生成模拟数据。</p>
+        </section>
+
+        <div id="dashboard" hidden>
+            <section class="kpis" aria-label="核心指标">
+                <article><span>唯一访客</span><strong id="visitorCount">尚未采集</strong><small>去重 visitorId</small></article>
+                <article><span>会话</span><strong id="sessionCount">尚未采集</strong><small>session_started</small></article>
+                <article><span>D1 回访率</span><strong id="d1Rate">尚未采集</strong><small id="d1Detail">尚未采集</small></article>
+                <article><span>远征完成率</span><strong id="expeditionRate">尚未采集</strong><small id="expeditionDetail">尚未采集</small></article>
+            </section>
+
+            <section class="panel">
+                <header><div><span>前 15 分钟</span><h2>首日关键漏斗</h2></div><small>按唯一访客统计</small></header>
+                <div id="funnel" class="funnel"></div>
+            </section>
+
+            <section class="split">
+                <article class="panel">
+                    <header><div><span>首页主目标</span><h2>引导转化</h2></div></header>
+                    <div class="metric-row"><span>曝光访客</span><strong id="missionViews">尚未采集</strong></div>
+                    <div class="metric-row"><span>点击率</span><strong id="missionClickRate">尚未采集</strong></div>
+                    <div class="metric-row"><span>完成率</span><strong id="missionCompletionRate">尚未采集</strong></div>
+                </article>
+                <article class="panel">
+                    <header><div><span>访问环境</span><h2>设备分布</h2></div></header>
+                    <div id="devices" class="devices"></div>
+                </article>
+            </section>
+        </div>
+    </main>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./dashboard.js"></script>
+</body>
+</html>

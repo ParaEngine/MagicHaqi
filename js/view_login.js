@@ -47,7 +47,7 @@ function actionAreaHtml(mode) {
 function privacyRowHtml() {
     return `
         <div id="mhLoginPrivacy" class="mh-login-privacy" style="margin-top:14px;margin-bottom:0">
-            <div id="mhLoginPrivacyCheck" class="mh-login-checkbox"></div>
+            <div id="mhLoginPrivacyCheck" class="mh-login-checkbox" role="checkbox" tabindex="0" aria-checked="false" aria-label="${escapeHtml(t('loginPrivacyPrefix'))}"></div>
             <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyPrefix'))}</span>
             <span id="mhLoginPrivacyLink1" class="mh-login-privacy-link">${escapeHtml(t('loginPrivacyLink1'))}</span>
             <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyAnd'))}</span>
@@ -100,10 +100,12 @@ function ensureLoginStyle() {
         @keyframes mhLoginSpin{to{transform:rotate(360deg)}}
         .mh-login-privacy{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:3px;margin-bottom:20px;cursor:pointer}
         .mh-login-checkbox{width:20px;height:20px;border:2px solid rgba(152,239,255,0.45);border-radius:5px;margin-right:6px;flex-shrink:0;transition:all .2s;display:flex;align-items:center;justify-content:center}
+        .mh-login-checkbox:focus-visible{outline:2px solid #98efff;outline-offset:3px}
         .mh-login-checkbox.checked{background:linear-gradient(135deg,#2acfff,#1f60ff);border-color:transparent}
         .mh-login-checkbox.checked::after{content:'\\2713';font-size:14px;color:#fff;font-weight:700;line-height:1}
         .mh-login-privacy-link{color:#5ecfff;font-size:13px;text-decoration:underline;cursor:pointer}
         .mh-login-privacy-link:hover{color:#7de1ff}
+        @media (max-height:680px){.mh-login-content{justify-content:flex-start!important;overflow-y:auto;padding-top:18px!important;padding-bottom:28px!important}.mh-login-content::-webkit-scrollbar{width:3px}.mh-login-content > .text-7xl{font-size:44px!important;margin-bottom:8px!important}.mh-login-content h1{margin-bottom:6px!important}.mh-login-content p[style*="margin-bottom:32px"]{margin-bottom:14px!important}.mh-login-content p[style*="mb-6"]{margin-bottom:14px!important}.mh-login-content [aria-label]{margin-top:16px!important}}
         .mh-modal-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);padding:24px}
         .mh-modal-card{width:100%;max-width:480px;max-height:70vh;background:linear-gradient(160deg,#0f1a3a,#16213e,#1a2468);border:1px solid rgba(152,239,255,0.2);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
         .mh-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(152,239,255,0.12);flex-shrink:0}
@@ -122,7 +124,7 @@ const _mdCache = {};
 async function loadMarkdown(filename) {
     if (_mdCache[filename]) return _mdCache[filename];
     const base = (() => {
-        try { return new URL('.', import.meta.url).href; }
+        try { return new URL('.', import.meta.url + '').href; }
         catch (_) { return './'; }
     })();
     const url = base + '../../docs/' + filename;
@@ -270,14 +272,13 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
                 <div class="space-bg">${stars}</div>
                 ${planets}
             </div>
-            <div class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
+            <div class="mh-login-content absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
                 ${isShare ? `
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🎮</div>
                 <h1 class="text-2xl font-extrabold mb-3" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6);max-width:300px;line-height:1.32">${escapeHtml(shareTitle)}</h1>
                 ${shareMessage ? `<p class="text-sm mb-3 px-4 py-2" style="color:#fff;background:rgba(84,226,255,0.16);border:1px solid rgba(152,239,255,0.4);border-radius:14px;max-width:300px;line-height:1.4;text-shadow:0 1px 4px rgba(6,18,44,0.6);white-space:pre-wrap;word-break:break-word">${escapeHtml(shareMessage)}</p>` : ''}
                 <p class="text-sm mb-8" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35)">${escapeHtml(t('mgShareLoginDesc'))}</p>
                 ` : `
-                <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🐾</div>
                 <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(appTitle)}</h1>
                 <p class="text-sm" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35);margin-bottom:32px">${escapeHtml(t('tagline'))}</p>
                 <p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>
@@ -312,12 +313,23 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
         const toggleAgreed = (val) => {
             agreed = Boolean(val);
             const check = $('mhLoginPrivacyCheck');
-            if (check) check.classList.toggle('checked', agreed);
+            if (check) {
+                check.classList.toggle('checked', agreed);
+                check.setAttribute('aria-checked', String(agreed));
+            }
         };
 
         const privacyRow = $('mhLoginPrivacy');
         if (privacyRow) privacyRow.onclick = (e) => {
             if (e.target.id === 'mhLoginPrivacyLink1' || e.target.id === 'mhLoginPrivacyLink2') return;
+            toggleAgreed(!agreed);
+        };
+
+        const privacyCheck = $('mhLoginPrivacyCheck');
+        if (privacyCheck) privacyCheck.onkeydown = (e) => {
+            if (e.key !== ' ' && e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopPropagation();
             toggleAgreed(!agreed);
         };
 

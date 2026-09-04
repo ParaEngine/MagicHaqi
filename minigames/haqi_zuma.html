@@ -782,8 +782,11 @@
       playSound('win');
       showResult(t('winTitle'), t('winText', { level: state.level, foods: state.foods, target: state.targetFoods }), t('nextLevel'), nextLevel);
       post('gameFinished', {
+        status: 'completed',
         completed: true,
         passed: true,
+        success: true,
+        outcome: 'victory',
         earnedPoints: Math.max(10, cfg().score + Math.floor(state.score / 12)),
         score: state.score,
         difficulty: difficultyLevel,

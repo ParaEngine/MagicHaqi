@@ -2163,7 +2163,11 @@
         mode: state.mode,
         difficulty: state.difficulty,
         seconds: state.seconds,
+        status: won ? 'completed' : 'failed',
+        completed: won,
         passed: won,
+        success: won,
+        outcome: won ? 'victory' : 'defeat',
         rewardCoins: Math.max(10, Math.min(DIFFICULTIES[state.difficulty].reward, Math.round(earnedPoints / 8))),
         roundId: `billiards_${Date.now()}`,
       }

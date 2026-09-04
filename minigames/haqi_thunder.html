@@ -1167,6 +1167,8 @@
     stopMusic();
     const earnedPoints = Math.max(20, Math.min(260, Math.round(score / 16) + (won ? 40 : 0)));
     post('gameFinished', {
+      status: won ? 'completed' : 'failed', completed: won, passed: won, success: won,
+      outcome: won ? 'victory' : 'defeat',
       earnedPoints, score, best, difficulty: state.difficulty, difficultyName: difficulty().label,
       level: state.level, won, bossLevels: Math.floor((state.level - 1) / 3), roundId: state.roundId, finishedAt: Date.now()
     });

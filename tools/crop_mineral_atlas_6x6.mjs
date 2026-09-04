@@ -1,0 +1,1 @@
+throw new Error('请使用 crop_mineral_atlas_6x6.py；当前工作区未安装 sharp。');

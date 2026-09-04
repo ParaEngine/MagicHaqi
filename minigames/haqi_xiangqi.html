@@ -534,7 +534,21 @@
       setStatus(`${title} ${reason || ''} ${t('bondUp')}`);
       setPetTalk(won ? t('petWinTalk') : t('petLoseTalk'));
       toast(`${title}<br>${t('bondUp')}`);
-      post('gameFinished', { earnedPoints, score, steps, difficulty: diff.id, difficultyName: diff.name, winner, reason, bondBonus: 32, finishedAt: Date.now() });
+      post('gameFinished', {
+        status: won ? 'success' : 'failed',
+        completed: won,
+        success: won,
+        outcome: won ? 'player-win' : draw ? 'draw' : 'pet-win',
+        earnedPoints,
+        score,
+        steps,
+        difficulty: diff.id,
+        difficultyName: diff.name,
+        winner,
+        reason,
+        bondBonus: 32,
+        finishedAt: Date.now()
+      });
     }
     function toast(html) { const box = document.createElement('div'); box.className = 'toast'; box.innerHTML = html; document.body.appendChild(box); setTimeout(() => box.remove(), 1700); }
     function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }

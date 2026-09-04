@@ -6,6 +6,11 @@ import { state } from './state.js';
 import { normalizeTerrainFieldSlotId, normalizeTerrainSlotIndex, TERRAIN_FIELD_SLOT_DEFS } from './terrain_field_slots.js';
 
 let store = null;
+const OFFLINE_STORAGE_PREFIX = 'magichaqi.offline.file.';
+
+function offlineStorageKey(path) {
+    return `${OFFLINE_STORAGE_PREFIX}${String(path || '')}`;
+}
 
 function ensureStore() {
     if (store) return store;
@@ -19,6 +24,9 @@ function ensureStore() {
 
 // ---------- 基础文件 IO ----------
 async function readFileSafe(path) {
+    if (state.offlineMode) {
+        try { return localStorage.getItem(offlineStorageKey(path)) || ''; } catch (_) { return ''; }
+    }
     try {
         const s = ensureStore();
         if (typeof s.readFile !== 'function') return '';
@@ -33,6 +41,15 @@ async function readFileSafe(path) {
 }
 
 async function writeFileSafe(path, content) {
+    if (state.offlineMode) {
+        try {
+            localStorage.setItem(offlineStorageKey(path), content == null ? '' : String(content));
+            return true;
+        } catch (e) {
+            console.warn('离线存储失败', path, e);
+            return false;
+        }
+    }
     try {
         const s = ensureStore();
         if (typeof s.createFile !== 'function') return false;
@@ -773,7 +790,7 @@ export async function loadUserProfile() {
 }
 
 export async function saveUserProfile() {
-    await writeJSON(PATHS.userProfile, getUserProfilePayload());
+    await saveJSONNow(PATHS.userProfile, getUserProfilePayload());
 }
 
 export function saveUserProfileDebounced() {
@@ -1794,7 +1811,7 @@ export async function ensurePetData(petId) {
 }
 
 export async function savePet(pet) {
-    if (!pet?.id) return;
+    if (!pet?.id) return false;
     const existing = _petSaveTimers.get(pet.id);
     if (existing) clearTimeout(existing);
     _petSaveTimers.delete(pet.id);
@@ -1805,7 +1822,7 @@ export async function savePet(pet) {
         state.petOrder.push(pet.id);
         await saveUserProfile();
     }
-    await writeJSON(PATHS.pet(pet.id), createPetPayload(pet));
+    return await writeJSON(PATHS.pet(pet.id), createPetPayload(pet));
 }
 
 // 宠物配置使用独立的 20 秒防抖（每只宠物一个 timer），避免频繁写远端

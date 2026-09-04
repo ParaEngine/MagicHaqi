@@ -55,8 +55,25 @@
     .btn-soft { color: var(--ink); background: #edf5f7; border: 1px solid var(--line); }
     .btn-danger { color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; }
     .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
-    .child-layout { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
-    .pet-stage { position: relative; min-height: 610px; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 26px 24px 20px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
+    .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login-panel { width: min(460px, 100%); padding: 28px; }
+    .login-heading { margin: 8px 0 0; font-size: 26px; font-weight: 900; text-align: center; }
+    .login-kicker { margin: 0; color: var(--aqua-deep); font-size: 12px; font-weight: 900; text-align: center; }
+    .login-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 22px 0 18px; }
+    .login-role { min-height: 88px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: #f9fcfb; text-align: left; cursor: pointer; }
+    .login-role strong, .login-role span { display: block; }
+    .login-role strong { color: var(--ink); font-size: 15px; }
+    .login-role span { margin-top: 5px; font-size: 11px; line-height: 1.45; }
+    .login-role.active { border-color: var(--aqua); background: #e8fbf6; box-shadow: 0 0 0 2px rgba(23,184,158,.12); }
+    .login-form { display: grid; gap: 12px; }
+    .login-form label { display: grid; gap: 6px; color: #405e61; font-size: 13px; font-weight: 900; }
+    .login-form .input { min-height: 44px; }
+    .login-separator { display: flex; align-items: center; gap: 10px; margin: 3px 0; color: #91a3a5; font-size: 11px; }
+    .login-separator::before, .login-separator::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .login-status { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: center; }
+    .account-chip { min-height: 38px; display: flex; align-items: center; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: #405e61; background: white; font-size: 12px; font-weight: 800; }
+    .child-layout { height: min(610px, calc(100dvh - 100px)); min-height: 520px; display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
+    .pet-stage { position: relative; min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 20px 20px 16px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
     .pet-stage::before { content: ""; position: absolute; inset: 0; opacity: .62; background-image: radial-gradient(ellipse at 17% 17%, rgba(255,255,255,.9) 0 22px, transparent 23px), radial-gradient(ellipse at 78% 12%, rgba(255,255,255,.82) 0 31px, transparent 32px), linear-gradient(164deg, transparent 58%, rgba(79,137,67,.14) 58.5% 66%, transparent 66.5%); }
     .pet-stage::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 96px; height: 38px; border-radius: 50%; background: rgba(52,93,57,.16); filter: blur(10px); transform: perspective(120px) rotateX(58deg); }
     .pet-head { position: relative; z-index: 2; width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -68,13 +85,13 @@
     .today-change-badge strong { font-size: 13px; }
     .today-change-badge.positive strong { color: #087a52; }
     .today-change-badge.negative strong { color: #be3348; }
-    .pet-art-wrap { position: relative; z-index: 2; flex: 1; width: min(310px, 90%); min-height: 300px; display: grid; place-items: center; }
-    .pet-art { width: 260px; height: 260px; background-repeat: no-repeat; background-position: center; background-size: contain; filter: drop-shadow(0 24px 18px rgba(32,79,77,.24)); animation: petFloat 3.6s ease-in-out infinite; }
+    .pet-art-wrap { position: relative; z-index: 2; flex: 1; width: min(300px, 94%); min-height: 250px; display: grid; place-items: center; }
+    .pet-art { width: 270px; height: 270px; background-repeat: no-repeat; background-position: center; background-size: contain; filter: drop-shadow(0 20px 15px rgba(32,79,77,.22)); animation: petFloat 3.6s ease-in-out infinite; }
     .pet-art.placeholder { display: grid; place-items: center; border-radius: 50%; background: #fff7ed; border: 8px solid #fed7aa; font-size: 112px; }
     .pet-art.placeholder::after { content: "🥚"; }
     .stage-spark { position: absolute; inset: 8% 0 auto; text-align: center; font-size: 24px; color: #f59e0b; animation: twinkle 1.8s ease-in-out infinite; }
     .energy-card { position: relative; z-index: 2; width: 100%; padding: 15px; background: rgba(255,255,255,.84); border: 1px solid rgba(255,255,255,.94); border-radius: 8px; box-shadow: 0 15px 34px rgba(42,92,72,.13); backdrop-filter: blur(14px); }
-    .mobile-pet-actions { position: relative; z-index: 2; width: 100%; display: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
+    .mobile-pet-actions { position: relative; z-index: 2; width: 100%; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
     .mobile-pet-action { min-width: 0; min-height: 50px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 5px 2px; border: 1px solid rgba(8,118,108,.18); border-radius: 8px; color: #244f52; background: rgba(255,255,255,.88); box-shadow: 0 6px 14px rgba(26,73,70,.1); font-size: 10px; font-weight: 900; text-decoration: none; backdrop-filter: blur(10px); }
     .mobile-pet-action span { font-size: 19px; line-height: 1; }
     .mobile-panel-close { display: none; }
@@ -94,7 +111,7 @@
     .energy-change.positive { color: #087a52; }
     .energy-change.negative { color: #be3348; }
     .next-copy { margin-top: 8px; color: var(--muted); font-size: 12px; }
-    .child-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 14px; }
+    .child-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; }
     .child-main > * { min-width: 0; max-width: 100%; }
     .hero-copy { position: relative; overflow: hidden; padding: 26px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-color: rgba(255,255,255,.1); background: linear-gradient(120deg, #163e43 0%, #0d6260 68%, #167b70 100%); color: white; box-shadow: 0 22px 48px rgba(16,73,72,.2); }
     .hero-copy::after { content: "成长日记"; position: absolute; right: 17%; bottom: -11px; color: rgba(255,255,255,.055); font-size: 64px; line-height: 1; font-weight: 900; pointer-events: none; }
@@ -103,11 +120,15 @@
     .hero-copy p { margin: 0; color: #c9dce9; font-size: 14px; }
     .today-score { flex: 0 0 auto; min-width: 118px; text-align: center; padding: 13px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; background: rgba(255,255,255,.1); box-shadow: inset 0 1px rgba(255,255,255,.1); backdrop-filter: blur(10px); }
     .today-score strong { display: block; font-size: 32px; color: #fbbf24; }
+    .hero-actions { flex: 0 0 auto; display: flex; align-items: stretch; gap: 8px; }
+    .shop-launch { min-width: 74px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 8px 12px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; color: #fff7ce; background: rgba(255,255,255,.1); font-size: 12px; font-weight: 900; cursor: pointer; }
+    .shop-launch span { font-size: 20px; line-height: 1; }
     .focus-panel { position: relative; padding: 20px; border-left: 4px solid var(--sun); }
     .section-title { margin: 0; font-size: 18px; font-weight: 900; }
     .section-desc { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
     .focus-options { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 16px; }
-    .focus-controls { display: flex; gap: 8px; min-width: 0; }
+    .focus-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+    .focus-controls.has-custom-task { grid-template-columns: minmax(0, .8fr) minmax(180px, 1.2fr); }
     .select { min-height: 42px; width: 100%; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 700; outline: none; }
     .duration-tabs { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; }
     .duration-btn { min-width: 68px; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: white; font-weight: 900; color: #526579; cursor: pointer; }
@@ -158,10 +179,32 @@
     .redemption-list { display: grid; gap: 8px; padding: 0 18px 18px; }
     .redemption-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #f9fcfb; }
     .redemption-actions { display: flex; gap: 6px; }
-    .bottom-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-height: 220px; }
-    .list-panel { padding: 18px; min-width: 0; border-color: var(--panel-line); }
-    .timeline { display: grid; gap: 9px; margin-top: 14px; }
-    .timeline-item { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #e2ece9; border-radius: 8px; background: linear-gradient(120deg, #fbfefd, #f5faf8); transition: transform .18s ease, border-color .18s ease; }
+    .today-tasks { display: grid; gap: 6px; margin-top: 10px; }
+    .today-task { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 9px; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; background: rgba(255,255,255,.09); font-size: 12px; }
+    .today-task strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-task button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; color: #164e4a; background: #ccfbf1; font-weight: 900; cursor: pointer; }
+    .calendar-layout { display: grid; grid-template-columns: minmax(430px, 1.15fr) minmax(300px, .85fr); gap: 12px; }
+    .calendar-panel { padding: 16px; }
+    .calendar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+    .calendar-nav { display: flex; align-items: center; gap: 6px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+    .calendar-weekday { padding: 5px; color: var(--muted); text-align: center; font-size: 11px; font-weight: 900; }
+    .calendar-day { position: relative; min-height: 58px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: white; text-align: left; cursor: pointer; }
+    .calendar-day.outside { opacity: .36; }
+    .calendar-day.selected { border-color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua); background: #effcf8; }
+    .calendar-day.today { color: var(--aqua-deep); font-weight: 900; }
+    .calendar-day i { position: absolute; left: 7px; bottom: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--sun); }
+    .calendar-task-list { display: grid; gap: 8px; margin-top: 14px; }
+    .calendar-task { padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fbfefd; }
+    .calendar-task-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .calendar-task-meta { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .calendar-task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .weekday-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .weekday-picker label { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+    .bottom-grid { min-height: 0; display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .list-panel { min-height: 0; overflow: hidden; padding: 16px; border-color: var(--panel-line); }
+    .timeline { max-height: calc(100% - 32px); display: grid; gap: 9px; margin-top: 14px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+    .timeline-item { min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #e2ece9; border-radius: 8px; background: linear-gradient(120deg, #fbfefd, #f5faf8); transition: transform .18s ease, border-color .18s ease; }
     .timeline-item:hover { transform: translateX(3px); border-color: #aadacf; }
     .timeline-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: #e8fbf6; }
     .timeline-title { font-size: 13px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -234,6 +277,10 @@
     .pet-choice-meta span { color: var(--muted); font-size: 11px; }
     .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(15,35,52,.68); backdrop-filter: blur(6px); }
     .modal { width: min(460px, 100%); max-height: 90vh; overflow: auto; padding: 22px; background: white; border-radius: 8px; box-shadow: 0 25px 80px rgba(0,0,0,.28); }
+    .modal.shop-modal { width: min(1120px, 100%); padding: 0; overflow: hidden; }
+    .shop-modal .shop-vault { max-height: min(760px, 88dvh); border: 0; box-shadow: none; }
+    .shop-modal .reward-vault-head { padding-right: 70px; }
+    .shop-modal-close { position: absolute; z-index: 2; top: 14px; right: 14px; }
     .modal h2 { margin: 0; font-size: 21px; font-weight: 900; }
     .modal p { margin: 7px 0 16px; color: var(--muted); font-size: 13px; }
     .field { display: grid; gap: 6px; margin-top: 12px; }
@@ -254,8 +301,12 @@
     .focus-content { width: min(720px, 100%); text-align: center; }
     .focus-pet { width: 210px; height: 210px; margin: 0 auto 12px; animation: focusPetFloat 6s ease-in-out infinite; will-change: transform; }
     .focus-pet.placeholder { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.12); }
-    .focus-task { color: #99f6e4; font-size: 13px; font-weight: 900; }
-    .focus-time { margin: 8px 0; font: 900 clamp(58px, 12vw, 112px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .focus-task { max-width: 680px; margin: 0 auto 8px; color: #99f6e4; font-size: clamp(20px, 2.5vw, 30px); line-height: 1.35; font-weight: 900; overflow-wrap: anywhere; }
+    .focus-calendar { margin: 8px 0 12px; }
+    .focus-date { color: #c8e6ee; font-size: clamp(15px, 3vw, 20px); font-weight: 800; }
+    .focus-time { margin: 4px 0; font: 900 clamp(52px, 12vw, 104px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .focus-countdown { display: inline-flex; align-items: baseline; gap: 8px; min-height: 38px; padding: 7px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; background: rgba(7,29,43,.34); color: #dff8f4; font-size: 14px; font-weight: 800; }
+    .focus-countdown strong { color: #fde68a; font-size: 21px; font-variant-numeric: tabular-nums; }
     .focus-hint { color: #bdd1dc; font-size: 13px; }
     .focus-progress { height: 8px; margin: 22px auto; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.13); }
     .focus-progress > div { height: 100%; width: 0; background: #2dd4bf; transition: width .5s linear; }
@@ -270,6 +321,7 @@
     @keyframes reveal { from { opacity: 0; transform: translateY(10px); } }
     @media (max-width: 900px) {
       .child-layout, .parent-layout { grid-template-columns: 1fr; }
+      .child-layout { height: auto; min-height: 0; }
       .pet-stage { min-height: 490px; }
       .profile-panel { position: static; display: grid; grid-template-columns: 180px 1fr; }
       .profile-pet { min-height: 180px; }
@@ -290,7 +342,7 @@
       .currency-value { font-size: 17px; }
       .main { padding: 10px; }
       .child-layout { display: block; }
-      .pet-stage { min-height: calc(100dvh - 76px); padding: 18px 16px 14px; }
+      .pet-stage { min-height: calc(100dvh - 84px); padding: 18px 16px 14px; }
       .pet-art { width: 210px; height: 210px; }
       .pet-art-wrap { min-height: 210px; }
       .stage-actions { min-width: 82px; }
@@ -306,10 +358,13 @@
       .mobile-panel-close { position: absolute; z-index: 3; top: 9px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 5px 12px rgba(26,73,70,.1); font-size: 20px; line-height: 1; text-decoration: none; }
       .shop-vault .mobile-panel-close { position: sticky; flex: 0 0 auto; align-self: flex-end; margin: -39px 10px 7px 0; }
       .hero-copy { padding: 18px; align-items: flex-start; }
+      .hero-actions { flex-direction: column; }
+      .shop-launch { min-width: 88px; }
       .today-score { min-width: 88px; padding: 9px; }
       .today-score strong { font-size: 26px; }
       .focus-options { grid-template-columns: 1fr; }
       .focus-options > *, .focus-controls, .focus-controls .select { min-width: 0; width: 100%; max-width: 100%; }
+      .focus-controls.has-custom-task { grid-template-columns: minmax(0, 1fr); }
       .duration-tabs { width: 100%; max-width: 100%; }
       .reward-vault-head { align-items: flex-start; }
       .bottom-grid, .metric-columns, .settings-grid { grid-template-columns: 1fr; }
@@ -324,6 +379,8 @@
       .pet-generator-actions { align-items: stretch; flex-direction: column; }
       .focus-screen { place-items: start center; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
       .focus-pet { width: 160px; height: 160px; }
+      .focus-calendar { margin-top: 4px; }
+      .focus-progress { margin: 16px auto; }
     }
     @keyframes mobilePanelIn { from { opacity: 0; transform: translateY(18px); } }
     @media (max-width: 430px) {
@@ -343,8 +400,12 @@
       .redemption-item { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
       .redemption-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
       .redemption-actions .btn { width: 100%; }
+      .calendar-layout { grid-template-columns: 1fr; }
+      .calendar-panel { padding: 12px; }
+      .calendar-day { min-height: 46px; padding: 5px; }
       .modal-backdrop { align-items: end; padding: 0; }
       .modal { width: 100%; max-height: 88dvh; padding: 18px; border-radius: 8px 8px 0 0; }
+      .modal.shop-modal { width: 100%; padding: 0; }
       .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .modal-actions .btn { width: 100%; }
       .toast-stack { top: auto; right: 10px; bottom: 10px; left: 10px; }
@@ -419,9 +480,13 @@ art_assets = [];
 (function () {
   const STORAGE_KEY = 'haqiGrowthGuardianV1';
   const PIN_KEY = 'haqiGrowthGuardianPinV1';
+  const LEGACY_OWNER_KEY = 'haqiGrowthGuardianLegacyOwnerV1';
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
+  const LOGIN_STATE_KEY = 'haqiGrowthGuardianLoginStateV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
+  const CLOUD_HANDOFF_PATH = 'minigames/haqi-growth-guardian/handoff.json';
+  const DEVICE_ID_KEY = 'haqiGrowthGuardianDeviceIdV1';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
   const DEFAULT_METRICS = [
@@ -517,21 +582,33 @@ art_assets = [];
   let saveTimer = 0;
   let saveQueue = Promise.resolve();
   let mode = 'child';
+  let loginRole = null;
   let parentUnlocked = false;
   let parentTab = 'score';
   let redemptionFilter = 'pending';
   let metricQuery = '';
   let selectedDuration = 25;
+  let selectedFocusTask = '完成作业';
+  let customFocusTask = '';
+  let calendarSelectedDate = localDateKey();
   let petRequestId = '';
   let petObjectUrl = '';
   let availablePets = [];
-  const famousPets = FAMOUS_PETS;
+  let famousPets = FAMOUS_PETS;
   let selectedFamousPetId = '';
-  const famousPetsStatus = `内置 ${FAMOUS_PETS.length} 只宠物，可按名字选择。`;
+  let famousPetsStatus = `内置 ${FAMOUS_PETS.length} 只宠物，可按名字选择。`;
   const petObjectUrls = new Map();
   let sdkLoadPromise = null;
   let focusTimer = 0;
   let focusSession = null;
+  let guardianStateSyncTimer = 0;
+  let handoffSyncTimer = 0;
+  let handoffWriteTimer = 0;
+  let lastHandoffRevision = 0;
+  let applyingRemoteHandoff = false;
+  const deviceId = localStorage.getItem(DEVICE_ID_KEY) || `device_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  let handoffOwnerDeviceId = deviceId;
+  localStorage.setItem(DEVICE_ID_KEY, deviceId);
   let dailyResetTimer = 0;
   let schoolInboxRefreshTimer = 0;
   function refreshVisibleSchoolInbox() {
@@ -546,6 +623,7 @@ art_assets = [];
   let schoolReceiptSyncError = '';
   let publishingSchoolReceipts = false;
   let lastAwardNotificationId = '';
+  let stateWriteConflict = false;
 
   async function loadAwardNotifications(link) {
     if (!link?.sitePath || !link?.studentId || !guardianSdk?.loadPage) return [];
@@ -586,12 +664,17 @@ art_assets = [];
     const childId = `child_${Date.now()}`;
     return {
       version: 2,
+      syncRevision: 0,
+      syncBaseRevision: 0,
+      syncWriterDeviceId: '',
       activeChildId: childId,
       children: [{ id: childId, name: '小小守护者', petName: '哈奇', energy: game_config.initialEnergy, lifetimeStars: 0, createdAt: Date.now(), dailyEnergy: { date: localDateKey(), baseline: game_config.initialEnergy } }],
       petProgress: {},
       metrics: DEFAULT_METRICS.map(item => ({ ...item })),
       ledger: [],
       focusSessions: [],
+      calendarItems: [],
+      calendarCompletions: [],
       rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
       redemptions: [],
       schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
@@ -603,8 +686,13 @@ art_assets = [];
 
   function normalizeState(parsed) {
     if (!parsed?.children?.length || !Array.isArray(parsed.metrics) || !Array.isArray(parsed.ledger)) return null;
+    parsed.syncRevision = Math.max(0, Number(parsed.syncRevision) || 0);
+    parsed.syncBaseRevision = Math.max(0, Number(parsed.syncBaseRevision) || 0);
+    parsed.syncWriterDeviceId = String(parsed.syncWriterDeviceId || '');
     if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
     if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+    if (!Array.isArray(parsed.calendarItems)) parsed.calendarItems = [];
+    if (!Array.isArray(parsed.calendarCompletions)) parsed.calendarCompletions = [];
     if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
     parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
     parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
@@ -642,6 +730,9 @@ art_assets = [];
   }
 
   function loadLegacyState() {
+    const currentUsername = String(guardianUser?.username || guardianUser?.name || '').trim().toLowerCase();
+    const legacyOwner = String(localStorage.getItem(LEGACY_OWNER_KEY) || '').trim().toLowerCase();
+    if (!currentUsername || legacyOwner !== currentUsername) return null;
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
       return normalizeState(parsed);
@@ -651,13 +742,52 @@ art_assets = [];
 
   function saveState() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)), 500);
+    saveTimer = setTimeout(() => {
+      saveTimer = 0;
+      queueStateWrite();
+    }, 500);
   }
 
   function persistStateNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    return queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+    return queueStateWrite();
+  }
+
+  function queueStateWrite() {
+    if (stateWriteConflict) {
+      const conflictError = new Error('本设备存在未解决的数据冲突，请刷新页面后重试');
+      toast(`Keepwork 保存失败：${conflictError.message}`);
+      const rejectedWrite = Promise.reject(conflictError);
+      rejectedWrite.catch(() => undefined);
+      return rejectedWrite;
+    }
+    const baseRevision = Math.max(0, Number(state.syncRevision) || 0);
+    state.syncBaseRevision = baseRevision;
+    state.syncRevision = baseRevision + 1;
+    state.syncWriterDeviceId = deviceId;
+    const snapshot = JSON.stringify(state);
+    saveQueue = saveQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const remoteText = await readCloudFile(CLOUD_STATE_PATH);
+        let remoteRevision = 0;
+        try { remoteRevision = Math.max(0, Number(JSON.parse(remoteText || 'null')?.syncRevision) || 0); } catch (_) {}
+        if (remoteRevision > baseRevision) {
+          stateWriteConflict = true;
+          throw new Error('检测到另一设备已更新成长数据，请刷新页面后重试本次操作');
+        }
+        await guardianStore.createFile(CLOUD_STATE_PATH, snapshot);
+        const verifiedText = await readCloudFile(CLOUD_STATE_PATH);
+        let verified = null;
+        try { verified = JSON.parse(verifiedText || 'null'); } catch (_) {}
+        if (Number(verified?.syncRevision) !== baseRevision + 1 || verified?.syncWriterDeviceId !== deviceId) {
+          stateWriteConflict = true;
+          throw new Error('成长数据发生并发写入，当前操作未安全保存，请刷新页面确认');
+        }
+      });
+    saveQueue.catch(error => toast(`Keepwork 保存失败：${error?.message || error}`));
+    return saveQueue;
   }
 
   function queueCloudWrite(path, content) {
@@ -673,6 +803,87 @@ art_assets = [];
       return (await guardianStore.readFile(path, 1, 99999)) || '';
     } catch (_) {
       try { return (await guardianStore.readFile(path)) || ''; } catch (__) { return ''; }
+    }
+  }
+
+  async function refreshGuardianCloudState() {
+    if (!guardianStore || document.hidden || saveTimer) return;
+    try {
+      const cloudStateText = await readCloudFile(CLOUD_STATE_PATH);
+      if (!cloudStateText) return;
+      const cloudState = normalizeState(JSON.parse(cloudStateText));
+      if (!cloudState || !Array.isArray(cloudState.children)) return;
+      if (JSON.stringify(cloudState) === JSON.stringify(state)) return;
+      state = cloudState;
+      stateWriteConflict = false;
+      syncCurrentPetArt();
+      if (!focusSession) render();
+    } catch (error) {
+      console.warn('跨端刷新成长数据失败:', error);
+    }
+  }
+
+  function handoffSnapshot() {
+    return {
+      version: 1,
+      revision: Date.now(),
+      ownerDeviceId: deviceId,
+      mode,
+      parentTab,
+      selectedDuration,
+      focusSession: focusSession ? { ...focusSession, lastTick: Date.now() } : null
+    };
+  }
+
+  function publishHandoffNow() {
+    if (!guardianStore || applyingRemoteHandoff || handoffOwnerDeviceId !== deviceId) return Promise.resolve();
+    const snapshot = handoffSnapshot();
+    lastHandoffRevision = snapshot.revision;
+    return queueCloudWrite(CLOUD_HANDOFF_PATH, JSON.stringify(snapshot));
+  }
+
+  function scheduleHandoffWrite(delay = 350) {
+    if (handoffOwnerDeviceId !== deviceId) return;
+    clearTimeout(handoffWriteTimer);
+    handoffWriteTimer = window.setTimeout(publishHandoffNow, delay);
+  }
+
+  async function refreshHandoff({ claim = false } = {}) {
+    if (!guardianStore || document.hidden) return;
+    let remote = null;
+    try { remote = JSON.parse(await readCloudFile(CLOUD_HANDOFF_PATH) || 'null'); } catch (_) {}
+    if (!remote || Number(remote.revision) <= lastHandoffRevision) return;
+    lastHandoffRevision = Number(remote.revision) || Date.now();
+    handoffOwnerDeviceId = claim ? deviceId : String(remote.ownerDeviceId || deviceId);
+    applyingRemoteHandoff = true;
+    try {
+      if (['child', 'parent'].includes(remote.mode) && (remote.mode !== 'parent' || loginRole === 'parent' || parentUnlocked)) mode = remote.mode;
+      if (typeof remote.parentTab === 'string') parentTab = remote.parentTab;
+      if (Number.isFinite(Number(remote.selectedDuration))) selectedDuration = Number(remote.selectedDuration);
+      if (remote.focusSession?.id) {
+        focusSession = { ...remote.focusSession, lastTick: Date.now(), paused: Boolean(remote.focusSession.paused) };
+        clearInterval(focusTimer);
+        focusTimer = handoffOwnerDeviceId === deviceId ? window.setInterval(tickFocus, 250) : 0;
+        renderFocusScreen();
+      } else if (focusSession && remote.ownerDeviceId !== deviceId) {
+        focusSession = null;
+        clearInterval(focusTimer);
+        focusTimer = 0;
+        closeModal();
+        render();
+      } else if (!focusSession) {
+        render();
+      }
+    } finally {
+      applyingRemoteHandoff = false;
+    }
+    if (claim) {
+      handoffOwnerDeviceId = deviceId;
+      const url = new URL(location.href);
+      url.searchParams.delete('handoff');
+      history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      await publishHandoffNow();
+      toast('已接续另一设备的成长会话');
     }
   }
 
@@ -698,6 +909,7 @@ art_assets = [];
       ]);
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(PIN_KEY);
+      localStorage.removeItem(LEGACY_OWNER_KEY);
     }
   }
 
@@ -768,6 +980,79 @@ art_assets = [];
 
   function localDateKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function dateFromKey(dateKey) {
+    const [year, month, day] = String(dateKey || '').split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  function calendarItemOccursOn(item, dateKey) {
+    if (!item || item.active === false || item.startDate > dateKey || (item.endDate && item.endDate < dateKey)) return false;
+    const weekday = dateFromKey(dateKey).getDay();
+    const recurrence = item.recurrence || { type: 'once', days: [] };
+    if (recurrence.type === 'daily') return true;
+    if (recurrence.type === 'weekdays') return weekday >= 1 && weekday <= 5;
+    if (recurrence.type === 'weekly') return Array.isArray(recurrence.days) && recurrence.days.includes(weekday);
+    return item.startDate === dateKey;
+  }
+
+  function calendarCompletion(itemId, dateKey) {
+    return state.calendarCompletions.find(item => item.itemId === itemId && item.occurrenceDate === dateKey) || null;
+  }
+
+  function calendarItemsForDate(dateKey = localDateKey(), childId = activeChild().id) {
+    return state.calendarItems
+      .filter(item => item.childId === childId && calendarItemOccursOn(item, dateKey))
+      .sort((left, right) => String(left.time || '23:59').localeCompare(String(right.time || '23:59')) || left.title.localeCompare(right.title));
+  }
+
+  function calendarStatusLabel(completion) {
+    if (!completion) return '待完成';
+    if (completion.status === 'confirmed') return '已确认';
+    if (completion.status === 'needs_help') return '需要帮助';
+    return '待家长确认';
+  }
+
+  function recurrenceLabel(item) {
+    const type = item.recurrence?.type || 'once';
+    if (type === 'daily') return '每天';
+    if (type === 'weekdays') return '工作日';
+    if (type === 'weekly') return `每周${(item.recurrence.days || []).map(day => '日一二三四五六'[day]).join('、')}`;
+    return '仅一次';
+  }
+
+  function showLoginTodoReminder() {
+    if (loginRole === 'parent') {
+      const pending = state.calendarCompletions
+        .filter(completion => completion.childId === activeChild().id && completion.status === 'submitted')
+        .sort((left, right) => (right.completedAt || 0) - (left.completedAt || 0));
+      if (!pending.length) return;
+      const rows = pending.map(completion => {
+        const task = state.calendarItems.find(item => item.id === completion.itemId);
+        return `<div class="today-task"><span>${escapeHtml(completion.occurrenceDate)}</span><strong>${escapeHtml(task?.title || '日历任务')}</strong><span>待核实</span></div>`;
+      }).join('');
+      modal(`<h2>孩子已完成任务</h2><p class="section-desc">孩子提交了 ${pending.length} 项任务，请检查实际完成情况后再确认奖励。</p><div class="today-tasks" style="margin-top:16px">${rows}</div><div class="modal-actions"><button class="btn btn-soft" id="closeCompletionReminder">稍后处理</button><button class="btn btn-primary" id="reviewCalendarCompletions">去核实检查</button></div>`);
+      document.getElementById('closeCompletionReminder')?.addEventListener('click', closeModal);
+      document.getElementById('reviewCalendarCompletions')?.addEventListener('click', () => {
+        calendarSelectedDate = pending[0].occurrenceDate;
+        parentTab = 'calendar';
+        closeModal();
+        render();
+      });
+      return;
+    }
+    if (loginRole !== 'child') return;
+    const today = localDateKey();
+    const tasks = calendarItemsForDate(today);
+    if (!tasks.length) return;
+    const rows = tasks.map(item => {
+      const completion = calendarCompletion(item.id, today);
+      return `<div class="today-task"><span>${escapeHtml(item.time || '未设置')}</span><strong>${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div>`;
+    }).join('');
+    const pendingCount = tasks.filter(item => !calendarCompletion(item.id, today)).length;
+    modal(`<h2>今日待办提醒</h2><p class="section-desc">今天共有 ${tasks.length} 项任务，${pendingCount ? `还有 ${pendingCount} 项待完成。` : '今天的任务都已提交。'}</p><div class="today-tasks" style="margin-top:16px">${rows}</div><div class="modal-actions"><button class="btn btn-primary" id="confirmTodoReminder">知道了</button></div>`);
+    document.getElementById('confirmTodoReminder')?.addEventListener('click', closeModal);
   }
 
   function syncDailyEnergyBaselines() {
@@ -841,6 +1126,32 @@ art_assets = [];
     const selectedPetId = child.selectedPetId || state.selectedPetId || currentPetId;
     petObjectUrl = petObjectUrls.get(String(selectedPetId || '')) || '';
     currentPetId = selectedPetId || currentPetId;
+  }
+
+  async function loadFamousPets() {
+    try {
+      const indexUrl = new URL('../famous-pets/_pet_index.json', location.href);
+      const response = await fetch(indexUrl.href, { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+      const normalized = list
+        .map(item => ({
+          id: String(item?.id || '').trim(),
+          name: String(item?.name || item?.id || '').trim(),
+          dna: String(item?.dna || '').trim(),
+          traits: item?.traits && typeof item.traits === 'object' ? item.traits : {},
+          imageSheetUrl: String(item?.imageSheetUrl || item?.imageUrl || '').trim()
+        }))
+        .filter(item => item.id);
+      if (!normalized.length) throw new Error('宠物索引为空');
+      famousPets = normalized;
+      famousPetsStatus = `完整图鉴共 ${famousPets.length} 只宠物，可按名字选择。`;
+    } catch (error) {
+      console.warn('完整宠物图鉴加载失败，使用内置宠物名单', error);
+      famousPets = FAMOUS_PETS;
+      famousPetsStatus = `当前使用内置 ${FAMOUS_PETS.length} 只宠物；联网打开可加载完整图鉴。`;
+    }
   }
 
   function petArtStyle(energy) {
@@ -918,6 +1229,7 @@ art_assets = [];
 
   function render() {
     const topbarCoins = coinStats(activeChild().id).balance;
+    const roleLabel = mode === 'parent' ? '家长端' : '孩子端';
     document.getElementById('app').innerHTML = `
       <div class="app-shell">
         <header class="topbar">
@@ -927,11 +1239,10 @@ art_assets = [];
           </div>
           <div class="topbar-actions">
             <div class="currency-display" aria-label="金币余额 ${topbarCoins}"><span class="currency-icon">🪙</span><strong class="currency-value">${topbarCoins}</strong></div>
-            <div class="mode-switch" aria-label="切换使用模式">
-              <button class="mode-btn ${mode === 'child' ? 'active' : ''}" data-mode="child">🐾 <span>孩子模式</span></button>
-              <button class="mode-btn ${mode === 'parent' ? 'active' : ''}" data-mode="parent">🔐 <span>家长模式</span></button>
-              <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
-            </div>
+            <div class="account-chip" title="当前 KeepWork 登录身份">${mode === 'parent' ? '🔐' : '🐾'} ${escapeHtml(roleLabel)} · ${escapeHtml(guardianLoginName() || 'KeepWork 用户')}</div>
+            <button class="icon-btn" id="handoffBtn" title="在手机或电脑继续" aria-label="跨端接力">⇄</button>
+            <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
+            <button class="icon-btn" id="topbarLogoutBtn" title="退出登录" aria-label="退出登录">↪</button>
           </div>
         </header>
         <main class="main">${mode === 'child' ? childView() : parentView()}</main>
@@ -947,11 +1258,13 @@ art_assets = [];
     const next = nextLevel(child.energy);
     const maxEnergy = game_config.evolutionThresholds.at(-1);
     const energyScale = game_config.evolutionThresholds.map(value => ({ value, percent: value / maxEnergy * 100 }));
-    const coins = coinStats(child.id);
-    const rewards = state.rewards.filter(item => item.active !== false);
     const isCustomDuration = !game_config.focusDurations.includes(selectedDuration);
+    const focusTasks = ['完成作业', '认真阅读', '练琴或运动', '整理自己的物品'];
+    const isCustomFocusTask = selectedFocusTask === '__custom__';
     const currentPetKey = petKeyForChild(child);
     const recent = state.ledger.filter(item => item.childId === child.id && item.petKey === currentPetKey && !item.revokedAt).slice(0, 5);
+    const todayTasks = calendarItemsForDate();
+    const submittedCount = todayTasks.filter(item => calendarCompletion(item.id, localDateKey())).length;
     return `
       <div class="child-layout">
         <section class="panel pet-stage ${equippedCosmetic('petBackground')}">
@@ -965,9 +1278,8 @@ art_assets = [];
           </div>
           <nav class="mobile-pet-actions" aria-label="成长功能">
             <a class="mobile-pet-action" href="#mobileFocus"><span>⏱</span>专注守护</a>
-            <a class="mobile-pet-action" href="#mobileShop"><span>🛍</span>商店</a>
+            <button class="mobile-pet-action" type="button" data-open-shop><span>🛍</span>商店</button>
             <a class="mobile-pet-action" href="#mobileRecent"><span>📒</span>最近成长</a>
-            <a class="mobile-pet-action" href="#mobileGuide"><span>🏅</span>图鉴</a>
           </nav>
           <div class="energy-card">
             <div class="energy-row"><span>成长能量</span><strong>${child.energy} / ${maxEnergy}</strong></div>
@@ -984,33 +1296,22 @@ art_assets = [];
         </section>
         <div class="child-main">
           <section class="panel hero-copy">
-            <div><div class="eyebrow" style="color:#5eead4">今日成长计划</div><h1>${todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发'}</h1><p>专心完成一件事，哈奇就会陪你一起积累成长能量。</p></div>
-            <div class="today-score"><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div>
+            <div><div class="eyebrow" style="color:#5eead4">今日成长计划 · ${submittedCount}/${todayTasks.length}</div><h1>${todayTasks.length ? `今天有 ${todayTasks.length} 件小事` : (todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发')}</h1>${todayTasks.length ? `<div class="today-tasks">${todayTasks.slice(0, 3).map(item => { const completion = calendarCompletion(item.id, localDateKey()); return `<div class="today-task"><span>${escapeHtml(item.time || '全天')}</span><strong>${escapeHtml(item.title)}</strong>${completion ? `<span>${calendarStatusLabel(completion)}</span>` : `<button data-open-calendar-task="${item.id}">查看</button>`}</div>`; }).join('')}</div>` : '<p>家长还没有安排今天的任务，可以先完成一件自己的小目标。</p>'}</div>
+            <div class="hero-actions"><div class="today-score"><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><button class="shop-launch" type="button" data-open-shop><span>🛍</span>哈奇商店</button></div>
           </section>
           <section class="panel focus-panel" id="mobileFocus">
             <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
             <h2 class="section-title">专注守护</h2><p class="section-desc">进入全屏后，宠物会安静陪伴。提前退出只会暂停，不会扣分。</p>
             <div class="focus-options">
               <div>
-                <div class="focus-controls"><select id="focusTask" class="select" aria-label="选择专注任务"><option>完成作业</option><option>认真阅读</option><option>练琴或运动</option><option>整理自己的物品</option><option>自定义成长任务</option></select></div>
+                <div class="focus-controls ${isCustomFocusTask ? 'has-custom-task' : ''}"><select id="focusTask" class="select" aria-label="选择专注任务">${focusTasks.map(task => `<option value="${task}" ${selectedFocusTask === task ? 'selected' : ''}>${task}</option>`).join('')}<option value="__custom__" ${isCustomFocusTask ? 'selected' : ''}>自定义任务...</option></select>${isCustomFocusTask ? `<input id="customFocusTaskInput" class="input" maxlength="40" value="${escapeHtml(customFocusTask)}" placeholder="输入要做的事情" aria-label="自定义专注任务">` : ''}</div>
                 <div class="duration-tabs">${game_config.focusDurations.map(value => `<button class="duration-btn ${selectedDuration === value ? 'active' : ''}" data-duration="${value}">${value} 分钟</button>`).join('')}<form class="custom-duration" id="customDurationForm"><input class="input" id="customDurationInput" type="number" min="1" max="120" value="${isCustomDuration ? selectedDuration : ''}" placeholder="分钟" aria-label="自定义专注分钟数" required><button class="duration-btn ${isCustomDuration ? 'active' : ''}" type="submit">自定义</button></form></div>
               </div>
               <button class="btn btn-sun" id="startFocusBtn">▶ 开始守护 · +${focusReward(selectedDuration)}</button>
             </div>
           </section>
-          <section class="panel shop-vault" id="mobileShop">
-            <div class="reward-vault-head">
-              <div><h2 class="section-title">哈奇商店</h2><p class="section-desc">用金币兑换心愿奖励，或解锁伙伴的新装扮。</p><div class="coin-progress"><div style="width:${coins.progress * 10}%"></div></div><div class="next-copy">再获得 ${10 - coins.progress} 个正向积分，收获下一枚金币</div></div>
-            </div>
-            <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
-            <div class="shop-sections">
-              <div class="shop-section"><div class="shop-section-head"><h3>🎁 心愿奖励</h3><p>兑换后由家长确认兑现。</p></div><div class="reward-list">${rewards.length ? rewards.map(reward => rewardCard(reward, coins.balance)).join('') : '<div class="empty">家长还没有设置可兑换的奖励。</div>'}</div></div>
-              <div class="shop-section"><div class="shop-section-head"><h3>✨ 装扮道具</h3><p>永久解锁，拥有后可以随时切换。</p></div><div class="cosmetic-list">${COSMETICS.map(cosmetic => cosmeticCard(cosmetic, coins.balance)).join('')}</div></div>
-            </div>
-          </section>
           <div class="bottom-grid">
             <section class="panel list-panel" id="mobileRecent"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">最近成长</h2><div class="timeline">${recent.length ? recent.map(entry => timelineItem(entry)).join('') : '<div class="empty">还没有成长记录，完成第一个小目标吧。</div>'}</div></section>
-            <section class="panel list-panel" id="mobileGuide"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">成长图鉴</h2><div class="milestone-list">${game_config.levels.slice(1).map((item, index) => milestoneItem(item, index + 1, child)).join('')}</div></section>
           </div>
         </div>
       </div>`;
@@ -1055,8 +1356,8 @@ art_assets = [];
           <div class="profile-info"><div class="eyebrow">当前孩子</div><h2>${escapeHtml(child.name)}</h2><div class="mini-stat"><div><span>成长能量</span><strong>${child.energy}</strong></div><div><span>当前形态</span><strong style="font-size:13px">${level.name}</strong></div><div><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><div><span>终身成长星</span><strong>${child.lifetimeStars}</strong></div></div><button class="btn btn-soft" id="editChildBtn" style="width:100%;margin-top:12px">编辑孩子与宠物</button></div>
         </aside>
         <div class="parent-main">
-          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
-          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">点此一键确认，计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'calendar' ? 'active' : ''}" data-parent-tab="calendar">家庭日历</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'calendar', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
+          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'calendar' ? calendarView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
         </div>
       </div>`;
   }
@@ -1112,12 +1413,41 @@ art_assets = [];
     return `${schoolStudentRoot(link)}/student-profile.json`;
   }
 
-  function schoolReceiptPath(eventId, link = state.schoolLink) {
-    return `${schoolStudentRoot(link)}/receipts/${safeCloudPart(eventId)}.json`;
+  function personalGrowthPath(teacher, studentId, recordType, recordId) {
+    return `growth-link/v3/schools/${safeCloudPart(teacher)}/students/${safeCloudPart(studentId)}/${recordType}/${safeCloudPart(recordId)}.json`;
   }
 
-  function schoolActionPath(eventId, link = state.schoolLink) {
-    return `${schoolStudentRoot(link)}/actions/${safeCloudPart(eventId)}.json`;
+  function crossUserPersonalGrowthPath(username, path) {
+    return `//${safeCloudPart(username)}/edunotes/store/MagicHaqi/${path}`;
+  }
+
+  async function readCrossUserPersonalGrowthJson(username, path) {
+    const sdk = guardianSdk;
+    if (typeof sdk?.get !== 'function' || typeof sdk?.getRepoPath !== 'function' || typeof sdk?.safeEncodeURIComponent !== 'function') return null;
+    const sitePath = `${safeCloudPart(username)}/edunotes`;
+    const pagePath = `store/MagicHaqi/${path}`;
+    const repoPath = sdk.getRepoPath(sitePath);
+    const encodedPath = sdk.safeEncodeURIComponent(`${sitePath}/${pagePath}`);
+    const raw = await sdk.get(`/repos/${repoPath}/files/${encodedPath}/raw`, {});
+    return typeof raw === 'string' ? JSON.parse(raw || 'null') : raw;
+  }
+
+  async function readPersonalGrowthRecord(username, path) {
+    const target = crossUserPersonalGrowthPath(username, path);
+    const store = guardianSdk?.personalPageStore;
+    if (!store?.readFile) return readCrossUserPersonalGrowthJson(username, path);
+    try {
+      const text = (await store.readFile(target, 1, 99999)) || '';
+      return JSON.parse(text || 'null') || await readCrossUserPersonalGrowthJson(username, path);
+    } catch (_) {
+      try {
+        const text = (await store.readFile(target)) || '';
+        return JSON.parse(text || 'null') || await readCrossUserPersonalGrowthJson(username, path);
+      } catch (error) {
+        if (/404|not found|不存在/i.test(String(error?.message || error))) return null;
+        throw error;
+      }
+    }
   }
 
   function schoolNotificationIndexPath(link = state.schoolLink) {
@@ -1134,12 +1464,15 @@ art_assets = [];
     const classId = String(params.get('guardianClass') || '').trim();
     const studentId = String(params.get('guardianStudent') || '').trim();
     if (!validSchoolSitePath(sitePath) || !classId || !studentId) return null;
+    const siteOwner = safeCloudPart(sitePath.split('/')[0]);
+    const requestedTeacher = safeCloudPart(params.get('guardianTeacher'));
+    if (requestedTeacher && requestedTeacher !== siteOwner) return null;
     return {
       sitePath,
       classId,
       studentId,
       studentName: String(params.get('guardianName') || '').trim(),
-      teacherUsername: String(params.get('guardianTeacher') || '').trim()
+      teacherUsername: siteOwner
     };
   }
 
@@ -1167,15 +1500,22 @@ art_assets = [];
     if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
     if (!policy || typeof policy !== 'object' || policy.version !== 3 || policy.privacyScope !== 'student') return '该学生目录尚未发布授权策略。请让教师在学校共享站点中发布该学生的云端授权';
     if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
+    const siteOwner = safeCloudPart(String(link.sitePath || '').split('/')[0]);
+    const linkedTeacher = safeCloudPart(link.teacherUsername);
+    const policyTeacher = safeCloudPart(policy.teacherUsername);
+    if (!siteOwner || !linkedTeacher || policyTeacher !== linkedTeacher || policyTeacher !== siteOwner) return '教师账号与共享站点所有者不一致';
     const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
     if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该学生目录不包含当前学生的授权记录';
+    const classCreator = policyTeacher;
     const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
-    if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
+    if (account !== classCreator && !allowlist.includes(account)) return `当前账号 ${account} 不是班级创建老师，也不在该学生的家长白名单中`;
     return '';
   }
 
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
     const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    const receiptPath = personalGrowthPath(state.schoolLink.teacherUsername, state.schoolLink.studentId, 'receipts', event.id);
+    await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
     state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
     state.schoolLink.pendingReceipts.unshift(receipt);
     await persistStateNow();
@@ -1184,7 +1524,7 @@ art_assets = [];
 
   async function publishPendingSchoolReceipts() {
     const link = state.schoolLink;
-    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk?.savePage || !link.pendingReceipts.length) return;
+    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !link.pendingReceipts.length) return;
     publishingSchoolReceipts = true;
     schoolReceiptSyncError = '';
     try {
@@ -1192,15 +1532,8 @@ art_assets = [];
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
       for (const receipt of [...link.pendingReceipts]) {
-        try {
-          await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
-        } catch (error) {
-          const message = String(error?.message || error);
-          if (/404|请求不合法|not found/i.test(message)) {
-            throw new Error(`无法写入学校共享站点“${link.sitePath}”。请确认家长账号已拥有该站点的编辑权限。`);
-          }
-          throw error;
-        }
+        const receiptPath = personalGrowthPath(link.teacherUsername, link.studentId, 'receipts', receipt.eventId);
+        await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
         link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
         await persistStateNow();
       }
@@ -1254,9 +1587,10 @@ art_assets = [];
         .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
       schoolInboxCache = await Promise.all(schoolInboxCache.map(async event => {
         try {
-          const action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
           const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
           const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
+          const actionPath = personalGrowthPath(policy?.teacherUsername || link.teacherUsername, link.studentId, 'actions', event.id);
+          const action = expectedStudentUsername ? await readPersonalGrowthRecord(expectedStudentUsername, actionPath) : null;
           if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
             event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
           }
@@ -1296,7 +1630,9 @@ art_assets = [];
         ? `<p class="section-desc" style="color:#b45309">${publishingSchoolReceipts ? '正在同步' : '等待同步'} ${pendingReceiptCount} 条家庭处理回执。</p>`
         : '<p class="section-desc" style="color:#047857">家庭处理回执已同步。</p>';
     const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
-    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px"><button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
+    const readyEvents = events.filter(event => event.childAction);
+    const bulkApprove = readyEvents.length > 1 ? `<button class="btn btn-primary" id="approveAllSchoolEventsBtn">全部计入 (${readyEvents.length})</button>` : '';
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
   }
 
   function metricCards(metrics) {
@@ -1308,6 +1644,20 @@ art_assets = [];
     const query = metricQuery.trim().toLowerCase();
     const visible = state.metrics.filter(metric => metric.active !== false && (!query || metric.name.toLowerCase().includes(query) || metric.category.toLowerCase().includes(query)));
     return `<div class="panel metrics-toolbar"><div><h2 class="section-title">为具体行为评分</h2><p class="section-desc">每次记录都可追溯、备注和撤销。</p></div><input id="metricSearch" class="search" value="${escapeHtml(metricQuery)}" placeholder="搜索指标或分类..."></div><div class="metric-columns"><section class="panel metric-section positive"><div class="metric-heading"><h3>● 加分指标 (${visible.filter(item => item.delta > 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta > 0))}</div></section><section class="panel metric-section negative"><div class="metric-heading"><h3>● 改进指标 (${visible.filter(item => item.delta < 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta < 0))}</div></section></div>`;
+  }
+
+  function calendarView() {
+    const selected = dateFromKey(calendarSelectedDate);
+    const monthStart = new Date(selected.getFullYear(), selected.getMonth(), 1);
+    const gridStart = new Date(selected.getFullYear(), selected.getMonth(), 1 - monthStart.getDay());
+    const days = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setDate(gridStart.getDate() + index);
+      const key = localDateKey(date);
+      return { key, day: date.getDate(), currentMonth: date.getMonth() === selected.getMonth(), hasTasks: calendarItemsForDate(key).length > 0 };
+    });
+    const tasks = calendarItemsForDate(calendarSelectedDate);
+    return `<div class="calendar-layout"><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">家庭日历</h2><p class="section-desc">设置一次或每天重复的任务，孩子登录时会提醒今日待办。</p></div><div class="calendar-nav"><button class="btn btn-soft" data-calendar-month="-1" aria-label="上个月">‹</button><strong>${selected.getFullYear()}年${selected.getMonth() + 1}月</strong><button class="btn btn-soft" data-calendar-month="1" aria-label="下个月">›</button></div></div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(day => `<div class="calendar-weekday">${day}</div>`).join('')}${days.map(day => `<button class="calendar-day ${day.currentMonth ? '' : 'outside'} ${day.key === calendarSelectedDate ? 'selected' : ''} ${day.key === localDateKey() ? 'today' : ''}" data-calendar-date="${day.key}">${day.day}${day.hasTasks ? '<i></i>' : ''}</button>`).join('')}</div></section><section class="panel calendar-panel"><div class="calendar-head"><div><h2 class="section-title">${selected.getMonth() + 1}月${selected.getDate()}日</h2><p class="section-desc">${tasks.length} 项安排</p></div><button class="btn btn-primary" id="addCalendarTaskBtn">＋ 添加任务</button></div><div class="calendar-task-list">${tasks.length ? tasks.map(item => { const completion = calendarCompletion(item.id, calendarSelectedDate); return `<article class="calendar-task"><div class="calendar-task-head"><strong>${escapeHtml(item.time || '未设置')} · ${escapeHtml(item.title)}</strong><span>${calendarStatusLabel(completion)}</span></div><div class="calendar-task-meta">${recurrenceLabel(item)} · 家长确认后 +${Math.max(0, Number(item.points) || 0)}</div><div class="calendar-task-actions">${completion?.status === 'submitted' || completion?.status === 'needs_help' ? `<button class="btn btn-primary" data-confirm-calendar="${completion.id}">确认完成</button>` : ''}<button class="btn btn-soft" data-edit-calendar="${item.id}">编辑</button><button class="btn btn-soft" data-delete-calendar="${item.id}">删除</button></div></article>`; }).join('') : '<div class="empty">这一天还没有安排。</div>'}</div></section></div>`;
   }
 
   function historyView() {
@@ -1354,7 +1704,8 @@ art_assets = [];
   }
 
   async function loadGuardianSdk() {
-    if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') return window.keepwork;
+    if (guardianSdk) return guardianSdk;
+    if (window.keepwork || window.KeepworkSDK) return createGuardianSdk();
     sdkLoadPromise ||= (async () => {
       window.KEEPWORK_DEFAULT_OPTIONS = {
         timeout: 30000,
@@ -1367,8 +1718,7 @@ art_assets = [];
       const sdkUrls = [
         explicitSdk,
         ...(isLocal || location.protocol === 'file:' ? [localSdk] : []),
-        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a',
-        ...(isLocal || location.protocol === 'file:' ? [] : [localSdk])
+        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a'
       ].filter(Boolean);
       let lastError;
       for (const url of sdkUrls) {
@@ -1384,19 +1734,36 @@ art_assets = [];
               document.head.appendChild(script);
             });
           }
-          if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') {
-            window.keepwork._autoReloadAfterRedirectLogin = false;
-            window.keepwork?.wxAuth?.setScope?.('snsapi_base');
-            await window.keepwork.localAPIKeySettings?.load?.();
-            return window.keepwork;
-          }
+          if (window.keepwork || window.KeepworkSDK) return createGuardianSdk();
         } catch (error) {
           lastError = error;
         }
       }
       throw new Error(`KeepworkSDK 加载失败：${lastError?.message || 'unknown'}`);
     })();
-    return sdkLoadPromise;
+    try {
+      return await sdkLoadPromise;
+    } catch (error) {
+      sdkLoadPromise = null;
+      throw error;
+    }
+  }
+
+  async function createGuardianSdk() {
+    const sdk = window.keepwork || (window.KeepworkSDK ? new window.KeepworkSDK({
+      baseURL: 'https://api.keepwork.com/core/v0',
+      timeout: 30000,
+      autoReloadAfterRedirectLogin: false,
+      wxAuth: { scope: 'snsapi_base' }
+    }) : null);
+    if (!sdk) throw new Error('未找到 KeepWork 登录服务');
+    sdk.baseURL = 'https://api.keepwork.com/core/v0';
+    sdk._autoReloadAfterRedirectLogin = false;
+    sdk.wxAuth?.setScope?.('snsapi_base');
+    if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+    await sdk.localAPIKeySettings?.load?.();
+    guardianSdk = sdk;
+    return sdk;
   }
 
   function clearGuardianAuthParams() {
@@ -1407,7 +1774,33 @@ art_assets = [];
     } catch (_) {}
   }
 
-  async function ensureGuardianLogin(sdk) {
+  function savedGuardianLogin() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || 'null');
+      return saved?.active && ['child', 'parent'].includes(saved.role) ? saved : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function getGuardianUser(sdk) {
+    if (!sdk?.token) return null;
+    const profile = typeof sdk.getUserProfile === 'function'
+      ? await sdk.getUserProfile()
+      : typeof sdk.getCurrentUser === 'function'
+        ? await sdk.getCurrentUser()
+        : sdk.user;
+    return profile?.user || profile || null;
+  }
+
+  async function restoreGuardianLogin(sdk) {
+    const savedLogin = savedGuardianLogin();
+    if (!savedLogin) {
+      if (sdk) sdk.token = null;
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      clearGuardianAuthParams();
+      return null;
+    }
     try {
       const urlToken = new URL(location.href).searchParams.get('token');
       const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -1418,68 +1811,141 @@ art_assets = [];
     sdk?.wxAuth?.setScope?.('snsapi_base');
     if (sdk.token) {
       try {
-        const profile = typeof sdk.getUserProfile === 'function'
-          ? await sdk.getUserProfile()
-          : typeof sdk.getCurrentUser === 'function'
-            ? await sdk.getCurrentUser()
-            : sdk.user;
-        const user = profile?.user || profile;
+        const user = await getGuardianUser(sdk);
         if (user) {
           localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
           clearGuardianAuthParams();
-          return user;
+          return { user, role: savedLogin.role };
         }
       } catch (_) {}
       sdk.token = null;
       localStorage.removeItem(AUTH_TOKEN_KEY);
     }
-    if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录哈奇成长守护', wechatScope: 'snsapi_base' });
-    else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
-    else if (sdk.login) await sdk.login();
-    if (!sdk.token) throw new Error('需要先登录 Keepwork 才能进入成长守护');
-    localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
+    localStorage.removeItem(LOGIN_STATE_KEY);
+    return null;
+  }
+
+  function showGuardianLoginGate(message = '请选择身份，再使用对应的 KeepWork 账号登录。') {
+    const app = document.getElementById('app');
+    guardianUser = null;
+    app.innerHTML = `<main class="login-shell"><section class="panel login-panel"><p class="login-kicker">哈奇成长守护</p><h1 class="login-heading">KeepWork 登录 / 注册</h1><p class="section-desc" style="text-align:center">家长和孩子使用各自账号，进入不同的功能页面。</p><div class="login-role-grid" aria-label="登录身份"><button type="button" class="login-role ${loginRole === 'child' ? 'active' : ''}" data-login-role="child"><strong>🐾 孩子登录</strong><span>专注、养成宠物和兑换奖励</span></button><button type="button" class="login-role ${loginRole === 'parent' ? 'active' : ''}" data-login-role="parent"><strong>🔐 家长登录</strong><span>评分、规则、奖励和成长账本</span></button></div><form id="guardianPasswordLoginForm" class="login-form" autocomplete="on"><label>KeepWork 账号<input class="input" id="guardianLoginUsername" name="username" maxlength="80" autocomplete="username" required placeholder="输入账号"></label><label>密码<input class="input" id="guardianLoginPassword" name="password" type="password" autocomplete="current-password" required placeholder="输入密码"></label><button class="btn btn-primary" id="guardianPasswordLoginBtn" type="submit" ${loginRole ? '' : 'disabled'}>账号密码登录</button><div class="login-separator">或者</div><button class="btn btn-soft" id="guardianOfficialLoginBtn" type="button" ${loginRole ? '' : 'disabled'}>使用 KeepWork 登录 / 注册</button></form><p class="login-status" id="guardianLoginStatus">${escapeHtml(message)}</p><p class="section-desc" style="text-align:center">密码只用于本次 KeepWork 官方验证，不会保存在本页面。</p></section></main>`;
+    document.querySelectorAll('[data-login-role]').forEach(button => button.addEventListener('click', () => {
+      loginRole = button.dataset.loginRole;
+      showGuardianLoginGate(loginRole === 'parent' ? '请使用家长 KeepWork 账号登录。' : '请使用孩子 KeepWork 账号登录。');
+      document.getElementById('guardianLoginUsername')?.focus();
+    }));
+    document.getElementById('guardianPasswordLoginForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      loginGuardianWithPassword();
+    });
+    document.getElementById('guardianOfficialLoginBtn')?.addEventListener('click', loginGuardianWithOfficialWindow);
+  }
+
+  async function enterGuardian(user, sdk, role) {
+    guardianUser = user;
+    guardianSdk = sdk;
+    loginRole = role;
+    mode = role;
+    parentUnlocked = role === 'parent';
+    localStorage.setItem(AUTH_TOKEN_KEY, sdk.token || '');
+    localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({ active: true, role, username: user?.username || user?.name || '' }));
     clearGuardianAuthParams();
-    const profile = typeof sdk.getUserProfile === 'function'
-      ? await sdk.getUserProfile()
-      : typeof sdk.getCurrentUser === 'function'
-        ? await sdk.getCurrentUser()
-        : sdk.user;
-    const user = profile?.user || profile;
-    if (!user) throw new Error('未获得 Keepwork 用户资料，请重新登录');
-    return user;
+    await Promise.all([loadCloudData(sdk), loadFamousPets()]);
+    const incomingSchoolLink = schoolLinkFromUrl();
+    if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
+      Object.assign(state.schoolLink, incomingSchoolLink);
+      if (role === 'parent') parentTab = 'school';
+      saveState();
+    }
+    selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
+    syncChildFromPetProgress();
+    syncDailyEnergyBaselines();
+    saveState();
+    scheduleDailyEnergyReset();
+    syncCurrentPetArt();
+    render();
+    requestPetImage(activeChild().selectedPetId || '');
+    await refreshHandoff({ claim: new URL(location.href).searchParams.get('handoff') === '1' });
+    showLoginTodoReminder();
+    clearInterval(guardianStateSyncTimer);
+    guardianStateSyncTimer = window.setInterval(refreshGuardianCloudState, 8 * 1000);
+    clearInterval(handoffSyncTimer);
+    handoffSyncTimer = window.setInterval(refreshHandoff, 8 * 1000);
+    clearInterval(schoolInboxRefreshTimer);
+    refreshVisibleSchoolInbox();
+    schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
+    if (!loadedSent) {
+      loadedSent = true;
+      post('gameLoaded', { title: '哈奇成长守护' });
+    }
+  }
+
+  async function loginGuardianWithPassword() {
+    if (!loginRole) return showGuardianLoginGate('请先选择孩子或家长身份。');
+    const username = String(document.getElementById('guardianLoginUsername')?.value || '').trim();
+    const passwordInput = document.getElementById('guardianLoginPassword');
+    const password = String(passwordInput?.value || '');
+    const button = document.getElementById('guardianPasswordLoginBtn');
+    const status = document.getElementById('guardianLoginStatus');
+    if (!username || !password) { status.textContent = '请输入完整的 KeepWork 账号和密码。'; return; }
+    button.disabled = true;
+    status.textContent = '正在验证 KeepWork 账号…';
+    try {
+      const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, platform: 'WEB' })
+      });
+      const payload = await response.json().catch(() => null);
+      const token = payload?.token || payload?.data?.token;
+      if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+      passwordInput.value = '';
+      const sdk = await loadGuardianSdk();
+      if (typeof sdk.setToken === 'function') sdk.setToken(token);
+      else sdk.token = token;
+      const user = await getGuardianUser(sdk);
+      if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+      await enterGuardian(user, sdk, loginRole);
+    } catch (error) {
+      status.textContent = error?.message || '登录失败，请重试。';
+      button.disabled = false;
+    } finally {
+      if (passwordInput) passwordInput.value = '';
+    }
+  }
+
+  async function loginGuardianWithOfficialWindow() {
+    if (!loginRole) return showGuardianLoginGate('请先选择孩子或家长身份。');
+    const status = document.getElementById('guardianLoginStatus');
+    const button = document.getElementById('guardianOfficialLoginBtn');
+    button.disabled = true;
+    status.textContent = '正在打开 KeepWork 安全登录 / 注册窗口…';
+    try {
+      const sdk = await loadGuardianSdk();
+      sdk.token = null;
+      if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '哈奇成长守护 登录 / 注册', wechatScope: 'snsapi_base' });
+      else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+      else if (sdk.login) await sdk.login();
+      if (!sdk.token) throw new Error('登录未完成，请重新登录');
+      const user = await getGuardianUser(sdk);
+      if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+      await enterGuardian(user, sdk, loginRole);
+    } catch (error) {
+      status.textContent = error?.message || '登录失败，请重试。';
+      button.disabled = false;
+    }
   }
 
   async function startGuardian() {
     const app = document.getElementById('app');
-    const incomingSchoolLink = schoolLinkFromUrl();
     app.innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">正在连接 Keepwork</h1><p class="section-desc">登录成功后即可进入哈奇成长守护。</p></section></main>';
     try {
       const sdk = await loadGuardianSdk();
-      guardianUser = await ensureGuardianLogin(sdk);
-      await loadCloudData(sdk);
-      if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
-        Object.assign(state.schoolLink, incomingSchoolLink);
-        parentTab = 'school';
-        saveState();
-      }
-      selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
-      syncChildFromPetProgress();
-      syncDailyEnergyBaselines();
-      saveState();
-      scheduleDailyEnergyReset();
-      syncCurrentPetArt();
-      render();
-      requestPetImage(activeChild().selectedPetId || '');
-      clearInterval(schoolInboxRefreshTimer);
-      refreshVisibleSchoolInbox();
-      schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
-      if (!loadedSent) {
-        loadedSent = true;
-        post('gameLoaded', { title: '哈奇成长守护' });
-      }
+      const restored = await restoreGuardianLogin(sdk);
+      if (restored) await enterGuardian(restored.user, sdk, restored.role);
+      else showGuardianLoginGate();
     } catch (error) {
-      app.innerHTML = `<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">需要登录 Keepwork</h1><p class="section-desc" style="margin-bottom:18px">${escapeHtml(error?.message || error)}</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>`;
-      document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+      showGuardianLoginGate(error?.message || '登录服务暂时不可用，请重试。');
     }
   }
 
@@ -1515,12 +1981,13 @@ art_assets = [];
   }
 
   function settingsView() {
-    return `<div class="settings-grid"><section class="panel setting-card"><h3>家长 PIN</h3><p>进入家长模式需要验证，避免孩子直接修改积分。</p><button class="btn btn-soft" id="changePinBtn">修改 PIN</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>账号</h3><p>退出当前 Keepwork 账号。家庭成长数据仍会保存在云端。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
+    return `<div class="settings-grid"><section class="panel setting-card"><h3>当前家长账号</h3><p>${escapeHtml(guardianLoginName() || 'KeepWork 用户')} · 已通过 KeepWork 验证。孩子端需要退出后使用孩子账号登录。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>重新开始</h3><p>清除 Keepwork 中的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除云端数据</button></section></div>`;
   }
 
   function bindGlobal() {
-    document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => switchMode(button.dataset.mode)));
+    document.getElementById('handoffBtn')?.addEventListener('click', showHandoff);
     document.getElementById('helpBtn')?.addEventListener('click', showHelp);
+    document.getElementById('topbarLogoutBtn')?.addEventListener('click', showLogoutConfirm);
   }
 
   async function switchMode(nextMode) {
@@ -1533,10 +2000,17 @@ art_assets = [];
       return;
     }
     mode = nextMode;
+    scheduleHandoffWrite();
     render();
   }
 
   function bindChild() {
+    document.getElementById('focusTask')?.addEventListener('change', event => {
+      selectedFocusTask = event.target.value;
+      render();
+      if (selectedFocusTask === '__custom__') document.getElementById('customFocusTaskInput')?.focus();
+    });
+    document.getElementById('customFocusTaskInput')?.addEventListener('input', event => { customFocusTask = event.target.value; });
     document.querySelectorAll('[data-duration]').forEach(button => button.addEventListener('click', () => { selectedDuration = Number(button.dataset.duration); render(); }));
     document.getElementById('customDurationForm')?.addEventListener('submit', event => {
       event.preventDefault();
@@ -1545,7 +2019,9 @@ art_assets = [];
       selectedDuration = minutes;
       render();
     });
-    document.getElementById('startFocusBtn')?.addEventListener('click', startFocus);
+    document.getElementById('startFocusBtn')?.addEventListener('click', () => startFocus());
+    document.querySelectorAll('[data-open-calendar-task]').forEach(button => button.addEventListener('click', () => showChildCalendarTask(button.dataset.openCalendarTask)));
+    document.querySelectorAll('[data-open-shop]').forEach(button => button.addEventListener('click', showShopModal));
     document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => redeemReward(button.dataset.redeem)));
     document.querySelectorAll('[data-cosmetic]').forEach(button => button.addEventListener('click', () => selectCosmetic(button.dataset.cosmetic)));
   }
@@ -1566,6 +2042,7 @@ art_assets = [];
       button.disabled = true;
       await approveSchoolEvent(button.dataset.approveSchoolEvent);
     }));
+    document.getElementById('approveAllSchoolEventsBtn')?.addEventListener('click', showApproveAllSchoolEventsConfirm);
     document.querySelectorAll('[data-ignore-school-event]').forEach(button => button.addEventListener('click', async () => {
       button.disabled = true;
       await ignoreSchoolEvent(button.dataset.ignoreSchoolEvent);
@@ -1575,23 +2052,118 @@ art_assets = [];
     document.getElementById('schoolLinkForm')?.addEventListener('submit', saveSchoolLink);
     document.getElementById('addMetricBtn')?.addEventListener('click', showAddMetricModal);
     document.getElementById('addRewardBtn')?.addEventListener('click', showAddRewardModal);
+    document.getElementById('addCalendarTaskBtn')?.addEventListener('click', () => showCalendarTaskModal());
+    document.querySelectorAll('[data-calendar-date]').forEach(button => button.addEventListener('click', () => { calendarSelectedDate = button.dataset.calendarDate; render(); }));
+    document.querySelectorAll('[data-calendar-month]').forEach(button => button.addEventListener('click', () => { const date = dateFromKey(calendarSelectedDate); date.setMonth(date.getMonth() + Number(button.dataset.calendarMonth), 1); calendarSelectedDate = localDateKey(date); render(); }));
+    document.querySelectorAll('[data-edit-calendar]').forEach(button => button.addEventListener('click', () => showCalendarTaskModal(button.dataset.editCalendar)));
+    document.querySelectorAll('[data-delete-calendar]').forEach(button => button.addEventListener('click', () => deleteCalendarTask(button.dataset.deleteCalendar)));
+    document.querySelectorAll('[data-confirm-calendar]').forEach(button => button.addEventListener('click', () => confirmCalendarCompletion(button.dataset.confirmCalendar)));
     document.getElementById('editChildBtn')?.addEventListener('click', showEditChildModal);
     document.getElementById('famousPetSelect')?.addEventListener('change', event => { selectedFamousPetId = event.target.value; render(); });
     document.querySelectorAll('[data-parent-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.parentPetId, button.dataset.parentPetSource)));
     document.querySelectorAll('[data-history-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.historyPetId, 'famous')));
-    document.getElementById('changePinBtn')?.addEventListener('click', () => showPinModal(true));
     document.getElementById('exportBtn')?.addEventListener('click', exportData);
     document.getElementById('logoutBtn')?.addEventListener('click', showLogoutConfirm);
     document.getElementById('resetBtn')?.addEventListener('click', resetData);
   }
 
-  function modal(content) {
-    document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal" role="dialog" aria-modal="true">${content}</div></div>`;
+  function modal(content, className = '') {
+    document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal ${className}" role="dialog" aria-modal="true">${content}</div></div>`;
     document.getElementById('modalBackdrop').addEventListener('click', event => { if (event.target.id === 'modalBackdrop') closeModal(); });
   }
 
   function closeModal() {
     document.getElementById('modalRoot').innerHTML = '';
+  }
+
+  function showCalendarTaskModal(itemId = '') {
+    const item = state.calendarItems.find(entry => entry.id === itemId);
+    const recurrenceType = item?.recurrence?.type === 'once' ? 'once' : 'daily';
+    const now = new Date();
+    const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    modal(`<h2>${item ? '编辑日历任务' : '添加日历任务'}</h2><form id="calendarTaskForm"><div class="field"><label>自定义任务名称</label><input class="input" id="calendarTitle" maxlength="40" required value="${escapeHtml(item?.title || '')}" placeholder="例如：英语朗读"></div><div class="field"><label>开始时间</label><input class="input" id="calendarTime" type="time" required value="${escapeHtml(item?.time || defaultTime)}"></div><div class="field"><label>家长确认后奖励</label><input class="input" id="calendarPoints" type="number" min="0" max="50" required value="${Math.max(0, Number(item?.points) || 3)}"></div><div class="field"><label>是否只执行一次</label><select class="input" id="calendarRecurrence"><option value="once" ${recurrenceType === 'once' ? 'selected' : ''}>是，仅一次</option><option value="daily" ${recurrenceType === 'daily' ? 'selected' : ''}>否，每天重复</option></select></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存任务</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('calendarTaskForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const type = document.getElementById('calendarRecurrence').value;
+      const startDate = item?.startDate || calendarSelectedDate;
+      const now = Date.now();
+      const record = { id: item?.id || `task_${now}_${Math.random().toString(36).slice(2, 6)}`, childId: activeChild().id, title: document.getElementById('calendarTitle').value.trim(), category: '日常', time: document.getElementById('calendarTime').value, points: Math.max(0, Math.min(50, Number(document.getElementById('calendarPoints').value) || 0)), recurrence: { type, days: [] }, startDate, endDate: '', active: true, createdAt: item?.createdAt || now, updatedAt: now };
+      if (item) Object.assign(item, record); else state.calendarItems.push(record);
+      calendarSelectedDate = startDate;
+      saveState(); closeModal(); render(); toast('日历任务已保存');
+    });
+  }
+
+  function deleteCalendarTask(itemId) {
+    const item = state.calendarItems.find(entry => entry.id === itemId);
+    if (!item || !confirm(`删除“${item.title}”？已提交的历史记录会保留。`)) return;
+    item.active = false;
+    item.updatedAt = Date.now();
+    saveState(); render(); toast('任务已删除');
+  }
+
+  function startCalendarTask(itemId) {
+    const item = calendarItemsForDate().find(entry => entry.id === itemId);
+    if (!item) return;
+    const select = document.getElementById('focusTask');
+    if (select && ![...select.options].some(option => option.value === item.title)) select.add(new Option(item.title, item.title));
+    if (select) select.value = item.title;
+    startFocus(item.id);
+  }
+
+  function showChildCalendarTask(itemId) {
+    const item = calendarItemsForDate().find(entry => entry.id === itemId);
+    if (!item) return;
+    modal(`<h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.time || '未设置时间')} · ${recurrenceLabel(item)}</p><p class="section-desc">完成后由家长确认 +${Math.max(0, Number(item.points) || 0)} 点；使用专注守护还会按专注时长获得每日限额内的自动奖励。</p><div class="modal-actions"><button class="btn btn-soft" id="calendarNeedHelpBtn">需要帮助</button><button class="btn btn-soft" id="calendarCompleteBtn">我已完成</button><button class="btn btn-primary" id="calendarStartFocusBtn">开始专注</button></div>`);
+    document.getElementById('calendarNeedHelpBtn').addEventListener('click', () => {
+      const note = prompt('可以告诉家长哪里需要帮助（选填）') || '';
+      closeModal();
+      submitCalendarCompletion(item.id, 'needs_help', note.trim().slice(0, 100));
+    });
+    document.getElementById('calendarCompleteBtn').addEventListener('click', () => { closeModal(); submitCalendarCompletion(item.id); });
+    document.getElementById('calendarStartFocusBtn').addEventListener('click', () => { closeModal(); startCalendarTask(item.id); });
+  }
+
+  function submitCalendarCompletion(itemId, status = 'submitted', childNote = '') {
+    const date = localDateKey();
+    let completion = calendarCompletion(itemId, date);
+    if (!completion) {
+      completion = { id: `completion_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, itemId, childId: activeChild().id, occurrenceDate: date, status, completedAt: Date.now(), childNote, confirmedAt: null, ledgerEntryId: '' };
+      state.calendarCompletions.unshift(completion);
+    } else if (completion.status !== 'confirmed') {
+      completion.status = status;
+      completion.completedAt = Date.now();
+      completion.childNote = childNote;
+    }
+    saveState(); render(); toast(status === 'needs_help' ? '已告诉家长需要帮助' : '完成情况已提交给家长');
+  }
+
+  function calendarLedgerEntry(completion) {
+    return state.ledger.find(entry => entry.calendarItemId === completion.itemId && entry.calendarOccurrenceDate === completion.occurrenceDate)
+      || state.ledger.find(entry => entry.calendarCompletionId === completion.id);
+  }
+
+  function confirmCalendarCompletion(completionId) {
+    const completion = state.calendarCompletions.find(item => item.id === completionId);
+    const task = state.calendarItems.find(item => item.id === completion?.itemId);
+    if (!completion || !task || completion.status === 'confirmed') return toast('这项任务已经确认或不存在');
+    const existing = calendarLedgerEntry(completion);
+    const record = existing || addLedgerEntry({ category: task.category || '日常', delta: Math.max(0, Number(task.points) || 0), source: 'parent', reason: `日历任务：${task.title}`, note: completion.childNote || `${completion.occurrenceDate} 完成`, calendarCompletionId: completion.id, calendarItemId: completion.itemId, calendarOccurrenceDate: completion.occurrenceDate }, { render: false, toast: false });
+    completion.status = 'confirmed';
+    completion.confirmedAt = Date.now();
+    completion.ledgerEntryId = record.id;
+    saveState(); render(); toast(`已确认“${task.title}”并计入成长`);
+  }
+
+  function showShopModal() {
+    const child = activeChild();
+    const coins = coinStats(child.id);
+    const rewards = state.rewards.filter(item => item.active !== false);
+    modal(`<section class="shop-vault"><div class="reward-vault-head"><div><h2 class="section-title">哈奇商店</h2><p class="section-desc">用金币兑换心愿奖励，或解锁伙伴的新装扮。</p><div class="coin-progress"><div style="width:${coins.progress * 10}%"></div></div><div class="next-copy">再获得 ${10 - coins.progress} 个正向积分，收获下一枚金币</div></div><div class="coin-balance"><span>🪙</span><strong>${coins.balance}</strong></div></div><button class="icon-btn shop-modal-close" id="closeShopModal" aria-label="关闭商店">×</button><div class="shop-sections"><div class="shop-section"><div class="shop-section-head"><h3>🎁 心愿奖励</h3><p>兑换后由家长确认兑现。</p></div><div class="reward-list">${rewards.length ? rewards.map(reward => rewardCard(reward, coins.balance)).join('') : '<div class="empty">家长还没有设置可兑换的奖励。</div>'}</div></div><div class="shop-section"><div class="shop-section-head"><h3>✨ 装扮道具</h3><p>永久解锁，拥有后可以随时切换。</p></div><div class="cosmetic-list">${COSMETICS.map(cosmetic => cosmeticCard(cosmetic, coins.balance)).join('')}</div></div></div></section>`, 'shop-modal');
+    document.getElementById('closeShopModal').addEventListener('click', closeModal);
+    document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => redeemReward(button.dataset.redeem)));
+    document.querySelectorAll('[data-cosmetic]').forEach(button => button.addEventListener('click', () => selectCosmetic(button.dataset.cosmetic)));
   }
 
   function showChildModeConfirm() {
@@ -1606,22 +2178,28 @@ art_assets = [];
   }
 
   function showLogoutConfirm() {
-    modal(`<h2>退出当前账号？</h2><p>退出后需要重新登录 Keepwork 才能继续使用。家庭成长数据不会被删除。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-danger" id="confirmLogout">退出登录</button></div>`);
+    modal(`<h2>退出 ${escapeHtml(mode === 'parent' ? '家长' : '孩子')}账号？</h2><p>退出后将返回账号密码登录页，需要重新输入 KeepWork 账号和密码。家庭成长数据不会被删除。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-danger" id="confirmLogout">退出登录</button></div>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
     document.getElementById('confirmLogout').addEventListener('click', logoutGuardian);
   }
 
   async function logoutGuardian() {
-    const sdk = window.keepwork;
+    const sdk = guardianSdk || window.keepwork;
     try { await sdk?.logout?.(); } catch (_) {}
     if (sdk) sdk.token = null;
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(LOGIN_STATE_KEY);
+    guardianUser = null;
+    guardianSdk = null;
+    loginRole = null;
     parentUnlocked = false;
     mode = 'child';
+    clearInterval(guardianStateSyncTimer);
+    clearInterval(handoffSyncTimer);
+    clearInterval(schoolInboxRefreshTimer);
     closeModal();
     clearGuardianAuthParams();
-    document.getElementById('app').innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">已退出登录</h1><p class="section-desc" style="margin-bottom:18px">当前 Keepwork 账号已安全退出。</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>';
-    document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+    showGuardianLoginGate('已安全退出。请选择身份并重新输入账号密码。');
   }
 
   async function hashPin(pin) {
@@ -1633,10 +2211,15 @@ art_assets = [];
     return btoa(`haqi-guardian:${pin}`);
   }
 
+  function guardianLoginName() {
+    return String(guardianUser?.username || guardianUser?.name || '').trim();
+  }
+
   function showPinModal(forceChange = false) {
     const hasPin = Boolean(parentPinHash);
     const setup = forceChange || !hasPin;
-    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
+    const forgotPinHint = setup ? '' : '<p class="section-desc">忘记 PIN 时，请退出当前会话并重新使用家长账号登录。</p>';
+    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p>${forgotPinHint}<form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
     document.getElementById('pinForm').addEventListener('submit', async event => {
       event.preventDefault();
@@ -1672,7 +2255,7 @@ art_assets = [];
     });
   }
 
-  function addLedgerEntry(entry) {
+  function addLedgerEntry(entry, options = {}) {
     if (syncDailyEnergyBaselines()) saveState();
     const child = activeChild();
     const oldLevel = levelForEnergy(child.energy);
@@ -1682,19 +2265,22 @@ art_assets = [];
     updateActivePetEnergy(child.energy + record.delta, child.lifetimeStars + Math.max(0, record.delta));
     const newLevel = levelForEnergy(child.energy);
     saveState();
-    render();
-    if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
-    else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    if (options.render !== false) render();
+    if (options.toast !== false) {
+      if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
+      else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    }
     return record;
   }
 
   function saveSchoolLink(event) {
     event.preventDefault();
-    const teacherUsername = document.getElementById('schoolTeacherUsername').value.trim();
+    const teacherUsername = safeCloudPart(document.getElementById('schoolTeacherUsername').value);
     const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
     const classId = document.getElementById('schoolClassId').value.trim();
     const studentId = document.getElementById('schoolStudentId').value.trim();
-    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return toast('请填写有效的共享站点路径、班级编号和学生编号');
+    if (!validSchoolSitePath(sitePath) || !teacherUsername || !classId || !studentId) return toast('请填写有效的共享站点路径、教师账号、班级编号和学生编号');
+    if (safeCloudPart(sitePath.split('/')[0]) !== teacherUsername) return toast('教师账号必须与共享站点所有者一致');
     const targetChanged = state.schoolLink.sitePath !== sitePath
       || state.schoolLink.classId !== classId
       || state.schoolLink.studentId !== studentId;
@@ -1727,25 +2313,45 @@ art_assets = [];
     });
   }
 
-  async function approveSchoolEvent(eventId) {
+  async function approveSchoolEvent(eventId, options = {}) {
     const event = schoolInboxEvents().find(item => item.id === eventId);
     if (!event) return toast('这条学校消息已处理或不存在');
     try {
       if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
         if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
         await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '', event.childAction || null);
-        render();
-        return toast('这条学校奖励已入账，不会重复计入');
+        if (options.render !== false) render();
+        if (options.toast !== false) toast('这条学校奖励已入账，不会重复计入');
+        return true;
       }
       state.schoolLink.appliedEventIds.unshift(event.id);
-      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id });
+      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id }, options);
       await queueSchoolReceipt(event, 'approved', record.id, event.childAction || null);
-      toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+      if (options.toast !== false) toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+      return true;
     } catch (error) {
       schoolReceiptSyncError = error?.message || String(error);
-      render();
-      toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+      if (options.render !== false) render();
+      if (options.toast !== false) toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+      return false;
     }
+  }
+
+  function showApproveAllSchoolEventsConfirm() {
+    const events = schoolInboxEvents().filter(event => event.childAction);
+    if (events.length < 2) return;
+    const total = events.reduce((sum, event) => sum + Math.max(0, Math.trunc(Number(event.delta) || 0)), 0);
+    modal(`<h2>全部计入家庭成长？</h2><p>将把 ${events.length} 条已完成的学校任务计入账本，共增加 <strong>+${total} 成长能量</strong>。每条记录仍会独立保留，并同步处理回执给教师。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-primary" id="confirmApproveAllSchoolEvents">全部计入</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmApproveAllSchoolEvents').addEventListener('click', async event => {
+      event.currentTarget.disabled = true;
+      const results = [];
+      for (const item of events) results.push(await approveSchoolEvent(item.id, { render: false, toast: false }));
+      closeModal();
+      render();
+      const approved = results.filter(Boolean).length;
+      toast(approved === events.length ? `已计入 ${approved} 条学校成长任务` : `已计入 ${approved} 条，剩余记录请稍后查看`);
+    });
   }
 
   async function ignoreSchoolEvent(eventId) {
@@ -1919,11 +2525,45 @@ art_assets = [];
     document.getElementById('cancelModal').addEventListener('click', closeModal);
   }
 
-  async function startFocus() {
+  async function showHandoff() {
+    await publishHandoffNow();
+    handoffOwnerDeviceId = 'handoff_pending';
+    clearInterval(focusTimer);
+    focusTimer = 0;
+    const url = new URL(location.href);
+    ['token', 'code', 'state', 'wxauth', 'googleauth'].forEach(key => url.searchParams.delete(key));
+    url.searchParams.set('handoff', '1');
+    const link = url.toString();
+    modal(`<h2>跨端接力</h2><p>在另一台电脑或手机打开此链接，并使用当前 KeepWork 账号登录，即可恢复当前页面和专注会话。链接不包含登录凭据。</p><div class="field"><label>安全接力链接</label><input class="input" id="handoffLink" readonly value="${escapeHtml(link)}"></div><div class="modal-actions"><button class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" id="shareHandoffBtn">分享链接</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', () => {
+      closeModal();
+      if (focusSession) renderFocusScreen();
+    });
+    document.getElementById('shareHandoffBtn').addEventListener('click', async () => {
+      try {
+        if (navigator.share) await navigator.share({ title: '哈奇成长守护跨端接力', text: '在另一设备继续当前成长会话', url: link });
+        else await navigator.clipboard.writeText(link);
+        toast(navigator.share ? '已打开系统分享' : '接力链接已复制');
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          document.getElementById('handoffLink')?.select();
+          toast('请手动复制接力链接');
+        }
+      }
+    });
+  }
+
+  async function startFocus(calendarItemId = '') {
     if (focusSession) return;
-    const task = document.getElementById('focusTask')?.value || '成长任务';
+    handoffOwnerDeviceId = deviceId;
+    const selectedTask = document.getElementById('focusTask')?.value || selectedFocusTask;
+    const task = selectedTask === '__custom__' ? (document.getElementById('customFocusTaskInput')?.value || customFocusTask).trim() : selectedTask;
+    if (!task) return toast('请先填写自定义任务名称');
+    selectedFocusTask = selectedTask;
+    if (selectedTask === '__custom__') customFocusTask = task;
     const durationMs = selectedDuration * 60 * 1000;
-    focusSession = { id: `focus_${Date.now()}`, task, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    focusSession = { id: `focus_${Date.now()}`, task, calendarItemId, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    scheduleHandoffWrite(0);
     renderFocusScreen();
     post('gameStarted', { task, duration: selectedDuration });
     try {
@@ -1939,34 +2579,61 @@ art_assets = [];
     return game_config.focusRewards[minutes] || Math.max(1, Math.floor(minutes / 10));
   }
 
+  function focusClockParts(now = new Date()) {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    return {
+      date: `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`,
+      time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+    };
+  }
+
+  function focusCountdownText(remainingMs) {
+    const seconds = Math.ceil(Math.max(0, remainingMs) / 1000);
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
   function renderFocusScreen() {
     const session = focusSession;
     if (!session) return;
     const percent = Math.max(0, Math.min(100, 100 * (1 - session.remainingMs / session.durationMs)));
-    const seconds = Math.ceil(session.remainingMs / 1000);
-    const minutesText = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const secondsText = String(seconds % 60).padStart(2, '0');
-    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-time">${minutesText}:${secondsText}</div><div class="focus-hint">${session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions"><button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button></div></div></section>`;
-    document.getElementById('pauseFocusBtn').addEventListener('click', toggleFocusPause);
-    document.getElementById('stopFocusBtn').addEventListener('click', () => finishFocus(false));
+    const clock = focusClockParts();
+    const remoteActive = handoffOwnerDeviceId !== deviceId;
+    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-calendar"><div class="focus-date">${clock.date}</div><div class="focus-time">${clock.time}</div><div class="focus-countdown"><span>本次守护剩余</span><strong>${focusCountdownText(session.remainingMs)}</strong></div></div><div class="focus-hint">${remoteActive ? '此会话已接力到另一设备，本页会自动同步进度' : session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions">${remoteActive ? '<button class="btn btn-primary" id="claimFocusBtn">在此设备继续</button>' : `<button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button>`}</div></div></section>`;
+    document.getElementById('pauseFocusBtn')?.addEventListener('click', toggleFocusPause);
+    document.getElementById('stopFocusBtn')?.addEventListener('click', () => finishFocus(false));
+    document.getElementById('claimFocusBtn')?.addEventListener('click', async () => {
+      handoffOwnerDeviceId = deviceId;
+      focusSession.lastTick = Date.now();
+      clearInterval(focusTimer);
+      focusTimer = window.setInterval(tickFocus, 250);
+      await publishHandoffNow();
+      renderFocusScreen();
+      toast('已在此设备继续计时');
+    });
   }
 
   function tickFocus() {
     if (!focusSession) return;
     const now = Date.now();
+    const screen = document.getElementById('focusScreen');
+    if (screen) {
+      const clock = focusClockParts(new Date(now));
+      screen.querySelector('.focus-date').textContent = clock.date;
+      screen.querySelector('.focus-time').textContent = clock.time;
+    }
+    if (handoffOwnerDeviceId !== deviceId) return;
     const elapsed = now - focusSession.lastTick;
     focusSession.lastTick = now;
     if (!focusSession.paused && document.visibilityState === 'visible') focusSession.remainingMs -= elapsed;
     if (focusSession.remainingMs <= 0) finishFocus(true);
     else {
-      const screen = document.getElementById('focusScreen');
+      if (Math.floor(now / 5000) !== Math.floor((now - elapsed) / 5000)) scheduleHandoffWrite(0);
       if (!screen) {
         renderFocusScreen();
         return;
       }
       const percent = Math.max(0, Math.min(100, 100 * (1 - focusSession.remainingMs / focusSession.durationMs)));
-      const seconds = Math.ceil(focusSession.remainingMs / 1000);
-      screen.querySelector('.focus-time').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      screen.querySelector('.focus-countdown strong').textContent = focusCountdownText(focusSession.remainingMs);
       screen.querySelector('.focus-progress > div').style.width = `${percent}%`;
     }
   }
@@ -1975,6 +2642,7 @@ art_assets = [];
     if (!focusSession) return;
     focusSession.paused = !focusSession.paused;
     focusSession.lastTick = Date.now();
+    scheduleHandoffWrite(0);
     renderFocusScreen();
   }
 
@@ -1982,6 +2650,7 @@ art_assets = [];
     if (!focusSession) return;
     const session = focusSession;
     focusSession = null;
+    scheduleHandoffWrite(0);
     clearInterval(focusTimer);
     focusTimer = 0;
     try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (_) {}
@@ -1989,6 +2658,7 @@ art_assets = [];
     const elapsedMinutes = Math.max(0, Math.round((session.durationMs - Math.max(0, session.remainingMs)) / 60000));
     const reward = completed ? Math.max(0, Math.min(focusReward(session.duration), game_config.dailyAutoPointCap - autoPointsToday())) : 0;
     state.focusSessions.unshift({ id: session.id, childId: activeChild().id, task: session.task, plannedMinutes: session.duration, elapsedMinutes, completed, reward, startedAt: session.startedAt, finishedAt: Date.now() });
+    if (completed && session.calendarItemId) submitCalendarCompletion(session.calendarItemId);
     saveState();
     if (reward > 0) {
       addLedgerEntry({ metricId: 'focus_guard', category: '自律', delta: reward, source: 'focus_session', reason: `${session.task} · 专注守护 ${session.duration} 分钟`, note: '自动奖励' });
@@ -2074,12 +2744,16 @@ art_assets = [];
     }
     if (!document.hidden) publishPendingSchoolReceipts();
     if (!document.hidden) refreshVisibleSchoolInbox();
+    if (!document.hidden) refreshGuardianCloudState();
+    if (!document.hidden) refreshHandoff();
     if (focusSession) focusSession.lastTick = Date.now();
   });
 
   window.addEventListener('online', () => {
     publishPendingSchoolReceipts();
     refreshVisibleSchoolInbox();
+    refreshGuardianCloudState();
+    refreshHandoff();
   });
 
   document.addEventListener('fullscreenchange', () => {
@@ -2092,6 +2766,9 @@ art_assets = [];
 
   window.addEventListener('beforeunload', () => {
     clearTimeout(dailyResetTimer);
+    clearTimeout(handoffWriteTimer);
+    clearInterval(guardianStateSyncTimer);
+    clearInterval(handoffSyncTimer);
     clearInterval(schoolInboxRefreshTimer);
     petObjectUrls.forEach(url => URL.revokeObjectURL(url));
   });

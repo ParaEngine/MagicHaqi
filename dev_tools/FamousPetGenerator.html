@@ -93,9 +93,14 @@
       .webp-body { @apply grid grid-cols-[minmax(520px,1fr)_240px] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden p-3; }
       .webp-preview-box { @apply relative grid h-full min-h-0 place-items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-950 p-2; }
       .webp-preview-box.transparent { background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
-      .webp-preview-box img { @apply block h-auto max-h-full min-h-0 w-auto max-w-full min-w-0 object-contain object-center; }
+      .webp-preview-stage { @apply relative max-w-full; width: min(100%, calc(100vh - 110px)); aspect-ratio: 1; touch-action: none; }
+      .webp-source-canvas { @apply absolute inset-0 block h-full w-full; }
       .webp-preview-badge { @apply pointer-events-none absolute left-2.5 top-2.5 rounded-full bg-white/90 px-2 py-1 text-[11px] text-slate-900; }
-      .webp-controls { @apply flex flex-col gap-2; }
+      .webp-source-grid { @apply pointer-events-none absolute inset-0 z-[2]; background-image: linear-gradient(to right, rgb(14 165 233 / .8) 1px, transparent 1px), linear-gradient(to bottom, rgb(14 165 233 / .8) 1px, transparent 1px); background-size: 25% 25%; }
+      .webp-source-selection { @apply pointer-events-none absolute z-[3] hidden border-2 border-red-500 bg-red-500/10; }
+      .webp-source-selection.active { @apply block; }
+      .webp-source-selection.moving { @apply border-emerald-500 bg-emerald-500/15; }
+      .webp-controls { @apply min-h-0 overflow-y-auto flex flex-col gap-2 pr-1; scrollbar-gutter: stable; }
       .webp-controls label { @apply gap-1; }
       .webp-controls select, .webp-controls input { @apply min-h-[30px] py-1; }
       .webp-controls input[type="range"] { @apply p-0; }
@@ -103,12 +108,22 @@
       .webp-control-head { @apply flex items-center justify-between gap-1.5 leading-tight; }
       .webp-control-value { @apply font-bold text-slate-900; }
       .webp-hintable { @apply cursor-help; }
+      .webp-result-preview { @apply relative flex items-center gap-2 rounded-md border border-slate-300 bg-white p-2; }
+      .webp-result-thumb { @apply relative h-20 w-20 flex-none cursor-zoom-in overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .webp-result-thumb > img { @apply block h-full w-full object-contain; }
+      .webp-result-zoom { @apply pointer-events-none fixed z-[1200] hidden overflow-hidden rounded-lg border border-slate-300 shadow-2xl; right: 276px; top: 72px; width: min(620px, calc(100vw - 320px)); aspect-ratio: 1; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+      .webp-result-zoom img { @apply block h-full w-full object-contain; }
+      .webp-result-thumb:hover + .webp-result-zoom, .webp-result-thumb:focus + .webp-result-zoom, .webp-result-thumb:focus-visible + .webp-result-zoom { display: block; }
+      .webp-actions { @apply sticky bottom-0 z-[4] flex-none border-t border-slate-300 bg-white py-2; }
       .export-option { @apply mt-0.5; }
       .batch-preview { @apply max-h-52 overflow-auto whitespace-pre-wrap rounded-md border border-slate-300 bg-white p-2.5 font-mono text-xs leading-normal; }
       .batch-prompt-preview { @apply min-h-[260px] font-mono text-xs leading-normal; height: 260px; }
     }
     @media (max-width: 760px) {
-      .webp-body { @apply grid-cols-1; }
+      .webp-body { display: flex; flex-direction: column; overflow: auto; }
+      .webp-preview-box { height: auto; flex: none; aspect-ratio: 1; }
+      .webp-preview-stage { width: 100%; }
+      .webp-result-zoom { right: 12px; top: 60px; width: calc(100vw - 24px); }
       .workspace-overlay, .webp-overlay { @apply p-0; }
       .workspace-window, .webp-window { @apply h-full w-full max-h-none rounded-none; }
     }
@@ -348,7 +363,7 @@
     const WEBP_MAX_BYTES = 100 * 1024;
     const BATCH_PET_MAX_COUNT = 100;
     const BATCH_PET_LLM_CHUNK_SIZE = 50;
-    const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
+    const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6, autoCenter: true };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
     const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, petSheetWorker: null, petSheetWorkerPending: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '', lastPetBackgroundColor: '#ffffff' };
@@ -2772,7 +2787,116 @@
         haloThreshold: Number($('webpBgHalo')?.value) || WEBP_DEFAULT_BG_OPTIONS.haloThreshold,
         borderRatio: Number.isFinite(borderValue) ? borderValue / 100 : WEBP_DEFAULT_BG_OPTIONS.borderRatio,
         gridLineWidth: Number.isFinite(gridLineWidth) ? gridLineWidth : WEBP_DEFAULT_BG_OPTIONS.gridLineWidth,
+        autoCenter: $('webpAutoCenter')?.checked ?? WEBP_DEFAULT_BG_OPTIONS.autoCenter,
       };
+    }
+
+    function renderWebpSourceSelection() {
+      const exportState = state.webpExport;
+      if (!exportState) return;
+      const el = $('webpSourceSelection');
+      const selection = exportState.sourceSelection;
+      el.classList.toggle('active', !!selection);
+      if (!selection) {
+        $('webpSelectionMeta').textContent = '尚未选择区域';
+        return;
+      }
+      el.style.left = `${selection.x / exportState.sourceWidth * 100}%`;
+      el.style.top = `${selection.y / exportState.sourceHeight * 100}%`;
+      el.style.width = `${selection.width / exportState.sourceWidth * 100}%`;
+      el.style.height = `${selection.height / exportState.sourceHeight * 100}%`;
+      $('webpSelectionMeta').textContent = `选区 ${selection.width}x${selection.height} @ ${selection.x},${selection.y}`;
+    }
+
+    function getWebpSourcePoint(event) {
+      const exportState = state.webpExport;
+      const rect = exportState.sourceCanvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(exportState.sourceWidth, Math.round((event.clientX - rect.left) / rect.width * exportState.sourceWidth))),
+        y: Math.max(0, Math.min(exportState.sourceHeight, Math.round((event.clientY - rect.top) / rect.height * exportState.sourceHeight))),
+      };
+    }
+
+    function isPointInWebpSelection(point, selection) {
+      return !!selection && point.x >= selection.x && point.x <= selection.x + selection.width && point.y >= selection.y && point.y <= selection.y + selection.height;
+    }
+
+    function fillWebpSourceRect(ctx, selection) {
+      ctx.fillStyle = getPetBackgroundColor() || '#ffffff';
+      ctx.fillRect(selection.x, selection.y, selection.width, selection.height);
+    }
+
+    function wireWebpSourceEditor() {
+      const stage = $('webpSourceCanvas');
+      const selectionEl = $('webpSourceSelection');
+      let interaction = null;
+      stage.onpointerdown = event => {
+        if (!state.webpExport) return;
+        const point = getWebpSourcePoint(event);
+        const selection = state.webpExport.sourceSelection;
+        if (isPointInWebpSelection(point, selection)) {
+          const ctx = state.webpExport.sourceCanvas.getContext('2d');
+          interaction = {
+            mode: 'move',
+            start: point,
+            original: { ...selection },
+            pixels: ctx.getImageData(selection.x, selection.y, selection.width, selection.height),
+            canvasSnapshot: ctx.getImageData(0, 0, state.webpExport.sourceWidth, state.webpExport.sourceHeight),
+          };
+          selectionEl.classList.add('moving');
+        } else {
+          interaction = { mode: 'select', start: point };
+          state.webpExport.sourceSelection = { x: point.x, y: point.y, width: 1, height: 1 };
+        }
+        try { stage.setPointerCapture(event.pointerId); } catch (_) {}
+        renderWebpSourceSelection();
+      };
+      stage.onpointermove = event => {
+        if (!interaction || !state.webpExport) return;
+        const point = getWebpSourcePoint(event);
+        if (interaction.mode === 'select') {
+          state.webpExport.sourceSelection = {
+            x: Math.min(interaction.start.x, point.x),
+            y: Math.min(interaction.start.y, point.y),
+            width: Math.max(1, Math.abs(point.x - interaction.start.x)),
+            height: Math.max(1, Math.abs(point.y - interaction.start.y)),
+          };
+        } else {
+          const ctx = state.webpExport.sourceCanvas.getContext('2d');
+          const next = {
+            ...interaction.original,
+            x: Math.max(0, Math.min(state.webpExport.sourceWidth - interaction.original.width, interaction.original.x + point.x - interaction.start.x)),
+            y: Math.max(0, Math.min(state.webpExport.sourceHeight - interaction.original.height, interaction.original.y + point.y - interaction.start.y)),
+          };
+          ctx.putImageData(interaction.canvasSnapshot, 0, 0);
+          fillWebpSourceRect(ctx, interaction.original);
+          ctx.putImageData(interaction.pixels, next.x, next.y);
+          state.webpExport.sourceSelection = next;
+        }
+        renderWebpSourceSelection();
+      };
+      const finish = event => {
+        if (!interaction) return;
+        const moved = interaction.mode === 'move';
+        interaction = null;
+        selectionEl.classList.remove('moving');
+        try { if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId); } catch (_) {}
+        renderWebpSourceSelection();
+        if (moved) updateWebpPreview().catch(e => console.error(e));
+      };
+      stage.onpointerup = finish;
+      stage.onpointercancel = finish;
+    }
+
+    function resetWebpSourceCanvas() {
+      const exportState = state.webpExport;
+      if (!exportState) return;
+      const ctx = exportState.sourceCanvas.getContext('2d');
+      ctx.clearRect(0, 0, exportState.sourceWidth, exportState.sourceHeight);
+      ctx.drawImage(exportState.img, 0, 0, exportState.sourceWidth, exportState.sourceHeight);
+      exportState.sourceSelection = null;
+      renderWebpSourceSelection();
+      updateWebpPreview().catch(e => console.error(e));
     }
 
     function updateWebpBgOptionLabels() {
@@ -2798,7 +2922,7 @@
       });
     }
 
-    async function createWebpBlob(img, width, height, quality, removeBlackBackground = false, bgOptions = {}) {
+    async function createWebpBlob(img, width, height, quality, removeBlackBackground = false, bgOptions = {}, sourceCanvas = null) {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -2806,7 +2930,7 @@
       if (!ctx) throw new Error('Canvas 不可用');
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, width, height);
+      ctx.drawImage(sourceCanvas || img, 0, 0, width, height);
       if (removeBlackBackground) {
         const sourceBlob = await canvasToBlob(canvas, 'image/png');
         const processedBlob = await processSheetBackgroundWithWorker(sourceBlob, bgOptions);
@@ -2865,11 +2989,9 @@
       $('webpQualityText').textContent = `${Math.round(quality * 100)}%`;
       $('webpDownload').disabled = true;
       if ($('webpUploadCdn')) $('webpUploadCdn').disabled = true;
-      $('webpPreviewImg').style.aspectRatio = `${size.width} / ${size.height}`;
-      $('webpPreviewBox').classList.toggle('transparent', removeBlackBackground);
       $('webpMeta').textContent = `正在生成预览... ${size.width}x${size.height}`;
       try {
-        const blob = await createWebpBlob(exportState.img, size.width, size.height, quality, removeBlackBackground, bgOptions);
+        const blob = await createWebpBlob(exportState.img, size.width, size.height, quality, removeBlackBackground, bgOptions, exportState.sourceCanvas);
         if (!state.webpExport || state.webpExport.token !== token) return;
         if (exportState.previewUrl) URL.revokeObjectURL(exportState.previewUrl);
         exportState.previewBlob = blob;
@@ -2878,8 +3000,10 @@
         exportState.removeBlackBackground = removeBlackBackground;
         exportState.bgOptions = bgOptions;
         exportState.previewUrl = URL.createObjectURL(blob);
-        $('webpPreviewImg').src = exportState.previewUrl;
-        const bgText = removeBlackBackground ? `已去背景 seed=${bgOptions.seedThreshold}, grow=${bgOptions.growThreshold}, halo=${bgOptions.haloThreshold}, edge=${Math.round(bgOptions.borderRatio * 100)}%，grid=${bgOptions.gridLineWidth}px，` : '';
+        $('webpResultThumbImg').src = exportState.previewUrl;
+        $('webpResultZoomImg').src = exportState.previewUrl;
+        const centerText = `自动居中=${bgOptions.autoCenter ? '开' : '关'}，`;
+        const bgText = removeBlackBackground ? `已去背景 seed=${bgOptions.seedThreshold}, grow=${bgOptions.growThreshold}, halo=${bgOptions.haloThreshold}, edge=${Math.round(bgOptions.borderRatio * 100)}%，grid=${bgOptions.gridLineWidth}px，${centerText}` : '';
         $('webpMeta').textContent = `当前预览即实际导出的 WebP。原图 ${exportState.sourceWidth}x${exportState.sourceHeight}，导出 ${size.width}x${size.height}，质量 ${Math.round(quality * 100)}%，${bgText}约 ${formatBytes(blob.size)}`;
         $('webpDownload').disabled = false;
         if ($('webpUploadCdn')) $('webpUploadCdn').disabled = false;
@@ -3045,11 +3169,12 @@
         overlay.innerHTML = `<div class="webp-window" role="dialog" aria-modal="true" aria-label="WebP 导出预览">
           <div class="webp-titlebar" id="webpDragHandle"><strong>WebP 导出预览</strong><button type="button" id="webpClose">关闭</button></div>
           <div class="webp-body">
-            <div class="webp-preview-box" id="webpPreviewBox"><span class="webp-preview-badge">实际压缩后 WebP</span><img id="webpPreviewImg" alt="compressed WebP preview"></div>
+            <div class="webp-preview-box" id="webpPreviewBox"><span class="webp-preview-badge">原图编辑：拖出选区，再拖动选区</span><div class="webp-preview-stage" id="webpPreviewStage"><canvas class="webp-source-canvas" id="webpSourceCanvas" width="${width}" height="${height}"></canvas><div class="webp-source-grid"></div><div class="webp-source-selection" id="webpSourceSelection"></div></div></div>
             <div class="webp-controls">
               <label class="webp-hintable" title="导出图片尺寸。降低最长边会显著减少文件大小，也会减少细节。"><span class="webp-control-head"><span>分辨率</span></span><select id="webpResolution"><option value="${Math.max(width, height)}">原始 ${width}x${height}</option><option value="1024">最长边 1024</option><option value="768">最长边 768</option><option value="512">最长边 512</option><option value="384">最长边 384</option><option value="256">最长边 256</option><option value="192">最长边 192</option><option value="128">最长边 128</option><option value="64">最长边 64</option><option value="50%">50%</option><option value="25%">25%</option><option value="12.5%">12.5%</option><option value="6.25%">6.25%</option><option value="3.125%">3.125%</option></select></label>
               <label class="webp-hintable" title="WebP 有损编码质量。数值越低文件越小，但边缘、眼睛高光和细节会更糊。"><span class="webp-control-head"><span>质量</span><span id="webpQualityText" class="webp-control-value">20%</span></span><input id="webpQuality" type="range" min="0.01" max="0.95" step="0.01" value="${WEBP_DEFAULT_QUALITY}"></label>
               <label class="toggle-line webp-hintable" title="使用 petSheetWorker 的 4x4 单元格 flood-fill 管线，把纯黑背景转为透明。"><input id="webpRemoveBlackBg" type="checkbox" checked>去背景</label>
+              <label class="toggle-line webp-hintable" title="原图人工编辑后，再按每格透明内容边界自动居中。"><input id="webpAutoCenter" type="checkbox">去背景后自动居中</label>
               <div class="webp-compact-grid">
                 <label class="webp-hintable" title="从每格边缘挑选背景起点时允许的颜色距离。越大，越多边缘像素会被当作背景种子。"><span class="webp-control-head"><span>种子</span><span id="webpBgSeedText" class="webp-control-value">60</span></span><input id="webpBgSeed" type="range" min="20" max="120" step="1" value="60"></label>
                 <label class="webp-hintable" title="背景 flood-fill 向内部扩张的颜色距离。越大，去背景越强，也更可能吃进角色边缘。"><span class="webp-control-head"><span>扩张</span><span id="webpBgGrowText" class="webp-control-value">78</span></span><input id="webpBgGrow" type="range" min="30" max="160" step="1" value="78"></label>
@@ -3057,14 +3182,25 @@
                 <label class="webp-hintable" title="每个 sprite 单元格最外圈强制透明的比例，用来去掉生成出的网格线或黑边。"><span class="webp-control-head"><span>裁边</span><span id="webpBgBorderText" class="webp-control-value">2%</span></span><input id="webpBgBorder" type="range" min="0" max="6" step="0.25" value="2"></label>
                 <label class="webp-hintable" title="按 4x4 分隔线位置预先透明化的像素宽度。白色/灰色网格线越粗，这里可调得越大。"><span class="webp-control-head"><span>网格线</span><span id="webpBgGridLineText" class="webp-control-value">6px</span></span><input id="webpBgGridLine" type="range" min="0" max="18" step="1" value="6"></label>
               </div>
+              <div class="rounded-md border border-sky-200 bg-sky-50 p-2">
+                <div class="webp-control-head text-xs"><strong>原图选区</strong><span id="webpSelectionMeta" class="webp-control-value">尚未选择区域</span></div>
+                <div class="toolbar mt-2"><button id="webpClearSelection" type="button">取消选区</button><button id="webpResetSource" type="button">还原原图</button></div>
+              </div>
+              <div class="webp-result-preview">
+                <div class="webp-result-thumb" tabindex="0" title="鼠标悬停放大查看最终透明 WebP"><img id="webpResultThumbImg" alt="最终透明 WebP 缩略图"></div>
+                <div class="webp-result-zoom"><img id="webpResultZoomImg" alt="最终透明 WebP 放大预览"></div>
+                <div class="min-w-0 text-xs text-slate-500"><strong class="block text-slate-900">最终透明 WebP</strong><span>悬停缩略图放大查看</span></div>
+              </div>
               <div id="webpMeta" class="status">当前预览会显示实际压缩后的 WebP。</div>
               <div id="webpCdnMeta" class="hint">CDN folder: ${PET_CDN_FOLDER} · ${(getPetCdnConfig()?.bucketName) || '未加载 qiniu.yaml'}</div>
-              <div class="toolbar"><button id="webpDownload" class="success" type="button" disabled>下载 WebP</button><button id="webpUploadCdn" class="export" type="button" disabled>上传 CDN</button><button id="webpCloseBottom" type="button">取消</button></div>
+              <div class="toolbar webp-actions"><button id="webpDownload" class="success" type="button" disabled>下载 WebP</button><button id="webpUploadCdn" class="export" type="button" disabled>上传 CDN</button><button id="webpCloseBottom" type="button">取消</button></div>
             </div>
           </div>
         </div>`;
         document.body.appendChild(overlay);
-        state.webpExport = { img, sourceWidth: width, sourceHeight: height, previewUrl: '', previewBlob: null, previewSize: null, previewQuality: WEBP_DEFAULT_QUALITY, removeBlackBackground: true, bgOptions: getWebpBgOptions(), token: 0 };
+        const sourceCanvas = $('webpSourceCanvas');
+        sourceCanvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        state.webpExport = { img, sourceCanvas, sourceWidth: width, sourceHeight: height, sourceSelection: null, previewUrl: '', previewBlob: null, previewSize: null, previewQuality: WEBP_DEFAULT_QUALITY, removeBlackBackground: true, bgOptions: {}, token: 0 };
         enableDraggableDialog(overlay.querySelector('.webp-window'), $('webpDragHandle'));
         overlay.addEventListener('click', event => { if (event.target === overlay) closeWebpExportDialog(); });
         $('webpClose').onclick = closeWebpExportDialog;
@@ -3075,9 +3211,22 @@
         $('webpResolution').onchange = () => updateWebpPreview().catch(e => console.error(e));
         $('webpQuality').oninput = () => updateWebpPreview().catch(e => console.error(e));
         $('webpRemoveBlackBg').onchange = () => updateWebpPreview().catch(e => console.error(e));
+        $('webpAutoCenter').onchange = () => updateWebpPreview().catch(e => console.error(e));
         ['webpBgSeed', 'webpBgGrow', 'webpBgHalo', 'webpBgBorder', 'webpBgGridLine'].forEach(id => {
           $(id).oninput = () => updateWebpPreview().catch(e => console.error(e));
         });
+        $('webpClearSelection').onclick = () => { state.webpExport.sourceSelection = null; renderWebpSourceSelection(); };
+        $('webpResetSource').onclick = resetWebpSourceCanvas;
+        const resultThumb = overlay.querySelector('.webp-result-thumb');
+        const resultZoom = overlay.querySelector('.webp-result-zoom');
+        const showResultZoom = () => { resultZoom.style.display = 'block'; };
+        const hideResultZoom = () => { resultZoom.style.display = 'none'; };
+        resultThumb.addEventListener('mouseenter', showResultZoom);
+        resultThumb.addEventListener('mouseleave', hideResultZoom);
+        resultThumb.addEventListener('focus', showResultZoom);
+        resultThumb.addEventListener('blur', hideResultZoom);
+        wireWebpSourceEditor();
+        renderWebpSourceSelection();
         await updateWebpPreview();
         setStatus($('runStatus'), 'WebP 预览已生成，可调整分辨率和压缩质量后下载。', 'ok');
       } catch (e) {

@@ -1,13 +1,13 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, fitIconCropAspectRatio, iconBackgroundStyleAttr, isDockButtonDisabled, isImageIconValue, parseIconSource, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
-import { itemName, t, localizeFieldName } from './i18n.js';
+import { itemName, localizeFieldName, t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
-import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
-import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { addCoins, getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
+import { getLayout, saveFieldScenesDebounced, saveInventoryDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 import { buildEggSvg, getPet, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
-import { getPetPoopCount, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
+import { getPetPoopCount, getPetPoopTotal, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
@@ -17,8 +17,17 @@ import { getTerrainFieldSlots, normalizeTerrainFieldSlotId, resolveTerrainFieldT
 import { playFieldGreeting, playPhotoShutter } from './visit_animations.js';
 import { showTakePhotoWindow } from './view_takephoto.js';
 import { openNpcDialog } from './npc_dialog.js';
+import { showVipGateDialog } from './vipGate.js';
+import { getHomeTreasureDailyReward, getHomeTreasureFacility, getHomeTreasureFusion, getHomeTreasureGrowth, getHomeTreasures, HOME_TREASURE_META, isHomeTreasureId, formatHomeTreasureReward } from './home_treasures.js';
+import { isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
+import { isMineralExplorationEnabled } from './planet_features.js';
+import { completeNpcCommission } from './minigame_daily.js';
+import { isSceneTaskCompleted, isSceneTaskStepAvailable, npcProgressId as scopedNpcProgressId, reconcileSceneTaskCompletion, sceneTaskProgressFeedback, shouldShowSceneTaskSteps, withPrimarySceneInteraction } from './npc_scene_tasks.js';
+import { applyNpcGiftSettlement, applyNpcInteractionReward, getNpcRelationshipBonuses, registerCollectibleAcquisition, rollCollectibleDrop, settleNpcGift } from './npc_gifts.js';
+import { shouldPrioritizeOnboarding } from './onboarding.js';
 
 const soundManager = SoundManager.getInstance();
+const HOME_HUD_MUSIC_ASSET = 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/ui/home-hud/home-hud-music-v4.webp';
 
 const BLIND_BOX_EGG_STORAGE_KEY = 'haqi_blind_box_egg_state_v1';
 const CHONGQING_ZOO_PLANET_ID = 'chongqing_zoo';
@@ -29,6 +38,19 @@ const ITEM_Z_INDEX_BASE = 5;
 const DRAG_PLACE_THRESHOLD = 8;
 const FUEL_MACHINE_WORK_DELAY_MS = 3000;
 const FUEL_MACHINE_ANIMATION_MS = 4600;
+
+function homeTreasureTooltipHtml(itemId) {
+    if (!isHomeTreasureId(itemId)) return '';
+    const treasure = HOME_TREASURE_META[itemId];
+    const ownedCount = Math.max(1, Number(state.inventory?.[itemId]) || 0);
+    const growth = getHomeTreasureGrowth(state.planetActions, itemId);
+    const fusion = getHomeTreasureFusion(ownedCount);
+    const reward = formatHomeTreasureReward(getHomeTreasureDailyReward(itemId, state.planetActions, ownedCount));
+    const fusionText = fusion.extraCopies > 0
+        ? `强化 Lv.${fusion.level} · 产出 +${fusion.bonusPercent}%`
+        : '强化 Lv.1 · 再次获得会自动融合';
+    return `<span class="mh-field-facility-tooltip" role="tooltip"><strong>${escapeHtml(treasure.name)}</strong><span>每日产出：${escapeHtml(reward)}</span><small>${escapeHtml(fusionText)} · 运行 Lv.${growth.level}</small></span>`;
+}
 const POOP_WIND_ANIMATION_MS = 980;
 const POOP_SUCK_ANIMATION_MS = 1850;
 const POOP_SUCK_STAGGER_MS = 150;
@@ -36,6 +58,13 @@ const POOP_MACHINE_SWEEP_MIN_MS = 10000;
 const POOP_MACHINE_SWEEP_MAX_MS = 15000;
 const POOP_MACHINE_SWEEP_SCREEN_MS = 2500;
 const POOP_MACHINE_SWEEP_RETURN_MS = 520;
+/** VIP 首次进入 Field：会员清扫 + 洗澡动画总时长 */
+const VIP_FIELD_SERVICE_MS = 2000;
+const VIP_POOP_SUCK_ANIMATION_MS = 920;
+const VIP_POOP_SUCK_STAGGER_MS = 42;
+const VIP_POOP_SUCK_MAX_STAGGER_MS = 420;
+/** 本会话是否已播放过 VIP Field 会员服务（首次进入才播） */
+const vipFieldServiceShown = new Set();
 const POOP_LOCATION_SESSION_SEED = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 const POOP_LOWER_HALF_CHANCE = 0.82;
 const POOP_PET_AVOID_X = 0.075;
@@ -128,6 +157,8 @@ let fieldPan = 0;
 let fieldPxPerMeter = 1;
 const fieldPanById = {};
 let lastBoundFieldPanKey = '';
+// 下次 bindStage 时强制把镜头对准当前主宠（领养仪式返回 field 等）。
+let forceCenterFieldPetOnEnter = false;
 let selectedFieldItem = null;
 let activePoopSweepId = 0;
 let activePoopSuckFinishAt = 0;
@@ -136,6 +167,27 @@ let fieldScenePresets = [];
 let fieldScenePresetsLoading = null;
 const fieldPoopLocationCache = new Map();
 const fieldMiningCoinLocationCache = new Map();
+
+const HAQI_LOCATION_BUTTON_ASSETS = [
+    'haqi-location-buttons/town-square-crz-v4',
+    'haqi-location-buttons/sunny-beach-crz-v4',
+    'haqi-location-buttons/magic-forest-crz-v4',
+    'haqi-location-buttons/playground-crz-v4',
+    'haqi-location-buttons/snow-mountain-crz-v4',
+    'haqi-location-buttons/magic-academy-crz-v4',
+    'haqi-location-buttons/jump-farm-crz-v4',
+];
+const HAQI_LOCATION_BUTTON_CDN = 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/';
+
+function isActiveHaqiPlanet() {
+    const settlement = state.settings?.starSettlement;
+    if (settlement?.source === 'official') return String(settlement.planetId || '') === 'haqi';
+    try {
+        return String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim() === 'haqi';
+    } catch (_) {
+        return false;
+    }
+}
 
 // 场景背景已全面改用静态场景图（CONFIG.fieldDefaultScenes / 用户自定义背景）。
 // FIELD_THEMES 仅保留主题 class（天气等 CSS 选择器依赖）与天空渐变（图片加载前的底色 / 拍照回退）。
@@ -167,6 +219,13 @@ function availableFields() {
         const type = SHOP_FIELD_TYPES[slot.typeId] || CONFIG.fields.find(field => field.id === slot.typeId) || {};
         return { ...type, id: slot.id, typeId: slot.typeId, name: slot.name, positionLabel: slot.positionLabel };
     }) : CONFIG.fields;
+}
+
+function haqiLocationButtonHtml(field, index) {
+    const asset = isActiveHaqiPlanet() ? HAQI_LOCATION_BUTTON_ASSETS[index] : '';
+    if (!asset) return `${terrainFieldTabIconHtml(field)} ${escapeHtml(localizeFieldName(field))}`;
+    const name = escapeHtml(localizeFieldName(field));
+    return `<img class="mh-field-location-button-image" src="${HAQI_LOCATION_BUTTON_CDN}${asset}.webp" alt="${name}">`;
 }
 
 const SHOP_FIELD_TYPES = Object.fromEntries([
@@ -208,6 +267,56 @@ function clamp01(value) {
 function clampRange(value, min, max) {
     const n = Number(value);
     return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
+}
+
+function localDayKey(now = Date.now()) {
+    const date = new Date(now);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+export function resolveHomeDailyMission(pet, settings = {}, today = localDayKey()) {
+    const petName = displayPetName(pet) || '伙伴';
+    const careStats = [
+        { key: 'hunger', value: Number(pet.stats?.hunger ?? 100), title: `先帮${petName}补充体力`, detail: '选择食物恢复体力，准备好再一起出发', action: '去进食' },
+        { key: 'clean', value: Number(pet.stats?.clean ?? 100), title: `先帮${petName}洗个澡`, detail: '清理干净，让伙伴精神地迎接今天', action: '去洗澡' },
+        { key: 'mood', value: Number(pet.stats?.mood ?? 100), title: `先陪${petName}玩一会`, detail: '完成一次玩耍，让伙伴重新开心起来', action: '去玩耍' },
+        { key: 'bond', value: Number(pet.stats?.bond ?? 100), title: `今天多陪陪${petName}`, detail: '一起玩耍，增进你们之间的亲密度', action: '去陪伴' },
+    ];
+    const urgentCare = careStats.filter(item => item.value < 35).sort((a, b) => a.value - b.value)[0] || null;
+    const dailyCare = settings.haqiHomeDailyCare;
+    const completedCare = !urgentCare
+        && dailyCare?.dayKey === today
+        && dailyCare?.petId === pet.id
+        && careStats.some(item => item.key === dailyCare.stat && item.value >= 35);
+    const expeditionSettlement = settings.haqiExpeditionSettlement;
+    const dailyRoster = expeditionSettlement?.dailyExpeditionRoster;
+    const completedExpeditionCount = dailyRoster?.dayKey === today && Array.isArray(dailyRoster.exploredIds)
+        ? dailyRoster.exploredIds.length
+        : 0;
+    const latestCompletedExpedition = Array.isArray(expeditionSettlement?.history)
+        ? expeditionSettlement.history.find(entry => entry?.completed === true && String(entry?.expeditionId || '').startsWith(today))
+        : null;
+    const expeditionLootCount = Math.max(0, Number(latestCompletedExpedition?.lootCount) || 0);
+    const dailyComplete = !urgentCare && (completedCare || completedExpeditionCount > 0);
+
+    return {
+        urgentCare,
+        completedCare,
+        completedExpeditionCount,
+        expeditionLootCount,
+        dailyComplete,
+        frameKey: urgentCare?.key || (dailyComplete ? 'complete' : 'expedition'),
+        action: urgentCare?.action || (completedExpeditionCount > 0 ? '看记录' : '看星图'),
+        title: urgentCare?.title
+            || (completedExpeditionCount > 0 ? `今天已和${petName}完成探险` : completedCare ? `${petName}已经恢复精神` : `带${petName}去星球探险`),
+        detail: urgentCare?.detail
+            || (completedExpeditionCount > 0
+                ? `已探索 ${completedExpeditionCount} 颗星球${expeditionLootCount ? `，带回 ${expeditionLootCount} 份材料` : '，远征记录已归档'}`
+                : completedCare ? '今日照料目标已完成，可以一起查看新的星图' : '选定航线和伙伴，带回材料与新的远征记录'),
+    };
 }
 
 function setFieldEffectScale(zoom = 1) {
@@ -769,7 +878,7 @@ function applyFieldPan() {
     fieldPan = clampRange(fieldPanById[key], -maxPan, 0);
     fieldPanById[key] = fieldPan;
     updateFieldViewportParticleFrame(stage, scene);
-    scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+    scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
 }
 
 function getFieldPanBounds() {
@@ -794,7 +903,7 @@ function setFieldPanValue(value) {
     fieldPan = clampRange(value, -bounds.maxPan, 0);
     fieldPanById[currentFieldPanKey()] = fieldPan;
     updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
-    bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+    bounds.scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
 }
 
 // 平移拖拽的快速路径：拖拽期间场景尺寸不变，跳过 recomputeFieldMetrics 的
@@ -804,7 +913,7 @@ function applyFieldPanFast(bounds, value) {
     fieldPanById[bounds.panKey] = fieldPan;
     const centerX = -fieldPan + bounds.stageWidth / 2;
     bounds.scene.style.setProperty('--field-viewport-center-x', `${centerX.toFixed(1)}px`);
-    bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+    bounds.scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
 }
 
 function animateFieldPanTo(targetPan, duration, onComplete) {
@@ -817,15 +926,30 @@ function animateFieldPanTo(targetPan, duration, onComplete) {
     const startPan = fieldPan;
     const endPan = clampRange(targetPan, -bounds.maxPan, 0);
     const start = performance.now();
+    let finished = false;
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        fieldPan = endPan;
+        fieldPanById[panKey] = fieldPan;
+        updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
+        bounds.scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
+        onComplete?.();
+    };
+    const fallbackTimer = setTimeout(finish, Math.max(1, duration) + 250);
     const step = (now) => {
+        if (finished) return;
         const progress = clamp01((now - start) / Math.max(1, duration));
         const eased = 1 - Math.pow(1 - progress, 3);
         fieldPan = startPan + (endPan - startPan) * eased;
         fieldPanById[panKey] = fieldPan;
         updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
-        bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+        bounds.scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
         if (progress < 1) requestAnimationFrame(step);
-        else onComplete?.();
+        else {
+            clearTimeout(fallbackTimer);
+            finish();
+        }
     };
     requestAnimationFrame(step);
 }
@@ -890,6 +1014,11 @@ function scheduleCenterFieldPet(pet, options = {}) {
         recenterAfterImageSizing();
         requestAnimationFrame(() => run({ animate: false, onComplete: null }));
     });
+}
+
+/** 请求下次进入 field 时把镜头对准主宠（与首次进入 / 切场景默认行为一致）。 */
+export function requestCenterFieldPetOnEnter() {
+    forceCenterFieldPetOnEnter = true;
 }
 
 function getPoopsInField(pet, fieldId = state.currentField) {
@@ -1182,19 +1311,20 @@ function renderFieldActionTray(pet) {
             ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
             : t('cleanCoinsTitle'));
     const cleanDisabledReason = t('cleanDisabledReason');
+    const useHaqiActionArt = isActiveHaqiPlanet();
+    const actionIconHtml = (asset, fallbackUrl, label) => useHaqiActionArt
+        ? `<span class="dock-icon"><img class="mh-field-action-button-image" src="${HAQI_LOCATION_BUTTON_CDN}haqi-field-action-${asset}-v1.webp" alt="${escapeHtml(label)}"></span>`
+        : `<span class="dock-icon"><img src="${fallbackUrl}" alt=""></span><span class="dock-label">${escapeHtml(label)}</span>`;
     return `
-        <div class="mh-dock-row mh-scroll-x dock-action-row">
+        <div class="mh-dock-row mh-scroll-x dock-action-row${useHaqiActionArt ? ' mh-haqi-field-actions' : ''}">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
-                <span class="dock-icon">🛠</span>
-                <span class="dock-label">${escapeHtml(t('dockBuild'))}</span>
+                ${actionIconHtml('build', 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-dock-build-v3.webp', t('dockBuild'))}
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${cleanCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!cleanCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
-                <span class="dock-icon">♻️</span>
-                <span class="dock-label">${escapeHtml(t('dockClean'))}</span>
+                ${actionIconHtml('clean', 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-dock-clean-v3.webp', t('dockClean'))}
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames"${dockDisabledAttrs(playDisabled, playTitle)} title="${escapeHtml(playTitle)}">
-                <span class="dock-icon">🎾</span>
-                <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
+                ${actionIconHtml('play', 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-dock-play-v3.webp', t('dockPlay'))}
             </button>
             ${String(state.settings?.starSettlement?.encyclopediaUrl || '').trim() ? `
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action" data-field-nav="encyclopedia" title="${escapeHtml(t('encTitle'))}">
@@ -1202,12 +1332,10 @@ function renderFieldActionTray(pet) {
                 <span class="dock-label">${escapeHtml(t('dockEncyclopedia'))}</span>
             </button>` : ''}
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
-                <span class="dock-icon">${sleepAction.icon}</span>
-                <span class="dock-label">${escapeHtml(sleepAction.label)}</span>
+                ${actionIconHtml('sleep', 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-dock-sleep-v3.webp', sleepAction.label)}
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching"${dockDisabledAttrs(hatchingDisabled, hatchingTitle)} title="${escapeHtml(hatchingTitle)}">
-                <span class="dock-icon">🥚</span>
-                <span class="dock-label">${escapeHtml(t('dockHatchPod'))}</span>
+                ${actionIconHtml('hatch', 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-dock-hatch-v3.webp', t('dockHatchPod'))}
             </button>
         </div>
     `;
@@ -1215,9 +1343,15 @@ function renderFieldActionTray(pet) {
 
 function renderFieldDecorTray(inv, currentField) {
     const areaId = currentField.typeId || resolveTerrainFieldTypeId(currentField.id);
-    const ownedItems = Object.entries(inv || {})
+    const planetId = state.settings?.starSettlement?.source === 'official' ? state.settings.starSettlement.planetId : 'default';
+    const ownedFacilities = (isHaqiExpeditionEnabled(planetId) ? Object.entries(getHomeTreasures({ inventory: inv })) : [])
+        .filter(([, count]) => count > 0)
+        .map(([id, qty]) => ({ ...getHomeTreasureFacility(id), qty }))
+        .filter(it => it && canPlaceItemInArea(it, areaId));
+    const ownedItems = [...Object.entries(inv || {})
+        .filter(([id]) => !isHomeTreasureId(id))
         .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
-        .filter(it => it && it.id && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId));
+        .filter(it => it && it.id && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId)), ...ownedFacilities];
     const ownedIds = new Set(ownedItems.map(item => item.id));
     const unlimitedItems = SHOP_ITEMS
         .filter(it => it.unlimited && !ownedIds.has(it.id) && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
@@ -1233,8 +1367,9 @@ function renderFieldDecorTray(inv, currentField) {
             ${items.length === 0
                 ? `<div class="mh-dock-hint">${escapeHtml(t('trayEmpty'))}</div>`
                 : items.map(it => {
-                    const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
-                    const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
+                    const showCount = isHomeTreasureId(it.id) || (!it.uniqueItem && (it.unlimited || it.qty > 1));
+                    const fusion = isHomeTreasureId(it.id) ? getHomeTreasureFusion(it.qty) : null;
+                    const countHtml = showCount ? `<span class="shop-item-count-badge">${fusion ? `强${fusion.level}` : (it.unlimited ? '∞' : escapeHtml(it.qty))}</span>` : '';
                     return `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         ${renderFieldTrayIcon(it)}
@@ -1423,7 +1558,7 @@ function fieldMusicToggleHtml(fieldId) {
     const music = selectedFieldMusic(fieldId);
     if (!music || isVisitingMode()) return '';
     const muted = soundManager.isBgMusicMuted?.();
-    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}" title="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}">${muted ? '♪' : '♫'}</button>`;
+    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-pressed="${muted ? 'true' : 'false'}" aria-label="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}" title="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}"><img src="${HOME_HUD_MUSIC_ASSET}" alt="" aria-hidden="true"></button>`;
 }
 
 function renderActiveFieldBuildTray(inv, currentField) {
@@ -1457,9 +1592,216 @@ function currentFieldNpcs(fieldId = state.currentField) {
     return Array.isArray(custom.npcs) ? custom.npcs : [];
 }
 
+function npcProgressId(npcId, fieldId = state.currentField) {
+    const planetId = String(state.settings?.starSettlement?.planetId || 'default');
+    return scopedNpcProgressId(planetId, fieldId, npcId);
+}
+
+function npcRelationship(npcId, fieldId = state.currentField) {
+    const relationships = state.settings.npcRelationships && typeof state.settings.npcRelationships === 'object'
+        ? state.settings.npcRelationships
+        : (state.settings.npcRelationships = {});
+    const progressId = npcProgressId(npcId, fieldId);
+    if (!relationships[progressId] || typeof relationships[progressId] !== 'object') {
+        relationships[progressId] = relationships[npcId] && typeof relationships[npcId] === 'object'
+            ? { ...relationships[npcId] }
+            : {};
+    }
+    return relationships[progressId];
+}
+
+function npcWithPrimarySceneInteraction(npc, npcIndex = 0, fieldId = state.currentField) {
+    return withPrimarySceneInteraction(npc, {
+        npcIndex,
+        planetId: state.settings?.starSettlement?.planetId || 'default',
+        fieldId,
+    });
+}
+
+function currentFieldRelationshipBonuses(fieldId = state.currentField) {
+    const npcs = currentFieldNpcs(fieldId).map((npc, npcIndex) => ({
+        ...npc,
+        progressId: npcProgressId(npc.id, fieldId),
+        npcIndex,
+    }));
+    return getNpcRelationshipBonuses(npcs, state.settings.npcRelationships || {});
+}
+
+function npcGiftFreshness() {
+    const freshness = state.settings.npcGiftFreshness;
+    if (freshness && typeof freshness === 'object' && !Array.isArray(freshness)) return freshness;
+    return (state.settings.npcGiftFreshness = {});
+}
+
+function discoverMiningCollectible(fieldId = state.currentField) {
+    const bonuses = currentFieldRelationshipBonuses(fieldId);
+    const item = rollCollectibleDrop({ source: 'mining', chance: 0.18 + bonuses.miningDiscoveryPercent / 100 });
+    if (!item) return null;
+    state.inventory[item.id] = Math.max(0, Number(state.inventory[item.id]) || 0) + 1;
+    registerCollectibleAcquisition(npcGiftFreshness(), item.id);
+    if (!state.inventoryOrder.includes(item.id)) state.inventoryOrder.push(item.id);
+    saveInventoryDebounced();
+    return item;
+}
+
+function discoverSceneCollectible() {
+    const item = rollCollectibleDrop({ source: 'exploration', chance: 1 });
+    if (!item) return null;
+    state.inventory[item.id] = Math.max(0, Number(state.inventory[item.id]) || 0) + 1;
+    registerCollectibleAcquisition(npcGiftFreshness(), item.id);
+    if (!state.inventoryOrder.includes(item.id)) state.inventoryOrder.push(item.id);
+    saveInventoryDebounced();
+    return item;
+}
+
+function fieldSceneCollectTasks(fieldId = state.currentField) {
+    return currentFieldNpcs(fieldId).flatMap((npc, npcIndex) => {
+        const taskNpc = npcWithPrimarySceneInteraction(npc, npcIndex, fieldId);
+        return (taskNpc.interactions || [])
+            .filter(interaction => interaction.play?.type === 'sceneCollect')
+            .map(interaction => ({ npc: taskNpc, interaction }));
+    });
+}
+
+function fieldSceneCarryState(interaction, collected = []) {
+    if (interaction?.play?.interactionMode !== 'carry') return { active: false, carriedStep: null, nextStep: null };
+    const steps = interaction.play.steps || [];
+    const delivered = steps.some(step => step.role === 'destination' && collected.includes(step.id));
+    const carriedStep = delivered ? null : steps.find(step => step.role === 'pickup' && collected.includes(step.id));
+    const nextStep = steps.find(step => !collected.includes(step.id)) || null;
+    return { active: true, carriedStep, nextStep };
+}
+
+function syncFieldSceneCarryVisual(task, collected = [], fieldId = state.currentField) {
+    document.querySelectorAll('.field-scene-carry-item').forEach(item => item.remove());
+    const carryState = fieldSceneCarryState(task?.interaction, collected);
+    if (!carryState.carriedStep) return;
+    const petEl = document.querySelector('.field-pet-current');
+    if (!petEl) return;
+    const carryLabel = carryState.carriedStep.label.replace(/^拿起/, '');
+    petEl.insertAdjacentHTML('beforeend', `<button type="button" class="field-scene-carry-item" data-carry-npc="${escapeHtml(task.npc.id)}" data-carry-interaction="${escapeHtml(task.interaction.id)}" data-carry-step="${escapeHtml(carryState.carriedStep.id)}" data-carry-label="${escapeHtml(carryLabel)}" aria-label="放下${escapeHtml(carryLabel)}"><span aria-hidden="true">${escapeHtml(carryState.carriedStep.icon)}</span><b>携带中</b></button>`);
+    const carryEl = petEl.querySelector('.field-scene-carry-item');
+    carryEl.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const { carryNpc, carryInteraction, carryStep, carryLabel } = carryEl.dataset;
+        const currentTask = fieldSceneCollectTasks(fieldId).find(({ npc, interaction }) => npc.id === carryNpc && interaction.id === carryInteraction);
+        if (!currentTask) return;
+        const relationship = npcRelationship(currentTask.npc.id);
+        const currentCollected = relationship.sceneCollected?.[currentTask.interaction.id];
+        if (!Array.isArray(currentCollected)) return;
+        const pickupIndex = currentCollected.indexOf(carryStep);
+        if (pickupIndex < 0) return;
+        currentCollected.splice(pickupIndex, 1);
+        carryEl.remove();
+        const pickupStep = currentTask.interaction.play.steps.find(step => step.id === carryStep);
+        const pickupEl = document.querySelector(`.field-scene-target[data-scene-npc="${CSS.escape(currentTask.npc.id)}"][data-scene-interaction="${CSS.escape(currentTask.interaction.id)}"][data-scene-step="${CSS.escape(carryStep)}"]`);
+        if (pickupEl && pickupStep) {
+            pickupEl.classList.remove('is-resolved', 'is-found');
+            pickupEl.disabled = false;
+            pickupEl.querySelector('span').textContent = pickupStep.icon;
+            pickupEl.querySelector('b').textContent = pickupStep.label;
+        }
+        currentTask.interaction.play.steps.filter(step => step.role !== 'pickup').forEach(step => {
+            const target = document.querySelector(`.field-scene-target[data-scene-npc="${CSS.escape(currentTask.npc.id)}"][data-scene-interaction="${CSS.escape(currentTask.interaction.id)}"][data-scene-step="${CSS.escape(step.id)}"]`);
+            if (target && !currentCollected.includes(step.id)) {
+                target.classList.add('is-locked');
+                target.disabled = true;
+            }
+        });
+        saveUserProfileDebounced();
+        showToast(`已放下${carryLabel}，可以重新拿取。`, 'info', 1800);
+    };
+}
+
+function fieldSceneCollectHtml(fieldId = state.currentField) {
+    const storyFlags = state.settings.npcStoryFlags && typeof state.settings.npcStoryFlags === 'object'
+        ? state.settings.npcStoryFlags
+        : (state.settings.npcStoryFlags = {});
+    let repairedCompletion = false;
+    const html = fieldSceneCollectTasks(fieldId).map(({ npc, interaction }) => {
+        const relationship = npcRelationship(npc.id);
+        if (reconcileSceneTaskCompletion(relationship, interaction, storyFlags)) repairedCompletion = true;
+        if (!shouldShowSceneTaskSteps(relationship, interaction)) return '';
+        const collected = relationship.sceneCollected?.[interaction.id] || [];
+        const targets = interaction.play.steps.map(step => {
+            const found = collected.includes(step.id);
+            const resolved = found && step.resolvedIcon;
+            const locked = !found && !isSceneTaskStepAvailable(interaction, collected, step.id);
+            const icon = resolved ? step.resolvedIcon : step.icon;
+            const label = resolved ? (step.resolvedLabel || step.label) : step.label;
+            const petStep = step.role === 'pet';
+            return `<button type="button" class="field-scene-target is-active${petStep ? ' is-pet-step' : ''}${found ? (resolved ? ' is-resolved' : ' is-found') : ''}${locked ? ' is-locked' : ''}" data-scene-npc="${escapeHtml(npc.id)}" data-scene-interaction="${escapeHtml(interaction.id)}" data-scene-step="${escapeHtml(step.id)}" style="left:${step.x}%;top:${step.y}%" aria-label="${escapeHtml(locked ? `尚未轮到：${label}` : label)}"${found || locked || petStep ? ' disabled' : ''}><span aria-hidden="true">${escapeHtml(icon)}</span><b>${escapeHtml(label)}</b></button>`;
+        }).join('');
+        return targets;
+    }).join('');
+    if (repairedCompletion) saveUserProfileDebounced();
+    return html;
+}
+
+function activePetAssistTask(fieldId = state.currentField) {
+    return fieldSceneCollectTasks(fieldId).find(({ npc, interaction }) => {
+        if (interaction.play.interactionMode !== 'petAssist') return false;
+        const relationship = npcRelationship(npc.id);
+        if (relationship.activeSceneInteractionId !== interaction.id) return false;
+        const collected = relationship.sceneCollected?.[interaction.id] || [];
+        return interaction.play.steps.find(step => !collected.includes(step.id))?.role === 'pet';
+    }) || null;
+}
+
+function syncFieldPetAssistVisual(fieldId = state.currentField) {
+    document.querySelectorAll('.field-scene-pet-assist').forEach(item => item.remove());
+    const task = activePetAssistTask(fieldId);
+    const petEl = document.querySelector('.field-pet-current');
+    if (!task || !petEl) return;
+    const step = task.interaction.play.steps.find(item => item.role === 'pet');
+    petEl.insertAdjacentHTML('beforeend', `<span class="field-scene-pet-assist" aria-hidden="true"><span>${escapeHtml(step?.icon || '🐾')}</span><b>点我协助</b></span>`);
+}
+
+function moveNpcToSceneStep(npcId, step, collaboration = {}) {
+    if (!collaboration.moveNpc || !step) return;
+    const moveNpc = (targetNpcId, offsetX, offsetY) => {
+        const npcEl = document.querySelector(`.field-npc[data-npc-id="${CSS.escape(targetNpcId)}"]`);
+        if (!npcEl) return;
+        npcEl.style.left = `${clampRange(Number(step.x) + offsetX, 6, 94)}%`;
+        npcEl.style.top = `${clampRange(Number(step.y) + offsetY, 30, 84)}%`;
+        npcEl.classList.add('is-collaborating');
+    };
+    moveNpc(npcId, Number(collaboration.offsetX) || -5, Number(collaboration.offsetY) || 7);
+    if (collaboration.companionNpcId && collaboration.companionNpcId !== npcId) {
+        moveNpc(
+            collaboration.companionNpcId,
+            Number(collaboration.companionOffsetX) || 6,
+            Number(collaboration.companionOffsetY) || 7,
+        );
+    }
+}
+
+function showNpcSceneReaction(npcId, message) {
+    const reactionEl = document.querySelector(`.field-npc[data-npc-id="${CSS.escape(npcId)}"] .field-npc-reaction`);
+    if (!reactionEl) return;
+    reactionEl.textContent = message;
+    reactionEl.classList.remove('is-visible');
+    requestAnimationFrame(() => reactionEl.classList.add('is-visible'));
+    window.setTimeout(() => reactionEl.classList.remove('is-visible'), 2400);
+}
+
 function currentFieldAreaLinks(fieldId = state.currentField) {
     const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
     return Array.isArray(custom.areaLinks) ? custom.areaLinks : [];
+}
+
+function currentFieldUiButtons(fieldId = state.currentField) {
+    const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
+    return Array.isArray(custom.uiButtons) ? custom.uiButtons : [];
+}
+
+function fieldUiButtonHtml(button) {
+    const size = clampRange(Number(button?.size) || 64, 44, 120);
+    const icon = isImageIconValue(button?.icon)
+        ? `<span class="field-ui-button-image" style="${escapeHtml(iconBackgroundStyleAttr(button.icon))}"></span>`
+        : `<span class="field-ui-button-emoji">${escapeHtml(button?.icon || '🎮')}</span>`;
+    return `<button type="button" class="field-ui-button" data-field-ui-button="${escapeHtml(button?.id || '')}" style="--field-ui-button-size:${size}px" aria-label="${escapeHtml(button?.label || '打开小游戏')}">${icon}${button?.label ? `<span class="field-ui-button-label">${escapeHtml(button.label)}</span>` : ''}</button>`;
 }
 
 function isChongqingZooPlanet() {
@@ -1580,7 +1922,11 @@ function recordChongqingNpcTalk(npc, fieldId) {
 }
 
 function fieldAreaLinkHtml(link) {
-    return `<button type="button" class="field-area-link" data-area-target-field="${escapeHtml(link.targetFieldId || '')}" data-area-url="${escapeHtml(link.url || '')}" style="left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%">${link.icon ? `<span aria-hidden="true">${escapeHtml(link.icon)}</span>` : ''}${escapeHtml(link.label)}</button>`;
+    const hasHitbox = Number(link.width) > 0 && Number(link.height) > 0;
+    const style = hasHitbox
+        ? `left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%;width:${Number(link.width)}%;height:${Number(link.height)}%`
+        : `left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%`;
+    return `<button type="button" class="field-area-link${hasHitbox ? ' field-area-hitbox' : ''}" data-area-target-field="${escapeHtml(link.targetFieldId || '')}" data-area-url="${escapeHtml(link.url || '')}" style="${style}" aria-label="${escapeHtml(link.label)}" title="${escapeHtml(link.label)}">${hasHitbox ? '' : `${link.icon ? `<span aria-hidden="true">${escapeHtml(link.icon)}</span>` : ''}${escapeHtml(link.label)}`}</button>`;
 }
 
 // NPC 奖励和盲盒小游戏使用同源 localStorage。领取键包含蛋的 startedAt/code，兑换新蛋后可重新领取。
@@ -1689,7 +2035,7 @@ function fieldNpcHtml(npc) {
     const gapPx = Math.round(2 + Math.max(0, scale - 1) * 18);
     // 静态阴影：纯 CSS 径向渐变，随图标一起被 .field-npc-icon 的 transform:scale 缩放，不逐帧重绘，开销可忽略。
     const shadowHtml = npc?.dropShadow ? '<span class="field-npc-shadow"></span>' : '';
-    return `<button type="button" class="field-npc" data-npc-id="${escapeHtml(npc?.id || '')}" style="left:${Number(npc?.x) || 0}%;top:${Number(npc?.y) || 0}%;gap:${gapPx}px" aria-label="${escapeHtml(npc?.name || '')}"><span class="field-npc-icon" style="transform:scale(${(scale * flipX).toFixed(3)}, ${scale.toFixed(3)})">${shadowHtml}${inner}</span><span class="field-npc-name">${escapeHtml(npc?.name || '')}</span></button>`;
+    return `<button type="button" class="field-npc" data-npc-id="${escapeHtml(npc?.id || '')}" style="left:${Number(npc?.x) || 0}%;top:${Number(npc?.y) || 0}%;gap:${gapPx}px" aria-label="${escapeHtml(npc?.name || '')}"><span class="field-npc-reaction" aria-live="polite"></span><span class="field-npc-icon" style="transform:scale(${(scale * flipX).toFixed(3)}, ${scale.toFixed(3)})">${shadowHtml}${inner}</span><span class="field-npc-name">${escapeHtml(npc?.name || '')}</span></button>`;
 }
 
 function fieldMapHtml(fieldId) {
@@ -1961,7 +2307,7 @@ function fieldPetsHtml(currentPet, fieldId) {
         return `
             <div class="pet-sprite field-pet ${isCurrent ? 'field-pet-current' : 'field-pet-friend'}" data-field-pet="${escapeHtml(id)}"
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
-                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk' })}</div>
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk', requireProcessedTexture: false })}</div>
             </div>
         `;
     }).join('');
@@ -2030,7 +2376,7 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
         return `
             <div class="pet-sprite field-pet ${entry.current ? 'field-pet-current' : `field-pet-friend ${entry.host ? 'field-pet-visit-host' : entry.planetGuest ? 'field-pet-visit-planet' : 'field-pet-visit-crew'}`}" data-field-pet="${escapeHtml(entry.id)}" ${entry.host ? 'data-visit-host-pet="1"' : ''}
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
-                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(entry.pet, { alt: displayPetName(entry.pet), motion: 'walk' })}</div>
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(entry.pet, { alt: displayPetName(entry.pet), motion: 'walk', requireProcessedTexture: false })}</div>
             </div>
         `;
     }).join('');
@@ -2347,7 +2693,10 @@ function startFieldPetMachinePull() {
     };
 }
 
-function playPoopSuckToMachine(poops, onComplete) {
+function playPoopSuckToMachine(poops, onComplete, options = {}) {
+    const animMs = Math.max(240, Number(options.animMs) || POOP_SUCK_ANIMATION_MS);
+    const staggerMs = Math.max(0, Number(options.staggerMs) || POOP_SUCK_STAGGER_MS);
+    const maxStaggerMs = Math.max(staggerMs, Number(options.maxStaggerMs) || 1200);
     const sourceEls = Array.from(document.querySelectorAll('.field-poops .poop-btn'));
     const target = getFieldFuelMachinePoint();
     const animated = [];
@@ -2361,7 +2710,7 @@ function playPoopSuckToMachine(poops, onComplete) {
             const startY = rect.top + rect.height * 0.5;
             const dx = target.x - startX;
             const dy = target.y - startY;
-            const delay = Math.min(index * POOP_SUCK_STAGGER_MS, 1200);
+            const delay = Math.min(index * staggerMs, maxStaggerMs);
             fly.className = 'field-poop-suck-fly';
             fly.disabled = true;
             fly.style.left = startX + 'px';
@@ -2374,10 +2723,11 @@ function playPoopSuckToMachine(poops, onComplete) {
             fly.style.setProperty('--poop-suck-near-x', (dx * 0.82).toFixed(1) + 'px');
             fly.style.setProperty('--poop-suck-near-y', (dy * 0.78 - 6).toFixed(1) + 'px');
             fly.style.animationDelay = delay + 'ms';
+            fly.style.animationDuration = (animMs / 1000).toFixed(2) + 's';
             document.body.appendChild(fly);
             source.classList.add('field-poop-suck-source');
             setTimeout(() => source.remove(), Math.max(90, delay + 80));
-            setTimeout(() => fly.remove(), delay + POOP_SUCK_ANIMATION_MS + 120);
+            setTimeout(() => fly.remove(), delay + animMs + 120);
             animated.push(delay);
         });
     }
@@ -2386,16 +2736,248 @@ function playPoopSuckToMachine(poops, onComplete) {
     sourceEls.forEach(el => {
         if (animatedIds.has(el.dataset.poop) && !el.classList.contains('field-poop-suck-source')) el.remove();
     });
-    const finishDelay = animated.length ? Math.max(...animated) + POOP_SUCK_ANIMATION_MS : 0;
+    const finishDelay = animated.length ? Math.max(...animated) + animMs : 0;
     if (finishDelay > 0) activePoopSuckFinishAt = Math.max(activePoopSuckFinishAt, performance.now() + finishDelay);
     setTimeout(() => onComplete?.(), finishDelay);
 }
 
-function playPoopMachineSweep(poops, onComplete) {
+function needsVipFieldWash(pet) {
+    if (!pet?.stats) return false;
+    if (isPetInteractionBlocked(pet)) return false;
+    const clean = Number(pet.stats.clean ?? 100);
+    const threshold = Number(CONFIG.trauma?.cleanThreshold) || 35;
+    return clean < threshold;
+}
+
+function clearAllPetPoopCounts(pet) {
+    normalizePetPoops(pet);
+    const fieldIds = Object.keys(pet.poopCounts || {});
+    let total = 0;
+    fieldIds.forEach((fieldId) => {
+        const n = getPetPoopCount(pet, fieldId);
+        if (n <= 0) return;
+        total += n;
+        setPetPoopCount(pet, fieldId, 0);
+        clearRuntimePoopLocations(pet, fieldId);
+    });
+    // 保险：清掉残留 DOM（含当前场景）
+    document.querySelectorAll('.field-poops .poop-btn:not([data-field-coin])').forEach((el) => {
+        if (!el.classList.contains('field-poop-suck-source')) el.remove();
+    });
+    return total;
+}
+
+function showVipFieldServiceOverlay(stage) {
+    if (!stage) return null;
+    document.getElementById('mhVipFieldService')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'mhVipFieldService';
+    overlay.className = 'mh-vip-field-service';
+    overlay.setAttribute('aria-live', 'polite');
+    overlay.innerHTML = `
+        <div class="mh-vip-field-service-card">
+            <div class="mh-vip-field-service-badge">VIP</div>
+            <div class="mh-vip-field-service-title">${escapeHtml(t('vipFieldServiceTitle'))}</div>
+            <div class="mh-vip-field-service-sub">${escapeHtml(t('vipFieldServiceSub'))}</div>
+            <div class="mh-vip-field-service-bar" aria-hidden="true"><i></i></div>
+        </div>
+    `;
+    stage.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('is-on'));
+    return overlay;
+}
+
+function playVipFieldBathFx(petEl) {
+    if (!petEl) return;
+    const anchor = petEl.querySelector?.(':scope > .field-pet-wander') || petEl;
+    let fx = anchor.querySelector(':scope > .mh-vip-field-bath-fx');
+    if (fx) fx.remove();
+    fx = document.createElement('div');
+    fx.className = 'mh-vip-field-bath-fx';
+    fx.setAttribute('aria-hidden', 'true');
+    const emojis = ['🫧', '🧼', '✨', '💧', '🫧', '✨'];
+    fx.innerHTML = emojis.map((emoji, index) => {
+        const angle = (index / emojis.length) * Math.PI * 2;
+        const dist = 28 + (index % 3) * 10;
+        const x = Math.cos(angle) * dist;
+        const y = Math.sin(angle) * dist - 8;
+        return `<span style="--vip-bath-x:${x.toFixed(1)}px;--vip-bath-y:${y.toFixed(1)}px;--vip-bath-delay:${(index * 0.08).toFixed(2)}s">${emoji}</span>`;
+    }).join('');
+    anchor.appendChild(fx);
+    // 立刻去掉脏污烟雾，让用户看到“洗干净”
+    anchor.classList.remove('mh-pet-dirty');
+    petEl.classList.remove('mh-pet-dirty');
+    anchor.querySelectorAll('.mh-pet-smoke-emitter').forEach((el) => el.remove());
+    petEl.querySelectorAll('.mh-pet-smoke-emitter').forEach((el) => el.remove());
+    setTimeout(() => fx.remove(), 1600);
+}
+
+function applyVipFieldWash(pet, ctx) {
+    if (!needsVipFieldWash(pet)) return false;
+    const applied = ctx?.callbacks?.onAction?.('bath', { skipNotify: true, ignoreCooldown: true });
+    // VIP 会员服务一次洗干净：至少抬到舒适区间
+    const comfort = Math.max(60, Number(CONFIG.actions?.bath?.clean) || 20);
+    if ((Number(pet.stats?.clean) || 0) < comfort) {
+        pet.stats.clean = Math.min(CONFIG.statMax, comfort + 20);
+        markPetCared(pet);
+        savePetDebounced(pet);
+    }
+    const petEl = document.querySelector(`.field-pet-current[data-field-pet="${CSS.escape(pet.id)}"]`)
+        || document.querySelector('.field-pet-current');
+    playVipFieldBathFx(petEl);
+    try { soundManager.playBathCue?.('wash'); } catch (_) {}
+    return applied !== false;
+}
+
+function runVipFieldService(pet, ctx, {
+    visiblePoops = [],
+    totalPoops = 0,
+    fieldCoins = [],
+    needsWash = false,
+} = {}) {
+    const stage = ctx?.stage || $('mhStage');
+    const overlay = showVipFieldServiceOverlay(stage);
+    const cleared = totalPoops > 0 ? clearAllPetPoopCounts(pet) : 0;
+    const fuelGain = cleared * (CONFIG.biofuelPerPoop || 1);
+    const coinGain = fieldCoins.reduce((sum, coin) => sum + (Number(coin.value) || 0), 0);
+    const collectedCoins = recordPlanetMiningFieldCollected(state, coinGain, Date.now(), CONFIG);
+    const discoveredItem = collectedCoins > 0 ? discoverMiningCollectible(fieldId) : null;
+    if (collectedCoins > 0) {
+        clearRuntimeFieldMiningCoins(state.currentField);
+        addCoins(collectedCoins, { source: 'field-mining-vip-service', category: 'mining' });
+    }
+    if (cleared > 0) {
+        try {
+            const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
+            ls.poopsCleaned = (Number(ls.poopsCleaned) || 0) + cleared;
+        } catch (_) {}
+        // 动画期间避免 addBiofuel→notify 打断叠加层；直接写再刷新 HUD
+        state.biofuel = (state.biofuel | 0) + fuelGain;
+        markPetCared(pet);
+        savePetDebounced(pet);
+        try { soundManager.playPoopClean(Math.min(8, cleared)); } catch (_) {}
+    }
+    if (cleared > 0 || collectedCoins > 0) {
+        saveUserProfileDebounced();
+        if (collectedCoins > 0) {
+            try { soundManager.playPointReward?.(); } catch (_) {}
+        }
+        const suckTargets = [
+            ...(cleared > 0 ? visiblePoops : []),
+            ...(collectedCoins > 0 ? fieldCoins : []),
+        ];
+        playPoopSuckToMachine(suckTargets, null, {
+            animMs: VIP_POOP_SUCK_ANIMATION_MS,
+            staggerMs: VIP_POOP_SUCK_STAGGER_MS,
+            maxStaggerMs: VIP_POOP_SUCK_MAX_STAGGER_MS,
+        });
+        // 保险：吸走动画未命中的金币按钮也清掉
+        if (collectedCoins > 0) {
+            document.querySelectorAll('.field-poops .poop-btn[data-field-coin]').forEach((el) => {
+                if (!el.classList.contains('field-poop-suck-source')) el.remove();
+            });
+        }
+        playPoopGlitchWind();
+    }
+
+    let washed = false;
+    if (needsWash) {
+        // 稍晚一点出洗澡特效，和清扫错开，整体仍压在 2 秒内
+        setTimeout(() => { washed = applyVipFieldWash(pet, ctx) || washed; }, 280);
+    }
+
+    setTimeout(() => {
+        overlay?.classList.add('is-off');
+        updateBiofuelHud();
+        if (collectedCoins > 0) flyFieldCoinNumberToHud(collectedCoins, updateCoinsHud);
+        updateCleanPoopsButton(pet);
+        const bathPart = washed || needsWash ? t('vipFieldServiceBath') : '';
+        const coinsPart = collectedCoins > 0 ? t('vipFieldServiceCoins', { coins: collectedCoins }) : '';
+        if (cleared > 0) {
+            showToast(t('vipFieldServiceDone', {
+                count: cleared,
+                fuel: fuelGain,
+                coins: coinsPart,
+                bath: bathPart,
+            }), 'success', 1800);
+        } else if (collectedCoins > 0) {
+            showToast(t('vipFieldServiceCoinsOnly', { coins: collectedCoins, bath: bathPart }), 'success', 1800);
+        } else if (needsWash) {
+            showToast(t('vipFieldServiceBathOnly'), 'success', 1600);
+        }
+        setTimeout(() => overlay?.remove(), 280);
+    }, VIP_FIELD_SERVICE_MS);
+}
+
+/**
+ * VIP 首次进入 Field：若有场景便便/金币或宠物脏污，播放约 2 秒会员清扫/收币/洗澡服务。
+ * 本会话只触发一次（与蛋欢迎烟花同为 session once）。
+ */
+function maybeRunVipFieldService(pet, ctx) {
+    if (!pet || !state.isPaid || isVisitingMode() || state.isDecorMode) return;
+    if (vipFieldServiceShown.has('session')) return;
+    vipFieldServiceShown.add('session');
+    normalizePetPoops(pet);
+    const visiblePoops = getPoopsInField(pet, state.currentField).filter((p) => !p?.isCoin && p?.kind !== 'coin');
+    const fieldCoins = getFieldMiningCoinsInField(state.currentField, pet);
+    const totalPoops = getPetPoopTotal(pet);
+    const needsWash = needsVipFieldWash(pet);
+    if (totalPoops <= 0 && fieldCoins.length <= 0 && !needsWash) return;
+    // 等一帧，确保 stage / poop / coin DOM 已就绪
+    requestAnimationFrame(() => {
+        if (state.zoomLevel !== 1 || !state.isPaid) return;
+        runVipFieldService(pet, ctx, { visiblePoops, totalPoops, fieldCoins, needsWash });
+    });
+}
+
+function playPoopMachineSweep(poops, onComplete, options = {}) {
     const bounds = getFieldPanBounds();
     const remaining = new Map((poops || []).filter(p => p?.id).map(p => [p.id, p]));
     if (!bounds || bounds.maxPan <= 1 || remaining.size === 0) {
-        playPoopSuckToMachine(poops, onComplete);
+        // 短场景仍提供右下角加速入口（VIP 秒清 / 非 VIP 弹会员引导）
+        const stage = $('mhStage');
+        let done = false;
+        const finishShort = () => {
+            if (done) return;
+            done = true;
+            stage?.querySelector?.('#mhVipCleanSpeedBtn')?.remove();
+            onComplete?.();
+        };
+        const mountShortSpeed = () => {
+            if (!stage) return;
+            stage.querySelector('#mhVipCleanSpeedBtn')?.remove();
+            const btn = document.createElement('button');
+            btn.id = 'mhVipCleanSpeedBtn';
+            btn.type = 'button';
+            btn.className = 'mh-vip-clean-speed-btn';
+            btn.title = t('vipCleanSpeedUpTitle');
+            btn.setAttribute('aria-label', t('vipCleanSpeedUp'));
+            btn.innerHTML = `<span aria-hidden="true">⚡</span><em>${escapeHtml(t('vipCleanSpeedUp'))}</em>`;
+            btn.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (done) return;
+                if (state.isPaid) {
+                    showToast(t('vipCleanSpeedUpDone'), 'success', 1200);
+                    finishShort();
+                    return;
+                }
+                const choice = await showVipGateDialog({
+                    title: t('vipGateTitle'),
+                    message: t('vipGateCleanMessage'),
+                    primaryText: t('vipGateBecomeMember'),
+                    secondaryText: null,
+                });
+                if (choice === 'vip') options.onBecomeMember?.();
+            };
+            stage.appendChild(btn);
+        };
+        mountShortSpeed();
+        playPoopSuckToMachine(poops, finishShort, state.isPaid ? {
+            animMs: VIP_POOP_SUCK_ANIMATION_MS,
+            staggerMs: VIP_POOP_SUCK_STAGGER_MS,
+            maxStaggerMs: VIP_POOP_SUCK_MAX_STAGGER_MS,
+        } : undefined);
         return;
     }
 
@@ -2409,7 +2991,23 @@ function playPoopMachineSweep(poops, onComplete) {
         POOP_MACHINE_SWEEP_MIN_MS,
         POOP_MACHINE_SWEEP_MAX_MS
     );
-    const triggerVisiblePoops = () => {
+    let finished = false;
+    let spedUp = false;
+    let fallbackTimer = 0;
+    const removeSpeedBtn = () => {
+        stage?.querySelector?.('#mhVipCleanSpeedBtn')?.remove();
+    };
+    const triggerVisiblePoops = ({ forceAll = false } = {}) => {
+        if (forceAll) {
+            const all = Array.from(remaining.values());
+            remaining.clear();
+            if (all.length) playPoopSuckToMachine(all, null, {
+                animMs: VIP_POOP_SUCK_ANIMATION_MS,
+                staggerMs: VIP_POOP_SUCK_STAGGER_MS,
+                maxStaggerMs: VIP_POOP_SUCK_MAX_STAGGER_MS,
+            });
+            return;
+        }
         const left = Math.max(0, -fieldPan / sceneWidth - 0.03);
         const right = Math.min(1, (-fieldPan + stageWidth) / sceneWidth + 0.03);
         const visible = [];
@@ -2423,9 +3021,15 @@ function playPoopMachineSweep(poops, onComplete) {
         if (visible.length) playPoopSuckToMachine(visible);
     };
     const finish = () => {
-        if (sweepId !== activePoopSweepId) return;
-        if (remaining.size) playPoopSuckToMachine(Array.from(remaining.values()));
-        animateFieldPanTo(returnPan, POOP_MACHINE_SWEEP_RETURN_MS, () => {
+        if (finished || sweepId !== activePoopSweepId) return;
+        finished = true;
+        clearTimeout(fallbackTimer);
+        removeSpeedBtn();
+        if (remaining.size) {
+            if (spedUp) triggerVisiblePoops({ forceAll: true });
+            else playPoopSuckToMachine(Array.from(remaining.values()));
+        }
+        animateFieldPanTo(returnPan, spedUp ? 220 : POOP_MACHINE_SWEEP_RETURN_MS, () => {
             if (sweepId !== activePoopSweepId) return;
             scene.classList.remove('is-machine-sweeping');
             stage.__mhFieldPannedAt = Date.now();
@@ -2433,18 +3037,53 @@ function playPoopMachineSweep(poops, onComplete) {
             setTimeout(() => onComplete?.(), waitForLastPoop + 180);
         });
     };
+    const requestSpeedUp = async () => {
+        if (finished || spedUp || sweepId !== activePoopSweepId) return;
+        if (state.isPaid) {
+            spedUp = true;
+            showToast(t('vipCleanSpeedUpDone'), 'success', 1200);
+            finish();
+            return;
+        }
+        const choice = await showVipGateDialog({
+            title: t('vipGateTitle'),
+            message: t('vipGateCleanMessage'),
+            primaryText: t('vipGateBecomeMember'),
+            secondaryText: null,
+        });
+        if (choice === 'vip') options.onBecomeMember?.();
+    };
+    const mountSpeedBtn = () => {
+        if (!stage) return;
+        stage.querySelector('#mhVipCleanSpeedBtn')?.remove();
+        const btn = document.createElement('button');
+        btn.id = 'mhVipCleanSpeedBtn';
+        btn.type = 'button';
+        btn.className = 'mh-vip-clean-speed-btn';
+        btn.title = t('vipCleanSpeedUpTitle');
+        btn.setAttribute('aria-label', t('vipCleanSpeedUp'));
+        btn.innerHTML = `<span aria-hidden="true">⚡</span><em>${escapeHtml(t('vipCleanSpeedUp'))}</em>`;
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            requestSpeedUp();
+        };
+        stage.appendChild(btn);
+    };
 
     scene.classList.add('is-machine-sweeping');
     setFieldPanValue(0);
     triggerVisiblePoops();
+    mountSpeedBtn();
     const start = performance.now();
+    fallbackTimer = setTimeout(finish, duration + 250);
     const step = (now) => {
-        if (sweepId !== activePoopSweepId) return;
+        if (finished || sweepId !== activePoopSweepId) return;
         const progress = clamp01((now - start) / duration);
         fieldPan = -maxPan * progress;
         fieldPanById[panKey] = fieldPan;
         updateFieldViewportParticleFrame(stage, scene);
-        scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+        scene.style.setProperty('--field-pan-x', `${fieldPan.toFixed(1)}px`);
         triggerVisiblePoops();
         if (progress < 1) requestAnimationFrame(step);
         else finish();
@@ -2452,7 +3091,7 @@ function playPoopMachineSweep(poops, onComplete) {
     requestAnimationFrame(step);
 }
 
-function collectPoopsInCurrentField(pet) {
+function collectPoopsInCurrentField(pet, ctx = null) {
     const fieldId = state.currentField;
     const poops = getPoopsInField(pet, fieldId);
     const fieldCoins = getFieldMiningCoinsInField(fieldId, pet);
@@ -2465,7 +3104,7 @@ function collectPoopsInCurrentField(pet) {
         return 0;
     }
     if (poops.length > 0 && machineCost > 0) {
-        state.coins = Math.max(0, (state.coins | 0) - machineCost);
+        addCoins(-machineCost, { source: 'field-cleaner', category: 'care' });
         updateCoinsHud();
         showToast(t('cleanMachineStart', { cost: machineCost }), 'info', 1200);
     }
@@ -2479,9 +3118,10 @@ function collectPoopsInCurrentField(pet) {
         } catch (_) {}
     }
     const collectedCoins = recordPlanetMiningFieldCollected(state, coinGain, Date.now(), CONFIG);
+    const discoveredItem = collectedCoins > 0 ? discoverMiningCollectible(fieldId) : null;
     if (collectedCoins > 0) {
         clearRuntimeFieldMiningCoins(fieldId);
-        state.coins = Math.max(0, (Number(state.coins) || 0) + collectedCoins);
+        addCoins(collectedCoins, { source: 'field-mining-cleaner', category: 'mining' });
     }
     const fuelGain = poops.length * (CONFIG.biofuelPerPoop || 1);
     if (fuelGain > 0) state.biofuel = (state.biofuel | 0) + fuelGain;
@@ -2496,6 +3136,7 @@ function collectPoopsInCurrentField(pet) {
         const parts = [];
         if (poops.length > 0) parts.push(t('cleanResultPoop', { count: poops.length, fuel: fuelGain }));
         if (collectedCoins > 0) parts.push(t('cleanResultCoins', { coins: collectedCoins }));
+        if (discoveredItem) parts.push(`意外发现 ${discoveredItem.icon} ${discoveredItem.name}`);
         showToast(parts.join(t('cleanResultJoin')), 'success', 1400);
     };
     const startFuelProcessing = fuelGain > 0
@@ -2506,6 +3147,9 @@ function collectPoopsInCurrentField(pet) {
         stopWind();
         stopPetPull();
         startFuelProcessing();
+        ctx?.callbacks?.onTendHome?.();
+    }, {
+        onBecomeMember: () => ctx?.callbacks?.onBecomeMember?.(),
     });
     updateCleanPoopsButton(pet);
     return collectables.length;
@@ -2517,7 +3161,8 @@ function collectFieldMiningCoin(pet, fieldId, coinId, sourceEl) {
     const collectedCoins = recordPlanetMiningFieldCollected(state, coin.value, Date.now(), CONFIG);
     if (collectedCoins <= 0) return false;
     removeRuntimeFieldMiningCoin(fieldId, coinId);
-    state.coins = Math.max(0, (Number(state.coins) || 0) + collectedCoins);
+    addCoins(collectedCoins, { source: 'field-mining-pickup', category: 'mining' });
+    const discoveredItem = discoverMiningCollectible(fieldId);
     saveUserProfileDebounced();
     soundManager.playPointReward?.();
     playPoopGlitchWind();
@@ -2526,7 +3171,7 @@ function collectFieldMiningCoin(pet, fieldId, coinId, sourceEl) {
         stopPetPull();
         flyFieldCoinNumberToHud(collectedCoins, () => {
             updateCoinsHud();
-            showToast(`+${collectedCoins} 金币`, 'success', 900);
+            showToast(`+${collectedCoins} 金币${discoveredItem ? ` · 发现 ${discoveredItem.icon} ${discoveredItem.name}` : ''}`, 'success', discoveredItem ? 2200 : 900);
         }, sourceEl);
     });
     updateCleanPoopsButton(pet);
@@ -2590,6 +3235,7 @@ function showCaretakerFieldNotice(pet) {
 export const fieldLevel = {
     id: 'field',
     index: 1,
+    cameraTargetSelector: '#mhFieldScene',
     wipeColor: 'linear-gradient(180deg, #b7f2ff 0%, #e2ffe2 42%, #8bd05d 100%)',
     minCamera: 0.6,    // 飞远 → 触发 zoomOut 回到 planet 视图
     maxCamera: 1.7,    // 贴近 → 触发 zoomIn 进入 pet 视图
@@ -2607,6 +3253,13 @@ export const fieldLevel = {
         if (removedPoops > 0) savePetDebounced(pet);
         const poops = visiting ? [] : getPoopsInField(pet, fld.id);
         const fieldCoins = visiting ? [] : getFieldMiningCoinsInField(fld.id, pet);
+        const activePlanetId = state.settings?.starSettlement?.planetId || '';
+        const showExpedition = !visiting && isHaqiExpeditionEnabled(activePlanetId);
+        const showMineral = !visiting && isMineralExplorationEnabled(activePlanetId);
+        const petName = displayPetName(pet) || '伙伴';
+        const onboardingHasPriority = showExpedition && shouldPrioritizeOnboarding(state.settings, activePlanetId);
+        const dailyMission = resolveHomeDailyMission(pet, state.settings);
+        const { urgentCare, completedExpeditionCount, dailyComplete } = dailyMission;
 
         return `
             <div id="mhFieldScene" class="mh-field-scene" style="width:${metersToFieldPx(FIELD_WIDTH_METERS)}px" data-field-width-meters="${FIELD_WIDTH_METERS}" data-field-height-meters="${FIELD_HEIGHT_METERS}">
@@ -2636,7 +3289,11 @@ export const fieldLevel = {
                         const houseClass = isHouse ? ' is-house' : '';
                         const visualClass = visualHtml ? ' has-visual' : '';
                         const inner = visualHtml || escapeHtml(def.emoji || '');
-                        return `<div class="field-item${selectedClass}${houseClass}${visualClass}" data-fidx="${idx}" data-x="${x}" data-y="${y}" data-field-size="${scale.toFixed(3)}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%;z-index:${zIndex};font-size:${fontSize}px">${inner}</div>`;
+                        const facilityTooltip = homeTreasureTooltipHtml(it.itemId);
+                        const facilityAttrs = facilityTooltip
+                            ? ` data-home-facility="${escapeHtml(it.itemId)}" tabindex="0" aria-label="${escapeHtml(HOME_TREASURE_META[it.itemId].name)}，悬停或点按查看用途"`
+                            : '';
+                        return `<div class="field-item${selectedClass}${houseClass}${visualClass}" data-fidx="${idx}" data-x="${x}" data-y="${y}" data-field-size="${scale.toFixed(3)}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%;z-index:${zIndex};font-size:${fontSize}px"${facilityAttrs}>${inner}${facilityTooltip}</div>`;
                     }).join('');
                 })()}
             </div>
@@ -2644,6 +3301,10 @@ export const fieldLevel = {
 
             <div class="field-npcs">
                 ${positionedFieldNpcs(fld.id, pet).map(fieldNpcHtml).join('')}
+            </div>
+
+            <div class="field-scene-targets" aria-live="polite">
+                ${fieldSceneCollectHtml(fld.id)}
             </div>
 
             ${chongqingNpcTaskHtml()}
@@ -2661,6 +3322,26 @@ export const fieldLevel = {
                 ${fieldPetsHtml(pet, fld.id)}
             </div>
             </div>
+            <nav class="field-ui-buttons" aria-label="场景快捷操作">
+                ${currentFieldUiButtons(fld.id).map(fieldUiButtonHtml).join('')}
+            </nav>
+            ${showExpedition ? `<section class="home-haqi-identity" aria-label="哈奇星球伙伴家园">
+                <span>哈奇星球 · 哈奇小镇</span>
+                <strong>${onboardingHasPriority ? `欢迎来到，${escapeHtml(petName)}正等你认识它` : `欢迎回来，${escapeHtml(petName)}在等你`}</strong>
+                <small>${onboardingHasPriority ? '跟随新手航线，开始你们的第一段旅程' : '照顾伙伴、建设家园，再一起去冒险'}</small>
+            </section>` : ''}
+            ${showExpedition && !onboardingHasPriority ? `<section class="home-daily-mission is-frame-${escapeHtml(dailyMission.frameKey)}${urgentCare ? ' is-care' : ''}${dailyComplete ? ' is-complete' : ''}" aria-labelledby="homeDailyMissionTitle">
+                <span class="home-daily-mission__copy">
+                    <span class="home-daily-mission__eyebrow">${dailyComplete ? '今日目标完成' : '今日一起做'}</span>
+                    <strong id="homeDailyMissionTitle">${escapeHtml(dailyMission.title)}</strong>
+                    <small>${escapeHtml(dailyMission.detail)}</small>
+                </span>
+                <button class="home-daily-mission__action" type="button" ${urgentCare ? `data-home-daily-care="${urgentCare.key}"` : 'data-field-scene-nav="expeditionMap"'}><span>${escapeHtml(dailyMission.action)}</span></button>
+            </section>` : ''}
+            ${showExpedition || showMineral ? `<nav class="home-adventure-shortcuts" aria-label="探索入口">
+                ${showExpedition ? '<button class="home-adventure-shortcut is-expedition" type="button" data-field-scene-nav="expeditionMap" title="星球探险"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-expedition-shortcut.webp" alt=""></span><span>星球探险</span></button>' : ''}
+                ${showMineral ? '<button class="home-adventure-shortcut is-mineral" type="button" data-field-scene-nav="haqiMineralExploration" title="星际矿区"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-mineral-shortcut.webp" alt=""></span><span>矿区</span></button>' : ''}
+            </nav>` : ''}
             ${fieldMusicToggleHtml(fld.id)}
         `;
     },
@@ -2677,6 +3358,19 @@ export const fieldLevel = {
         fixFieldNpcIconAspects($('mhFieldScene'));
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
         const fieldMusic = selectedFieldMusic(fld.id);
+        const dailyMissionButton = document.querySelector('.home-daily-mission__action');
+        if (dailyMissionButton) {
+            const missionType = dailyMissionButton.dataset.homeDailyCare ? 'care' : 'expedition';
+            const missionComplete = document.querySelector('.home-daily-mission')?.classList.contains('is-complete') === true;
+            ctx.callbacks.onProductEvent?.('home_mission_viewed', { missionType, missionComplete }, {
+                dedupeKey: `home-mission-viewed:${localDayKey()}:${missionType}:${missionComplete}`,
+            });
+            if (missionComplete) {
+                ctx.callbacks.onProductEvent?.('home_mission_completed', { missionType }, {
+                    dedupeKey: `home-mission-completed:${localDayKey()}:${missionType}`,
+                });
+            }
+        }
         if (isVisitingMode() || !fieldMusic) {
             // Scene has no background music (or we're visiting): stop any music
             // carried over from the previous scene so we don't play silence's leftover.
@@ -2691,7 +3385,40 @@ export const fieldLevel = {
                 e.stopPropagation();
                 const muted = soundManager.toggleBgMusicMuted?.({ fadeMs: 220 });
                 if (!muted && fieldMusic) soundManager.playBgMusic(fieldMusic, { fadeMs: 260, volume: 0.3 });
+                const label = muted ? t('fieldMusicOn') : t('fieldMute');
+                musicToggle.classList.toggle('is-muted', Boolean(muted));
+                musicToggle.setAttribute('aria-pressed', muted ? 'true' : 'false');
+                musicToggle.setAttribute('aria-label', label);
+                musicToggle.title = label;
                 notify();
+            };
+        }
+        document.querySelectorAll('[data-field-scene-nav]').forEach((button) => {
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                soundManager.playButtonClick();
+                if (button.classList.contains('home-daily-mission__action')) {
+                    ctx.callbacks.onProductEvent?.('home_mission_clicked', { missionType: 'expedition' });
+                }
+                ctx.callbacks.onNav?.(button.dataset.fieldSceneNav);
+            };
+        });
+        const dailyCareButton = document.querySelector('[data-home-daily-care]');
+        if (dailyCareButton) {
+            dailyCareButton.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                soundManager.playButtonClick();
+                ctx.callbacks.onProductEvent?.('home_mission_clicked', { missionType: 'care', careStat: dailyCareButton.dataset.homeDailyCare });
+                ctx.callbacks.onProductEvent?.('care_action_started', { careStat: dailyCareButton.dataset.homeDailyCare, source: 'home_mission' });
+                state.settings.haqiHomeDailyCare = {
+                    dayKey: localDayKey(),
+                    petId: pet.id,
+                    stat: dailyCareButton.dataset.homeDailyCare,
+                };
+                saveUserProfileDebounced();
+                ctx.callbacks.onCareStat?.(dailyCareButton.dataset.homeDailyCare, pet);
             };
         }
         window.addEventListener('resize', applyFieldPan, { passive: true });
@@ -2734,9 +3461,81 @@ export const fieldLevel = {
         $$('.field-npc').forEach(el => {
             el.onclick = (e) => {
                 e.stopPropagation();
-                const npc = currentFieldNpcs(fld.id).find(item => item.id === el.dataset.npcId);
-                if (!npc) return;
+                const npcIndex = currentFieldNpcs(fld.id).findIndex(item => item.id === el.dataset.npcId);
+                const originalNpc = currentFieldNpcs(fld.id)[npcIndex];
+                if (!originalNpc) return;
+                const npc = npcWithPrimarySceneInteraction(originalNpc, npcIndex, fld.id);
                 openNpcDialog(npc, {
+                    progress: state.settings,
+                    inventory: state.inventory,
+                    freshness: npcGiftFreshness(),
+                    onGift: (itemId) => {
+                        const relationship = npcRelationship(npc.id);
+                        const freshness = npcGiftFreshness();
+                        const result = settleNpcGift({ npc, relationship, inventory: state.inventory, freshness, itemId });
+                        if (!result.applied) return result;
+                        applyNpcGiftSettlement(result, relationship, state.inventory, freshness);
+                        state.inventoryOrder = (state.inventoryOrder || []).filter(id => Math.max(0, Number(state.inventory[id]) || 0) > 0);
+                        if (result.returnItem && !state.inventoryOrder.includes(result.returnItem.id)) state.inventoryOrder.push(result.returnItem.id);
+                        saveInventoryDebounced();
+                        saveUserProfileDebounced();
+                        notify();
+                        const reaction = result.reaction === 'stale' ? '它不再新鲜了，但你的心意我收到了。' : result.reaction === 'disliked' ? '这份心意我收下了。' : result.returnItem ? '等等，我也准备了一份回礼！' : '谢谢你特意带来的礼物！';
+                        showNpcSceneReaction(npc.id, `${npc.name}：${reaction}`);
+                        return result;
+                    },
+                    onInteraction: (interactionId, result) => {
+                        if (result?.started && result.type === 'sceneCollect' && interactionId) {
+                            const relationship = npcRelationship(npc.id);
+                            const task = fieldSceneCollectTasks(fld.id).find(({ interaction }) => interaction.id === interactionId);
+                            if (isSceneTaskCompleted(relationship, task?.interaction)) {
+                                relationship.activeSceneInteractionId = '';
+                                saveUserProfileDebounced();
+                                showNpcSceneReaction(npc.id, task?.interaction.play.revisit || task?.interaction.play.success || '这项调查已经完成。');
+                                return;
+                            }
+                            relationship.activeSceneInteractionId = interactionId;
+                            const progress = relationship.sceneCollected && typeof relationship.sceneCollected === 'object'
+                                ? relationship.sceneCollected
+                                : (relationship.sceneCollected = {});
+                            if (!Array.isArray(progress[interactionId])) progress[interactionId] = [];
+                            saveUserProfileDebounced();
+                            notify();
+                            $$(`.field-scene-target[data-scene-npc="${CSS.escape(npc.id)}"][data-scene-interaction="${CSS.escape(interactionId)}"]`).forEach(target => target.classList.add('is-active'));
+                            if (['carry', 'petAssist'].includes(task?.interaction.play.interactionMode)) {
+                                $$(`.field-scene-target[data-scene-npc="${CSS.escape(npc.id)}"][data-scene-interaction="${CSS.escape(interactionId)}"]`).forEach(target => {
+                                    const isNext = target.dataset.sceneStep === task.interaction.play.steps[0]?.id;
+                                    target.classList.toggle('is-locked', !isNext);
+                                    target.disabled = !isNext || task.interaction.play.steps[0]?.role === 'pet';
+                                });
+                            }
+                            moveNpcToSceneStep(npc.id, task?.interaction.play.steps[0], task?.interaction.play.collaboration);
+                            syncFieldSceneCarryVisual(task, progress[interactionId], fld.id);
+                            syncFieldPetAssistVisual(fld.id);
+                            showNpcSceneReaction(npc.id, task?.interaction.play.instruction || '我们从第一处开始。');
+                            showToast(task?.interaction.play.instruction || '场景任务开始', 'info', 2800);
+                            return;
+                        }
+                        if (!result?.completed || !interactionId) return;
+                        const relationship = npcRelationship(npc.id);
+                        const completedInteractionIds = Array.isArray(relationship.completedInteractionIds)
+                            ? relationship.completedInteractionIds
+                            : (relationship.completedInteractionIds = []);
+                        if (!completedInteractionIds.includes(interactionId)) completedInteractionIds.push(interactionId);
+                        const storyFlags = state.settings.npcStoryFlags && typeof state.settings.npcStoryFlags === 'object'
+                            ? state.settings.npcStoryFlags
+                            : (state.settings.npcStoryFlags = {});
+                        storyFlags[interactionId] = Date.now();
+                        relationship.interactionCount = Math.max(0, Math.floor(Number(relationship.interactionCount) || 0)) + 1;
+                        relationship.lastInteractionAt = Date.now();
+                        saveUserProfileDebounced();
+                        ctx.callbacks.onProductEvent?.('town_interaction_completed', {
+                            fieldId: fld.id,
+                            npcId: npc.id,
+                            interactionId,
+                            interactionType: String(result.type || 'standard'),
+                        });
+                    },
                     onConfirmed: () => {
                         recordChongqingNpcTalk(npc, fld.id);
                         if (!isChongqingZooPlanet()) applyNpcHatchBoost(npc, fld.id);
@@ -2745,6 +3544,102 @@ export const fieldLevel = {
                 });
             };
         });
+
+        const completeSceneStep = (el) => {
+            if (!el?.classList.contains('is-active') || el.classList.contains('is-found')) return false;
+            const task = fieldSceneCollectTasks(fld.id).find(({ npc, interaction }) => npc.id === el.dataset.sceneNpc && interaction.id === el.dataset.sceneInteraction);
+            const step = task?.interaction.play.steps.find(item => item.id === el.dataset.sceneStep);
+            if (!task || !step) return false;
+            const relationship = npcRelationship(task.npc.id);
+            const sceneCollected = relationship.sceneCollected && typeof relationship.sceneCollected === 'object'
+                ? relationship.sceneCollected
+                : (relationship.sceneCollected = {});
+            const collected = Array.isArray(sceneCollected[task.interaction.id]) ? sceneCollected[task.interaction.id] : (sceneCollected[task.interaction.id] = []);
+            if (!isSceneTaskStepAvailable(task.interaction, collected, step.id)) return false;
+            collected.push(step.id);
+            if (step.resolvedIcon) {
+                el.classList.add('is-resolved');
+                el.querySelector('span').textContent = step.resolvedIcon;
+                el.querySelector('b').textContent = step.resolvedLabel || step.label;
+                el.disabled = true;
+            } else {
+                el.classList.add('is-found');
+            }
+            moveNpcToSceneStep(task.npc.id, step, task.interaction.play.collaboration);
+            syncFieldSceneCarryVisual(task, collected, fld.id);
+            syncFieldPetAssistVisual(fld.id);
+            if (['carry', 'petAssist'].includes(task.interaction.play.interactionMode)) {
+                const nextStep = task.interaction.play.steps.find(item => !collected.includes(item.id));
+                if (nextStep) {
+                    const nextEl = document.querySelector(`.field-scene-target[data-scene-npc="${CSS.escape(task.npc.id)}"][data-scene-interaction="${CSS.escape(task.interaction.id)}"][data-scene-step="${CSS.escape(nextStep.id)}"]`);
+                    nextEl?.classList.remove('is-locked');
+                    if (nextEl) {
+                        nextEl.disabled = nextStep.role === 'pet';
+                        nextEl.setAttribute('aria-label', nextStep.label);
+                    }
+                }
+            }
+            const reactionPrefix = task.interaction.play.collaboration?.reactionPrefix || task.npc.name;
+            const total = task.interaction.play.steps.length;
+            const progressFeedback = sceneTaskProgressFeedback(task.interaction, step, collected.length);
+            showNpcSceneReaction(task.npc.id, `${reactionPrefix}：${progressFeedback}`);
+            showToast(`${progressFeedback}（${collected.length}/${total}）`, 'success', 2200);
+            if (collected.length >= total) {
+                const discoveredItem = discoverSceneCollectible();
+                const interactionReward = applyNpcInteractionReward({
+                    interactionId: task.interaction.id,
+                    reward: task.interaction.relationshipReward,
+                    relationship,
+                    inventory: state.inventory,
+                    freshness: npcGiftFreshness(),
+                });
+                if (interactionReward.stageReward && !state.inventoryOrder.includes(interactionReward.stageReward.item.id)) {
+                    state.inventoryOrder.push(interactionReward.stageReward.item.id);
+                }
+                const completedIds = Array.isArray(relationship.completedInteractionIds)
+                    ? relationship.completedInteractionIds
+                    : (relationship.completedInteractionIds = []);
+                if (!completedIds.includes(task.interaction.id)) completedIds.push(task.interaction.id);
+                const storyFlags = state.settings.npcStoryFlags && typeof state.settings.npcStoryFlags === 'object'
+                    ? state.settings.npcStoryFlags
+                    : (state.settings.npcStoryFlags = {});
+                storyFlags[task.interaction.id] = Date.now();
+                relationship.activeSceneInteractionId = '';
+                relationship.interactionCount = Math.max(0, Math.floor(Number(relationship.interactionCount) || 0)) + 1;
+                relationship.lastInteractionAt = Date.now();
+                $$(`.field-scene-target[data-scene-npc="${CSS.escape(task.npc.id)}"][data-scene-interaction="${CSS.escape(task.interaction.id)}"]`).forEach(target => target.remove());
+                syncFieldPetAssistVisual(fld.id);
+                const successText = task.interaction.play.success || '调查完成，回去向 NPC 汇报吧';
+                const commission = completeNpcCommission(state.settings, task.npc, { relationshipId: npcProgressId(task.npc.id, fld.id) });
+                const affectionText = interactionReward.applied && interactionReward.affectionDelta ? ` 心意 +${interactionReward.affectionDelta}。` : '';
+                const stageText = interactionReward.stageReward
+                    ? ` 关系升至“${interactionReward.stageAfter.name}”，获得 ${interactionReward.stageReward.item.icon} ${interactionReward.stageReward.item.name} ×${interactionReward.stageReward.count}。`
+                    : '';
+                const commissionText = commission.completed ? ` 今日委托「${commission.commission.title}」已完成。` : '';
+                showToast(`${successText}${affectionText}${stageText}${commissionText}${discoveredItem ? ` 发现 ${discoveredItem.icon} ${discoveredItem.name}。` : ''}`, 'success', 5200);
+                if (interactionReward.stageReward) saveInventoryDebounced();
+            }
+            saveUserProfileDebounced();
+            return true;
+        };
+
+        $$('.field-scene-target').forEach(el => {
+            el.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                completeSceneStep(el);
+            };
+        });
+
+        const activeCarryTask = fieldSceneCollectTasks(fld.id).find(({ npc, interaction }) => {
+            const relationship = npcRelationship(npc.id);
+            return interaction.play.interactionMode === 'carry' && relationship.activeSceneInteractionId === interaction.id;
+        });
+        if (activeCarryTask) {
+            const relationship = npcRelationship(activeCarryTask.npc.id);
+            syncFieldSceneCarryVisual(activeCarryTask, relationship.sceneCollected?.[activeCarryTask.interaction.id] || [], fld.id);
+        }
+        syncFieldPetAssistVisual(fld.id);
 
         $$('.field-area-link').forEach(el => {
             el.onclick = (e) => {
@@ -2760,12 +3655,27 @@ export const fieldLevel = {
             };
         });
 
+        $$('.field-ui-button').forEach(el => {
+            el.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const button = currentFieldUiButtons(fld.id).find(item => item.id === el.dataset.fieldUiButton);
+                if (button?.minigame) ctx.callbacks.onLaunchNpcMinigame?.({
+                    name: button.label,
+                    icon: button.icon,
+                    minigame: button.minigame,
+                    minigameLandscape: button.minigameLandscape,
+                });
+            };
+        });
+
         // 点击空地放置已选中的家具
         const stage = $('mhStage');
         if (stage) {
             stage.addEventListener('click', (e) => {
                 if (Date.now() - (stage.__mhFieldPannedAt || 0) < 260) return;
-                if (e.target.closest('.poop-btn, .pet-sprite, .field-npc, .field-area-link, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
+                $$('[data-home-facility].is-facility-tip-open').forEach(item => item.classList.remove('is-facility-tip-open'));
+                if (e.target.closest('.poop-btn, .pet-sprite, .field-npc, .field-scene-target, .field-area-link, .field-ui-button, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
                 if (e.target.closest('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
                 clearFieldItemSelection(ctx);
                 if (!isFieldDecorMode() || !ctx.selectedTrayItem) return;
@@ -2777,14 +3687,28 @@ export const fieldLevel = {
         $$('.field-item').forEach(el => {
             bindFieldItemDrag(el, ctx);
         });
+        $$('[data-home-facility]').forEach(el => {
+            el.addEventListener('click', (event) => {
+                if (isFieldDecorMode() || Date.now() - (el.__mhFieldDraggedAt || 0) < 260) return;
+                event.stopPropagation();
+                const open = !el.classList.contains('is-facility-tip-open');
+                $$('[data-home-facility].is-facility-tip-open').forEach(item => item.classList.remove('is-facility-tip-open'));
+                el.classList.toggle('is-facility-tip-open', open);
+            });
+            el.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                el.classList.remove('is-facility-tip-open');
+                el.blur();
+            });
+        });
         updateFieldHouseFlagAnchors();
         ensureFieldItemScaleControls(ctx);
         restoreFieldItemSelection(ctx);
 
-        // 点击宠物 → 播放开心动画（粒子 + 弹跳）；装扮模式下当前宠物可拖动
+        // 点击当前伙伴进行互动；点击家园内其它伙伴可切换，放养伙伴仍受召回规则限制。
         $$('.field-pet').forEach(petEl => {
             bindFieldPetDrag(petEl, pet, ctx);
-            petEl.onclick = (e) => {
+            petEl.onclick = async (e) => {
                 e.stopPropagation();
                 // 刚刚发生过拖动时，吞掉随之而来的 click，避免误触发互动。
                 if (Date.now() - (petEl.__mhFieldPetDraggedAt || 0) < 260) return;
@@ -2804,14 +3728,31 @@ export const fieldLevel = {
                 const clickedPet = state.pets[petEl.dataset.fieldPet] || pet;
                 if (isPetInteractionBlocked(clickedPet)) { showToast(sleepingInteractionText(clickedPet), 'info', 1800); return; }
                 if (clickedPet.id === pet.id) {
+                    const assistTask = activePetAssistTask(fld.id);
+                    if (assistTask) {
+                        const collected = npcRelationship(assistTask.npc.id).sceneCollected?.[assistTask.interaction.id] || [];
+                        const assistStep = assistTask.interaction.play.steps.find(step => !collected.includes(step.id));
+                        const assistTarget = document.querySelector(`.field-scene-target[data-scene-npc="${CSS.escape(assistTask.npc.id)}"][data-scene-interaction="${CSS.escape(assistTask.interaction.id)}"][data-scene-step="${CSS.escape(assistStep.id)}"]`);
+                        if (completeSceneStep(assistTarget)) playPetHappy(petEl, clickedPet);
+                        return;
+                    }
                     ctx.onPetTouch?.(petEl, clickedPet);
                     playPetClickFeedback(petEl, clickedPet);
+                    return;
                 }
-                else showFieldPetTalk(petEl, clickedPet);
+                if (!isVisitingMode()) {
+                    const switched = await ctx.callbacks.onSelectPet?.(clickedPet.id, { zoomLevel: 1 });
+                    if (!switched) showFieldPetTalk(petEl, clickedPet);
+                    return;
+                }
+                showFieldPetTalk(petEl, clickedPet);
             };
         });
 
-        if (state.activePetFieldPose?.fieldId === state.currentField && state.activePetFieldPose?.targetPetId) {
+        if (forceCenterFieldPetOnEnter) {
+            forceCenterFieldPetOnEnter = false;
+            scheduleCenterFieldPet(pet);
+        } else if (state.activePetFieldPose?.fieldId === state.currentField && state.activePetFieldPose?.targetPetId) {
             scheduleCenterFieldPet(pet, { animate: true, duration: 420 });
         }
         // 蛋阶段：首次进入 field 时把镜头平移到蛋的位置，然后在蛋上播放烟花特效
@@ -2837,14 +3778,14 @@ export const fieldLevel = {
         if (!categories.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
 
         return `
-            <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
+            <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : 'mh-field-location-tabs'}" id="mhFieldTabs">
                 ${isFieldDecorMode() ? categories.map(category => `
                     <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
                         ${escapeHtml(t(category.nameKey))}
                     </button>
                 `).join('') : fields.map(f => `
-                    <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
-                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(localizeFieldName(f))}
+                    <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}" aria-label="${escapeHtml(localizeFieldName(f))}" title="${escapeHtml(localizeFieldName(f))}">
+                        ${haqiLocationButtonHtml(f, fields.indexOf(f))}
                     </button>
                 `).join('')}
             </div>
@@ -3000,7 +3941,7 @@ export const fieldLevel = {
                 showDockDisabledToast(btn);
                 return true;
             }
-            collectPoopsInCurrentField(pet);
+            collectPoopsInCurrentField(pet, ctx);
             return true;
         };
 
@@ -3144,8 +4085,14 @@ export const fieldLevel = {
         return centerFieldPet(pet, options);
     },
 
+    onEnter(pet, ctx) {
+        maybeRunVipFieldService(pet, ctx);
+    },
+
     onLeave() {
         window.removeEventListener('resize', applyFieldPan);
+        document.getElementById('mhVipCleanSpeedBtn')?.remove();
+        document.getElementById('mhVipFieldService')?.remove();
     },
 };
 
@@ -3158,6 +4105,7 @@ function bindFieldPan(ctx) {
     stage.addEventListener('pointerdown', (e) => {
         if (scene.classList.contains('is-machine-sweeping')) return;
         if (e.button != null && e.button !== 0) return;
+        if (e.target.closest?.('.field-scene-carry-item')) return;
         const startsOnPoop = !!e.target.closest?.('.poop-btn');
         const startsOnFieldPet = !!e.target.closest?.('.field-pet');
         const startsOnFieldNpc = !!e.target.closest?.('.field-npc');
@@ -3549,6 +4497,7 @@ function bindFieldPetDrag(el, pet, ctx) {
     el.addEventListener('pointerdown', (e) => {
         if (isVisitingMode()) return;
         if (e.button != null && e.button !== 0) return;
+        if (e.target.closest?.('.field-scene-carry-item')) return;
         e.preventDefault();
         e.stopPropagation();
         const startPos = pointToFieldCoords(e.clientX, e.clientY) || { x: 0.5, y: 0.6 };

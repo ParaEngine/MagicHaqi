@@ -20,7 +20,7 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
             <span class="font-bold" style="color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(displayPetName(pet))}</span>
             <button class="btn-secondary" id="mhVoiceBtn" style="padding:4px 10px;font-size:12px">${escapeHtml(t('voiceChat'))}</button>
         </div>
-        <div id="mhChatDialog" class="absolute" style="top:52px;left:0;right:0;bottom:64px;overflow:hidden">
+        <div id="mhChatDialog" class="absolute" style="top:52px;left:0;right:0;bottom:106px;overflow:hidden">
             <div id="mhChatPetArt" aria-hidden="true" style="position:absolute;left:50%;bottom:0;width:min(74%,280px);height:min(52vh,280px);transform:translateX(-50%);opacity:1;filter:saturate(1.04) drop-shadow(0 18px 24px rgba(30,64,175,0.22));pointer-events:none;z-index:0;transition:transform .25s ease,filter .25s ease">
                 ${petArtHtml(pet, { alt: '', motion: 'idle' })}
             </div>
@@ -28,9 +28,16 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
                 <div class="chat-bubble pet">${escapeHtml(t('petGreeting', { name: displayPetName(pet) }))}</div>
             </div>
         </div>
-        <div id="mhInputBar" style="position:absolute;left:0;right:0;bottom:0;padding:8px;display:flex;gap:6px;background:var(--topbar-bg);border-top:1px solid var(--border)">
-            <input id="mhChatInput" class="modal-input" placeholder="${escapeHtml(t('chatPlaceholder'))}" style="flex:1">
-            <button id="mhSendBtn" class="btn-primary" style="padding:8px 18px">${escapeHtml(t('send'))}</button>
+        <div id="mhInputBar" style="position:absolute;left:0;right:0;bottom:0;padding:7px 8px 8px;display:flex;flex-direction:column;gap:6px;background:var(--topbar-bg);border-top:1px solid var(--border)">
+            <div id="mhChatPrompts" role="group" aria-label="${escapeHtml(t('chatQuickPromptsLabel'))}" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">
+                <button type="button" class="btn-secondary" data-chat-prompt="${escapeHtml(t('chatPromptMood'))}" style="flex:0 0 auto;padding:5px 10px;font-size:11px;box-shadow:none">${escapeHtml(t('chatPromptMood'))}</button>
+                <button type="button" class="btn-secondary" data-chat-prompt="${escapeHtml(t('chatPromptAdventure'))}" style="flex:0 0 auto;padding:5px 10px;font-size:11px;box-shadow:none">${escapeHtml(t('chatPromptAdventure'))}</button>
+                <button type="button" class="btn-secondary" data-chat-prompt="${escapeHtml(t('chatPromptMemory'))}" style="flex:0 0 auto;padding:5px 10px;font-size:11px;box-shadow:none">${escapeHtml(t('chatPromptMemory'))}</button>
+            </div>
+            <div style="display:flex;gap:6px">
+                <input id="mhChatInput" class="modal-input" placeholder="${escapeHtml(t('chatPlaceholder'))}" style="flex:1;min-width:0">
+                <button id="mhSendBtn" class="btn-primary" style="padding:8px 18px">${escapeHtml(t('send'))}</button>
+            </div>
         </div>
         <div id="mhVoiceBar" style="display:none;position:absolute;left:0;right:0;bottom:0;padding:8px 12px;align-items:center;gap:10px;background:var(--topbar-bg);border-top:1px solid var(--border)">
             <span id="mhVoiceDot" style="width:10px;height:10px;border-radius:50%;background:var(--accent);flex:0 0 auto;box-shadow:0 0 0 0 rgba(245,158,11,0.6)"></span>
@@ -69,11 +76,36 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
     };
 
     let busy = false;
-    async function send() {
+    function setTextChatBusy(on) {
+        busy = on;
         const input = $('mhChatInput');
-        const text = (input.value || '').trim();
+        const sendBtn = $('mhSendBtn');
+        if (input) input.disabled = on;
+        if (sendBtn) sendBtn.disabled = on;
+        panel.querySelectorAll('[data-chat-prompt]').forEach((button) => { button.disabled = on; });
+    }
+    function setPetReaction(reaction) {
+        const active = reaction === 'thinking' || reaction === 'speaking';
+        setPetMotion(pet.id, active ? 'walk' : 'idle');
+        const art = $('mhChatPetArt');
+        if (!art) return;
+        if (reaction === 'thinking') {
+            art.style.transform = 'translateX(-50%) scale(0.98) rotate(-1deg)';
+            art.style.filter = 'saturate(0.92) brightness(0.98) drop-shadow(0 18px 24px rgba(30,64,175,0.28))';
+        } else if (reaction === 'speaking') {
+            art.style.transform = 'translateX(-50%) scale(1.06)';
+            art.style.filter = 'saturate(1.12) brightness(1.06) drop-shadow(0 18px 28px rgba(245,158,11,0.35))';
+        } else {
+            art.style.transform = 'translateX(-50%)';
+            art.style.filter = 'saturate(1.04) drop-shadow(0 18px 24px rgba(30,64,175,0.22))';
+        }
+    }
+    async function send(promptText = '') {
+        const input = $('mhChatInput');
+        const text = (promptText || input.value || '').trim();
         if (!text || busy) return;
-        busy = true;
+        setTextChatBusy(true);
+        setPetReaction('thinking');
         input.value = '';
         pushBubble('user', text);
         const replyEl = pushBubble('pet', t('petThinking'));
@@ -84,6 +116,7 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
                 if (replyEl.textContent === t('petThinking')) replyEl.textContent = '';
                 replyEl.textContent += delta;
                 replyEl.style.opacity = '1';
+                setPetReaction('speaking');
                 scroll.scrollTop = scroll.scrollHeight;
             });
             if (!full) {
@@ -101,11 +134,16 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
             replyEl.textContent = t('chatError', { error: (e?.message || e) });
             replyEl.style.opacity = '1';
         } finally {
-            busy = false;
+            setTextChatBusy(false);
+            setPetReaction('idle');
+            input.focus();
         }
     }
 
-    if ($('mhSendBtn')) $('mhSendBtn').onclick = send;
+    if ($('mhSendBtn')) $('mhSendBtn').onclick = () => send();
+    panel.querySelectorAll('[data-chat-prompt]').forEach((button) => {
+        button.onclick = () => send(button.dataset.chatPrompt || '');
+    });
     if ($('mhChatInput')) $('mhChatInput').onkeydown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     };
@@ -121,14 +159,7 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
     }
     // 数字人“说话”时让宠物精灵 squash/stretch 弹跳 + 微微放大发光，停下回到呼吸态
     function setPetSpeaking(on) {
-        setPetMotion(pet.id, on ? 'walk' : 'idle');
-        const art = $('mhChatPetArt');
-        if (art) {
-            art.style.transform = on ? 'translateX(-50%) scale(1.06)' : 'translateX(-50%)';
-            art.style.filter = on
-                ? 'saturate(1.12) brightness(1.06) drop-shadow(0 18px 28px rgba(245,158,11,0.35))'
-                : 'saturate(1.04) drop-shadow(0 18px 24px rgba(30,64,175,0.22))';
-        }
+        setPetReaction(on ? 'speaking' : 'idle');
     }
 
     // 把一轮定稿对话写入 log + memory，复用文字聊天的记忆管线

@@ -1,7 +1,7 @@
 // 星际移民视图
 import { confirm, escapeHtml, showToast } from './utils.js';
 import { planetName, t } from './i18n.js';
-import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizeFieldAreaLinks, normalizeFieldNpcs, normalizePlanetZoomOptions } from './config.js';
+import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizeFieldAreaLinks, normalizeFieldNpcs, normalizeFieldUiButtons, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced, saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
 import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_DEFS, terrainFieldIconHtml } from './view_terrain_fields.js';
@@ -240,6 +240,7 @@ function applyPlanetFields(planet) {
         if (typeof field.bgMusic === 'string') next.bgMusic = field.bgMusic;
         if (Array.isArray(field.npcs)) next.npcs = normalizeFieldNpcs(field.npcs);
         if (Array.isArray(field.areaLinks)) next.areaLinks = normalizeFieldAreaLinks(field.areaLinks);
+        if (Array.isArray(field.uiButtons)) next.uiButtons = normalizeFieldUiButtons(field.uiButtons);
         scenes[slotKey] = next;
     });
 }
@@ -258,11 +259,9 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     }
     if (persist) state.temporaryHomePlanetOverride = null;
     if (persist) captureHomeSnapshot();
+    setActiveLayoutsPlanet(planet.id);
     applyPlanetFields(planet);
     state.planetName = officialPlanetName(planet);
-    // 注意：setActiveLayoutsPlanet 会替换 state.settings.starSettlement 引用，
-    // 所以必须在它之后再获取 settings，否则后续写入（包括 zoomOptions）会落到孤立对象上。
-    setActiveLayoutsPlanet(planet.id);
     const settings = settlementSettings();
     settings.source = 'official';
     settings.planetId = planet.id;
@@ -347,6 +346,16 @@ export async function applyTemporaryHomePlanetFromUrl() {
     }
 }
 
+export async function settleOfficialPlanetById(planetId) {
+    const normalizedId = String(planetId || '').trim();
+    if (!normalizedId) return false;
+    const planets = await loadOfficialPlanets();
+    const planet = planets.find(item => item.id === normalizedId);
+    if (!planet) throw new Error(`official planet not found: ${normalizedId}`);
+    await applyOfficialPlanet(planet);
+    return true;
+}
+
 export async function applySettledOfficialPlanetFromProfile() {
     const settings = settlementSettings();
     if (settings.source !== 'official' || !settings.planetId) return false;
@@ -354,6 +363,7 @@ export async function applySettledOfficialPlanetFromProfile() {
         const planets = await loadOfficialPlanets();
         const planet = planets.find(item => item.id === settings.planetId);
         if (!planet) return false;
+        setActiveLayoutsPlanet(planet.id);
         applyPlanetFields(planet);
         state.planetName = officialPlanetName(planet);
         settings.title = officialPlanetTitle(planet);

@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>KeepWork 会员权益</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260723a"></script>
+  <style>
+    :root {
+      --app-h: 100dvh;
+      --ink: #2c3e50;
+      --muted: #8a96a3;
+      --blue: #4d9fe8;
+      --blue-deep: #3b8fd9;
+      --blue-soft: #eaf4ff;
+      --price: #e85d4c;
+      --line: rgba(77, 159, 232, .18);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #eef7ff 0%, #f7fbff 45%, #ffffff 100%);
+      touch-action: manipulation;
+      user-select: none;
+    }
+    button { font: inherit; cursor: pointer; }
+    a { color: var(--blue-deep); }
+
+    #app {
+      width: 100%;
+      height: var(--app-h, 100dvh);
+      max-width: 520px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: calc(12px + env(safe-area-inset-top)) 14px calc(12px + env(safe-area-inset-bottom));
+      overflow: hidden;
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 3;
+      flex: none;
+      min-height: 72px;
+      margin-bottom: 2px;
+    }
+    .topbar-copy { min-width: 0; padding-left: 64px; padding-right: 200px; }
+    .topbar h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #1f3b5b;
+    }
+    .topbar p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 600;
+    }
+    .vip-pill {
+      display: none;
+      margin-top: 8px;
+      width: fit-content;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #dff0ff;
+      border: 1px solid rgba(77, 159, 232, .35);
+      color: var(--blue-deep);
+      font-size: .7rem;
+      font-weight: 800;
+    }
+    .vip-pill.show { display: inline-flex; }
+    .user-account {
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 2;
+      width: max-content;
+      max-width: 60%;
+      text-align: right;
+    }
+    .user-details {
+      display: none;
+      min-width: 0;
+      padding: 5px 9px;
+      border: 1px solid rgba(77, 159, 232, .22);
+      border-radius: 10px;
+      background: rgba(255,255,255,.88);
+      color: #1f3b5b;
+      box-shadow: 0 3px 10px rgba(61, 112, 168, .1);
+    }
+    .user-details.show { display: block; }
+    .user-name {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 5px;
+      overflow: hidden;
+      font-size: .72rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .user-tier {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      color: var(--blue-deep);
+      font-size: .62rem;
+      font-weight: 900;
+    }
+    .user-display-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .user-vip-status {
+      margin-top: 2px;
+      color: #7d8b99;
+      font-size: .62rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .signin-btn {
+      display: none;
+      border: 1px solid rgba(77, 159, 232, .3);
+      border-radius: 999px;
+      padding: 7px 13px;
+      background: #fff;
+      color: var(--blue-deep);
+      font-size: .72rem;
+      font-weight: 800;
+      box-shadow: 0 3px 10px rgba(61, 112, 168, .1);
+    }
+    .signin-btn.show { display: inline-flex; }
+    .signin-btn:disabled { opacity: .65; }
+    .pet-avatar {
+      position: absolute;
+      left: 0;
+      top: -6px;
+      width: 58px;
+      height: 58px;
+      overflow: visible;
+      filter: drop-shadow(0 4px 7px rgba(35, 91, 142, .22));
+      transform-origin: 50% 90%;
+    }
+    .pet-avatar-sprite {
+      width: 100%;
+      height: 100%;
+      background-repeat: no-repeat;
+      background-size: 400% 400%;
+      background-position: 0 0;
+    }
+
+    .scroll {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 2px 2px 4px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .scroll::-webkit-scrollbar { display: none; }
+
+    .intro {
+      position: relative;
+      z-index: 2;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.82);
+      border: 1px solid var(--line);
+    }
+    .intro .label {
+      margin: 0 0 6px;
+      color: #1f3b5b;
+      font-size: .82rem;
+      font-weight: 800;
+    }
+    .intro p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .74rem;
+      line-height: 1.55;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .intro .ai-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      min-width: 0;
+    }
+    .intro .ai-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      border: 1px solid rgba(77, 159, 232, .28);
+      color: var(--blue-deep);
+      font-size: .76rem;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .intro .ai-link:active { background: #d9ecff; }
+    .intro .ai-url {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .intro .ai-copy {
+      flex: none;
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(77, 159, 232, .28);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--blue-deep);
+      box-shadow: 0 2px 8px rgba(61, 112, 168, .1);
+      padding: 0;
+    }
+    .intro .ai-copy:active { background: var(--blue-soft); }
+    .intro .ai-copy svg { width: 18px; height: 18px; display: block; }
+
+    .usage {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,.92);
+      box-shadow: 0 6px 16px rgba(61, 112, 168, .06);
+    }
+    .usage-head,
+    .usage-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .usage-head h2 {
+      margin: 0;
+      color: #1f3b5b;
+      font-size: .88rem;
+      font-weight: 800;
+    }
+    .usage-refresh {
+      border: 0;
+      padding: 4px 0;
+      background: transparent;
+      color: var(--blue-deep);
+      font-size: .7rem;
+      font-weight: 800;
+    }
+    .usage-row { margin-top: 12px; }
+    .usage-label,
+    .usage-remaining {
+      color: #52677e;
+      font-size: .74rem;
+      font-weight: 700;
+    }
+    .usage-remaining { white-space: nowrap; }
+    .usage-track {
+      height: 7px;
+      margin-top: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #eaf0f5;
+    }
+    .usage-fill {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #5bb0ef, #3b93dc);
+      transition: width .3s ease;
+    }
+    .usage-note {
+      margin: 8px 0 0;
+      color: #9aa8b5;
+      font-size: .66rem;
+      font-weight: 600;
+    }
+
+    .tiers {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .tier {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-width: 0;
+      border: 2px solid transparent;
+      border-radius: 18px;
+      overflow: hidden;
+      text-align: left;
+      color: inherit;
+      background: #fff;
+      box-shadow: 0 8px 22px rgba(61, 112, 168, .1);
+      transition: transform .14s ease;
+    }
+    .tier:active { transform: scale(.98); }
+    .tier.standard {
+      border-color: rgba(77, 159, 232, .4);
+    }
+    .tier.pro {
+      border-color: rgba(232, 160, 110, .45);
+    }
+    .tier-head {
+      padding: 14px 12px 12px;
+      min-height: 108px;
+    }
+    .tier.standard .tier-head {
+      background: linear-gradient(145deg, #e8f4ff 0%, #d5eaff 55%, #c5e2ff 100%);
+    }
+    .tier.pro .tier-head {
+      background: linear-gradient(145deg, #fff3eb 0%, #ffe4d4 55%, #ffd8c4 100%);
+    }
+    .tier-head h2 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 800;
+      color: #1f3b5b;
+    }
+    .tier.pro .tier-head h2 { color: #5a3d2b; }
+    .tier-head .desc {
+      margin: 4px 0 0;
+      color: #6b7c93;
+      font-size: .7rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .tier.pro .tier-head .desc { color: #9a7a68; }
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 10px;
+    }
+    .tag {
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.85);
+      color: #3d638a;
+      font-size: .62rem;
+      font-weight: 700;
+    }
+    .tier.pro .tag { color: #8a5a40; }
+
+    .tier-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .price-line {
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+      color: #1f3b5b;
+    }
+    .price-line .yen { font-size: .85rem; font-weight: 800; }
+    .price-line .num { font-size: 1.55rem; font-weight: 900; line-height: 1; }
+    .price-line .unit { margin-left: 2px; font-size: .72rem; font-weight: 700; color: var(--muted); }
+    .tier.pro .price-line .num { color: #d97706; }
+
+    .cta {
+      width: 100%;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 12px;
+      font-size: .82rem;
+      font-weight: 800;
+      margin-top: auto;
+      color: #fff;
+    }
+    .tier.standard .cta {
+      background: linear-gradient(90deg, #5bb0ef, #3b93dc);
+      box-shadow: 0 6px 14px rgba(59, 147, 220, .28);
+    }
+    .tier.pro .cta {
+      background: linear-gradient(90deg, #f0b27a, #e08a4a);
+      box-shadow: 0 6px 14px rgba(224, 138, 74, .28);
+    }
+
+    .perk {
+      border-radius: 12px;
+      padding: 10px;
+      font-size: .68rem;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+    .tier.standard .perk {
+      background: linear-gradient(180deg, #f3f9ff, #eaf4ff);
+      color: #5f7691;
+    }
+    .tier.pro .perk {
+      background: linear-gradient(180deg, #fff7f0, #ffefe4);
+      color: #9a7a68;
+    }
+    .perk b { font-weight: 800; }
+    .tier.standard .perk b { color: #1f3b5b; }
+    .tier.pro .perk b { color: #5a3d2b; }
+
+    .gifts {
+      margin-top: 2px;
+      padding: 14px 14px 12px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 6px 16px rgba(61, 112, 168, .06);
+    }
+    .gifts h3 {
+      margin: 0 0 10px;
+      font-size: .86rem;
+      font-weight: 800;
+      color: #1f3b5b;
+    }
+    .gifts ol {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .gifts li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px 11px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #f5faff, #eef6ff);
+      border: 1px solid rgba(77, 159, 232, .12);
+    }
+    .gifts .num {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: var(--blue);
+      color: #fff;
+      font-size: .7rem;
+      font-weight: 800;
+      margin-top: 1px;
+    }
+    .gifts .txt {
+      flex: 1;
+      min-width: 0;
+      color: #3d5570;
+      font-size: .76rem;
+      font-weight: 600;
+      line-height: 1.5;
+    }
+    .gifts .note {
+      margin: 10px 2px 0;
+      color: #9aa8b5;
+      font-size: .66rem;
+      font-weight: 600;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    /* 套餐弹层 */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+      background: rgba(28, 45, 64, .45);
+      backdrop-filter: blur(4px);
+    }
+    .overlay.hidden { display: none; }
+    .sheet {
+      width: min(100%, 480px);
+      max-height: min(88vh, 640px);
+      overflow-y: auto;
+      scrollbar-width: none;
+      border-radius: 22px 22px 0 0;
+      background: #fff;
+      box-shadow: 0 -12px 40px rgba(0,0,0,.18);
+      animation: sheetUp .28s ease;
+      padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+    }
+    .sheet::-webkit-scrollbar { display: none; }
+    @keyframes sheetUp {
+      from { transform: translateY(24px); opacity: .6; }
+      to { transform: none; opacity: 1; }
+    }
+    .sheet-head {
+      position: relative;
+      padding: 4px 36px 14px 4px;
+      background: linear-gradient(180deg, #fff6f0 0%, #ffffff 70%);
+      border-radius: 12px;
+      margin: -6px -4px 14px;
+    }
+    .sheet-head h2 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #5a3d2b;
+    }
+    .sheet-head p {
+      margin: 6px 0 0;
+      color: #9a8a7c;
+      font-size: .78rem;
+      font-weight: 600;
+    }
+    .sheet-close {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 999px;
+      background: #f3f5f7;
+      color: #6b7c93;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .pkg-label {
+      margin: 0 0 10px;
+      font-size: .88rem;
+      font-weight: 800;
+      color: #2c3e50;
+    }
+    .pkgs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .pkg {
+      position: relative;
+      border: 1.5px solid #e8edf2;
+      border-radius: 14px;
+      padding: 14px 6px 12px;
+      background: #fff;
+      text-align: center;
+      color: inherit;
+      box-shadow: 0 4px 14px rgba(40, 70, 110, .05);
+      transition: border-color .14s ease, background .14s ease;
+    }
+    .pkg.selected {
+      border-color: var(--blue);
+      background:
+        radial-gradient(circle at 85% 15%, rgba(77, 159, 232, .16), transparent 42%),
+        #f7fbff;
+      box-shadow: 0 6px 16px rgba(77, 159, 232, .14);
+    }
+    .pkg .name {
+      font-size: .72rem;
+      font-weight: 700;
+      color: #5a6b7c;
+    }
+    .pkg .price {
+      margin-top: 8px;
+      font-size: 1.2rem;
+      font-weight: 900;
+      color: #2c3e50;
+      line-height: 1;
+    }
+    .pkg.selected .price { color: var(--price); }
+    .pkg .day {
+      margin-top: 6px;
+      font-size: .66rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .pay-box {
+      margin-top: 16px;
+      border-radius: 16px;
+      padding: 16px;
+      background: #f7f9fb;
+      border: 1px solid #eef2f5;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .pay-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .pay-info .hint {
+      color: #6b7c93;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+    .pay-info .amount {
+      margin-top: 6px;
+      color: var(--price);
+      font-size: 1.6rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .pay-btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: linear-gradient(90deg, #5bb0ef, #3b93dc);
+      color: #fff;
+      font-size: .9rem;
+      font-weight: 800;
+      box-shadow: 0 8px 16px rgba(59, 147, 220, .28);
+      white-space: nowrap;
+    }
+    .pay-btn:disabled { opacity: .7; }
+    .pay-note {
+      color: #9aa8b5;
+      font-size: .66rem;
+      font-weight: 600;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    /* AI 工作台 iframe */
+    .ai-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+    .ai-overlay.hidden { display: none; }
+    .ai-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+      background: #f3f8fd;
+      border-bottom: 1px solid #d9e7f4;
+    }
+    .ai-bar-title {
+      font-size: .88rem;
+      font-weight: 800;
+      color: #1f3b5b;
+    }
+    .ai-close {
+      border: 0;
+      border-radius: 999px;
+      padding: 7px 12px;
+      background: #fff;
+      color: #3d638a;
+      font-size: .78rem;
+      font-weight: 800;
+      box-shadow: 0 2px 8px rgba(61, 112, 168, .12);
+    }
+    .ai-overlay iframe {
+      flex: 1 1 0;
+      min-height: 0;
+      width: 100%;
+      border: 0;
+      background: #fff;
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 60;
+      left: 50%;
+      bottom: max(28px, env(safe-area-inset-bottom));
+      transform: translate(-50%, 16px);
+      max-width: 84vw;
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: rgba(31, 59, 91, .9);
+      color: #fff;
+      font-size: .8rem;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: .25s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 360px) {
+      .tiers { gap: 8px; }
+      .tier-head { padding: 12px 10px 10px; min-height: 100px; }
+      .price-line .num { font-size: 1.35rem; }
+      .pkg .price { font-size: 1.05rem; }
+    }
+    @media (min-width: 640px) {
+      .overlay { align-items: center; padding: 18px; }
+      .sheet {
+        border-radius: 20px;
+        max-height: min(86vh, 620px);
+        animation: none;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <script>
+    game_config = {
+      title: "KeepWork 会员",
+      tagline: "AI时代的个人生产力工具",
+      aiWorkbenchUrl: "https://keepwork.com/chat",
+      beanNote: "充值 6 个月套餐，送等值魔豆。",
+      giftTitle: "会员赠送权益",
+      giftBenefits: [
+        "哈奇星球中可同时拥有和自由切换多个宠物",
+        "哈奇星球中自动快速清景垃圾和照料宠物洗澡",
+        "魔法哈奇客户端（含 TapTap）送等值魔豆"
+      ],
+      defaultTierId: "standard",
+      defaultPackageId: "month_6",
+      packagesByTier: {
+        standard: [
+          { id: "month_1", name: "1个月会员", price: 48, dayPrice: "1.6" },
+          { id: "month_6", name: "6个月会员", price: 198, dayPrice: "1.08" },
+          { id: "month_12", name: "12个月会员", price: 360, dayPrice: "0.99" }
+        ],
+        pro: [
+          { id: "month_1", name: "1个月会员", price: 108, dayPrice: "3.6" },
+          { id: "month_6", name: "6个月会员", price: 548, dayPrice: "3.04" },
+          { id: "month_12", name: "12个月会员", price: 998, dayPrice: "2.73" }
+        ]
+      },
+      tiers: [
+        {
+          id: "standard",
+          name: "标准会员",
+          desc: "适用于个人进阶使用",
+          tags: ["5G云盘", "多宠切换", "会员世界"],
+          price: 48,
+          wisdom: 10000,
+          cta: "立即开通",
+          perkTitle: "10,000 智算分 / 月",
+          perkHint: "会员期内每月1号自动回满"
+        },
+        {
+          id: "pro",
+          name: "专业会员",
+          desc: "体验最强大的功能",
+          tags: ["20G云盘", "多人协作", "AI 工作台"],
+          price: 108,
+          wisdom: 25000,
+          cta: "立即开通",
+          perkTitle: "25,000 智算分 / 月",
+          perkHint: "会员期内每月1号自动回满"
+        }
+      ],
+      unlockLevels: []
+    };
+  </script>
+  <script>
+    art_assets = [];
+  </script>
+
+  <div id="app">
+    <header class="topbar">
+      <div class="topbar-copy">
+        <h1 id="pageTitle">KeepWork 会员</h1>
+        <p id="pageTagline">AI时代的个人生产力工具</p>
+      </div>
+      <div class="user-account" aria-label="KeepWork 账号状态">
+        <div id="userDetails" class="user-details">
+          <div class="user-name">
+            <span id="userTier" class="user-tier"></span>
+            <span id="userName" class="user-display-name"></span>
+          </div>
+          <div id="userVipStatus" class="user-vip-status"></div>
+        </div>
+        <button type="button" id="signinBtn" class="signin-btn">登录</button>
+      </div>
+      <div id="petAvatar" class="pet-avatar" role="img" aria-label="当前宠物头像">
+        <div class="pet-avatar-sprite" aria-hidden="true" style="background-image:url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp')"></div>
+      </div>
+    </header>
+
+    <main class="scroll" id="mainScroll"></main>
+  </div>
+
+  <div id="payOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet" id="paySheet">
+      <div class="sheet-head">
+        <button type="button" class="sheet-close" id="closePay" aria-label="关闭">×</button>
+        <h2 id="sheetTitle">标准会员</h2>
+        <p>适用于个人进阶使用</p>
+      </div>
+      <div class="pkg-label">会员套餐</div>
+      <div class="pkgs" id="pkgList" role="listbox" aria-label="会员套餐"></div>
+      <div class="pay-box">
+        <div class="pay-row">
+          <div class="pay-info">
+            <div class="hint">确认开通标准会员</div>
+            <div class="amount" id="payAmount">¥ 198</div>
+          </div>
+          <button type="button" class="pay-btn" id="payBtn">去支付</button>
+        </div>
+        <div class="pay-note" id="payBeanNote"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="aiOverlay" class="ai-overlay hidden" role="dialog" aria-modal="true" aria-label="KeepWork AI 工作台">
+    <div class="ai-bar">
+      <div class="ai-bar-title">KeepWork AI 工作台</div>
+      <button type="button" class="ai-close" id="closeAi" aria-label="关闭">关闭</button>
+    </div>
+    <iframe id="aiFrame" title="KeepWork AI 工作台" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (function () {
+      const HAS_HOST = (() => {
+        try { return window.parent && window.parent !== window; } catch (_) { return false; }
+      })();
+
+      let gameStarted = false;
+      let isVip = false;
+      let selectedTierId = '';
+      let selectedPkgId = '';
+      let openingVip = false;
+      let currentPetId = '';
+      let petRequestId = '';
+      let petObjectUrl = '';
+      let tokenUsage = null;
+      let tokenUsageLoading = false;
+      let tokenUsageError = '';
+      let userProfileLoaded = false;
+      const SHOW_TOKEN_USAGE = false;
+
+      const $ = (id) => document.getElementById(id);
+      const cfg = () => (typeof game_config === 'object' && game_config) ? game_config : {};
+
+      function setAppHeight() {
+        const h = window.visualViewport?.height || window.innerHeight;
+        document.documentElement.style.setProperty('--app-h', `${Math.round(h)}px`);
+      }
+
+      function toast(text) {
+        const el = $('toast');
+        el.textContent = text;
+        el.classList.add('show');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => el.classList.remove('show'), 2000);
+      }
+
+      function post(msg) {
+        if (!HAS_HOST) return;
+        try { window.parent.postMessage(msg, '*'); } catch (_) {}
+      }
+
+      function setPetAvatar(pet) {
+        if (!pet?.imageBlob || !pet?.uv) return;
+        if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+        petObjectUrl = URL.createObjectURL(pet.imageBlob);
+        const uv = pet.uv;
+        const cols = Math.max(1, Number(uv.cols) || 1);
+        const rows = Math.max(1, Number(uv.rows) || 1);
+        const sprite = document.createElement('div');
+        sprite.className = 'pet-avatar-sprite';
+        sprite.style.backgroundImage = `url("${petObjectUrl}")`;
+        sprite.style.backgroundSize = cols > 1 || rows > 1 ? `${cols * 100}% ${rows * 100}%` : 'contain';
+        sprite.style.backgroundPosition = cols > 1 || rows > 1
+          ? `${(Number(uv.col) || 0) * 100 / Math.max(1, cols - 1)}% ${(Number(uv.row) || 0) * 100 / Math.max(1, rows - 1)}%`
+          : 'center';
+        const avatar = $('petAvatar');
+        avatar.replaceChildren(sprite);
+        avatar.setAttribute('aria-label', pet.name ? `当前宠物：${pet.name}` : '当前宠物头像');
+      }
+
+      function requestPetAvatar(petId = '') {
+        if (!HAS_HOST) return;
+        currentPetId = petId || currentPetId;
+        petRequestId = `vip_pet_${Date.now()}`;
+        post({
+          type: 'haqi_get_pet_image',
+          requestId: petRequestId,
+          anim: 'idle',
+          petId: currentPetId || undefined
+        });
+        const requestId = petRequestId;
+        setTimeout(() => {
+          if (petObjectUrl || petRequestId !== requestId) return;
+          post({ type: 'haqi_get_pet_images', requestId: `vip_pets_${Date.now()}`, anim: 'idle' });
+        }, 900);
+      }
+
+      function renderUserProfile(profile) {
+        const name = String(profile?.nickname || profile?.username || '').trim();
+        if (!name) return;
+        const isSvip = !!profile?.vip;
+        const profileIsVip = isSvip || !!profile?.commonVip;
+        const deadline = isSvip ? profile?.vipDeadline : profile?.commonVipDeadline;
+        const tierLabel = profileIsVip ? (isSvip ? '专业' : '标准') : '普通';
+        $('userName').textContent = name;
+        $('userTier').textContent = profileIsVip ? `👑 ${tierLabel}` : tierLabel;
+        $('userVipStatus').textContent = deadline
+          ? `${formatUsageDate(deadline)} 到期`
+          : (profileIsVip ? '会员有效期内' : '未开通会员');
+        $('userDetails').classList.add('show');
+        $('signinBtn').classList.remove('show');
+        if (profileIsVip !== isVip) {
+          isVip = profileIsVip;
+          renderMain();
+        }
+        if (isVip) loadTokenUsage();
+      }
+
+      function renderSignedOut() {
+        $('userDetails').classList.remove('show');
+        $('signinBtn').classList.add('show');
+      }
+
+      async function loadUserProfile() {
+        if (userProfileLoaded) return;
+        const sdk = window.keepwork;
+        if (!sdk?.token || !sdk?.getUserProfile) {
+          renderSignedOut();
+          return;
+        }
+        userProfileLoaded = true;
+        try {
+          const profile = await sdk.getUserProfile({ forceRefresh: true });
+          renderUserProfile(profile);
+        } catch (_) {
+          userProfileLoaded = false;
+          renderSignedOut();
+        }
+      }
+
+      async function signIn() {
+        const sdk = window.keepwork;
+        if (!sdk?.showLoginWindow) return;
+        const button = $('signinBtn');
+        button.disabled = true;
+        button.textContent = '登录中…';
+        try {
+          const result = await sdk.showLoginWindow({ title: '登录 KeepWork' });
+          if (result?.token && !sdk.token && sdk.setToken) sdk.setToken(result.token);
+          if (sdk.token) {
+            userProfileLoaded = false;
+            await loadUserProfile();
+          }
+        } catch (_) {
+        } finally {
+          button.disabled = false;
+          button.textContent = '登录';
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+      }
+      function escapeAttr(s) {
+        return escapeHtml(s).replace(/`/g, '&#96;');
+      }
+
+      function currentTier() {
+        const list = cfg().tiers || [];
+        return list.find((t) => t.id === selectedTierId) || list[0] || null;
+      }
+
+      function currentPackages() {
+        const map = cfg().packagesByTier || {};
+        const tierId = selectedTierId || cfg().defaultTierId || 'standard';
+        return Array.isArray(map[tierId]) ? map[tierId] : (map.standard || []);
+      }
+
+      function selectedPkg() {
+        const list = currentPackages();
+        return list.find((p) => p.id === selectedPkgId) || list[1] || list[0] || null;
+      }
+
+      function formatTokenCount(value) {
+        return Math.max(0, Number(value) || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+      }
+
+      function formatUsageDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      }
+
+      function tokenUsageHtml() {
+        if (!SHOW_TOKEN_USAGE || !isVip) return '';
+        if (tokenUsageLoading) {
+          return `<section class="usage" aria-live="polite"><div class="usage-head"><h2>本月 Token 用量</h2></div><p class="usage-note">正在读取套餐用量…</p></section>`;
+        }
+        if (!tokenUsage) {
+          return `<section class="usage" aria-live="polite">
+            <div class="usage-head"><h2>本月 Token 用量</h2><button type="button" class="usage-refresh" data-refresh-usage="1">重新加载</button></div>
+            <p class="usage-note">${escapeHtml(tokenUsageError || '暂无可用的月度额度')}</p>
+          </section>`;
+        }
+        const quota = Math.max(0, Number(tokenUsage.monthlyQuota) || 0);
+        const used = Math.max(0, Number(tokenUsage.monthlyUsed) || 0);
+        const remaining = Math.max(0, quota - used);
+        const percent = quota > 0 ? Math.min(100, Math.max(0, used / quota * 100)) : 0;
+        const resetDate = formatUsageDate(tokenUsage.cycleEndDate);
+        return `<section class="usage" aria-live="polite">
+          <div class="usage-head"><h2>本月 Token 用量</h2><button type="button" class="usage-refresh" data-refresh-usage="1">刷新</button></div>
+          <div class="usage-row">
+            <span class="usage-label">${formatTokenCount(used)} / ${formatTokenCount(quota)} 积分</span>
+            <span class="usage-remaining">剩余 ${formatTokenCount(remaining)}</span>
+          </div>
+          <div class="usage-track" role="progressbar" aria-label="Token 已用比例" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(percent)}"><div class="usage-fill" style="width:${percent}%"></div></div>
+          <p class="usage-note">${resetDate ? `当前周期结束时间：${escapeHtml(resetDate)}` : '套餐用量由 KeepworkSDK 实时提供'}</p>
+        </section>`;
+      }
+
+      async function loadTokenUsage(force = false) {
+        if (!SHOW_TOKEN_USAGE || !isVip || tokenUsageLoading || (tokenUsage && !force)) return;
+        tokenUsageLoading = true;
+        tokenUsageError = '';
+        renderMain();
+        try {
+          const sdk = window.keepwork;
+          if (!sdk?.getAuthHeaders || !sdk?.extractMainDomain) throw new Error('KeepworkSDK 尚未就绪');
+          const domain = sdk.extractMainDomain(window.location.hostname);
+          const response = await fetch(`https://api.${domain}/core/v0/tokenBilling/dashboard`, {
+            headers: sdk.getAuthHeaders()
+          });
+          if (!response.ok) throw new Error(`用量查询失败 (${response.status})`);
+          tokenUsage = await response.json();
+        } catch (error) {
+          tokenUsage = null;
+          tokenUsageError = error instanceof Error ? error.message : '暂时无法读取 Token 用量';
+        } finally {
+          tokenUsageLoading = false;
+          renderMain();
+        }
+      }
+
+      function renderMain() {
+        const c = cfg();
+        $('pageTitle').textContent = c.title || 'KeepWork 会员';
+        $('pageTagline').textContent = c.tagline || 'AI时代的个人生产力工具';
+
+        const url = c.aiWorkbenchUrl || 'https://keepwork.com/chat';
+        const tiers = Array.isArray(c.tiers) ? c.tiers : [];
+        const gifts = Array.isArray(c.giftBenefits) ? c.giftBenefits : [];
+
+        const intro = `<section class="intro">
+          <div class="label">KeepWork AI 工作台 · 体验地址</div>
+          <p>推荐使用 PC 打开以获得完整体验；也可点击下方链接，在本页 iframe 中直接试用。</p>
+          <div class="ai-row">
+            <a class="ai-link" href="${escapeAttr(url)}" data-open-ai="1">
+              <span aria-hidden="true">✨</span>
+              <span class="ai-url">${escapeHtml(url)}</span>
+            </a>
+            <button type="button" class="ai-copy" data-copy-ai="1" aria-label="复制网址" title="复制网址">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </section>`;
+
+        const cards = `<section class="tiers">${tiers.map((t) => {
+          const cls = t.id === 'pro' ? 'pro' : 'standard';
+          const tags = (t.tags || []).map((x) => `<span class="tag">${escapeHtml(x)}</span>`).join('');
+          const ctaText = isVip ? '续费 / 升级' : (t.cta || '立即开通');
+          return `<button type="button" class="tier ${cls}" data-tier="${escapeAttr(t.id)}">
+            <div class="tier-head">
+              <h2>${escapeHtml(t.name || '')}</h2>
+              <p class="desc">${escapeHtml(t.desc || '')}</p>
+              <div class="tags">${tags}</div>
+            </div>
+            <div class="tier-body">
+              <div class="price-line"><span class="yen">¥</span><span class="num">${Number(t.price) || 0}</span><span class="unit">/月</span></div>
+              <div class="cta" data-tier-cta="${escapeAttr(t.id)}">${escapeHtml(ctaText)}</div>
+              <div class="perk"><b>${escapeHtml(t.perkTitle || '')}</b><br>${escapeHtml(t.perkHint || '')}</div>
+            </div>
+          </button>`;
+        }).join('')}</section>`;
+
+        const giftList = gifts.map((text, i) => `<li>
+          <span class="num">${i + 1}</span>
+          <span class="txt">${escapeHtml(text)}</span>
+        </li>`).join('');
+        const giftsHtml = `<section class="gifts" aria-label="会员赠送权益">
+          <h3>${escapeHtml(c.giftTitle || '会员赠送权益')}</h3>
+          <ol>${giftList}</ol>
+          <p class="note">${escapeHtml(c.beanNote || '充值 6 个月套餐，送等值魔豆。')}</p>
+        </section>`;
+
+        $('mainScroll').innerHTML = intro + tokenUsageHtml() + cards + giftsHtml;
+      }
+
+      function renderPackages() {
+        const c = cfg();
+        const tier = currentTier();
+        const list = currentPackages();
+        if (!selectedPkgId || !list.some((p) => p.id === selectedPkgId)) {
+          selectedPkgId = c.defaultPackageId || list[1]?.id || list[0]?.id || '';
+        }
+        $('sheetTitle').textContent = tier?.name || '会员套餐';
+        const sheetDesc = $('paySheet')?.querySelector('.sheet-head p');
+        if (sheetDesc) sheetDesc.textContent = tier?.desc || '更强大的会员功能服务';
+
+        $('pkgList').innerHTML = list.map((p) => {
+          const selected = p.id === selectedPkgId ? ' selected' : '';
+          return `<button type="button" class="pkg${selected}" data-pkg="${escapeAttr(p.id)}" role="option" aria-selected="${p.id === selectedPkgId}">
+            <div class="name">${escapeHtml(p.name || '')}</div>
+            <div class="price">¥ ${Number(p.price) || 0}</div>
+            <div class="day">${escapeHtml(p.dayPrice || '')}元/天</div>
+          </button>`;
+        }).join('');
+        const pkg = selectedPkg();
+        $('payAmount').textContent = `¥ ${Number(pkg?.price) || 0}`;
+        $('payBeanNote').textContent = c.beanNote || '充值 6 个月套餐，送等值魔豆。';
+        const payHint = $('paySheet')?.querySelector('.pay-info .hint');
+        if (payHint) payHint.textContent = `确认开通${tier?.name || '会员'}`;
+      }
+
+      function openPaySheet(tierId) {
+        selectedTierId = tierId || selectedTierId || cfg().defaultTierId || 'standard';
+        selectedPkgId = cfg().defaultPackageId || 'month_6';
+        if (!gameStarted) {
+          gameStarted = true;
+          post({ type: 'gameStarted' });
+        }
+        renderPackages();
+        $('payOverlay').classList.remove('hidden');
+      }
+
+      function closePaySheet() {
+        $('payOverlay').classList.add('hidden');
+      }
+
+      function openAiWorkbench(event) {
+        if (event) event.preventDefault();
+        const url = cfg().aiWorkbenchUrl || 'https://keepwork.com/chat';
+        const frame = $('aiFrame');
+        if (frame.getAttribute('src') !== url) frame.setAttribute('src', url);
+        $('aiOverlay').classList.remove('hidden');
+      }
+
+      function closeAiWorkbench() {
+        $('aiOverlay').classList.add('hidden');
+      }
+
+      function payNow() {
+        if (openingVip) return;
+        openingVip = true;
+        const pkg = selectedPkg();
+        const tier = currentTier();
+        $('payBtn').disabled = true;
+
+        post({
+          type: 'haqi_open_vip',
+          scene: 'keepwork_vip',
+          tierId: tier?.id || 'standard',
+          planId: pkg?.id || 'pro',
+          packageId: pkg?.id || '',
+          price: Number(pkg?.price) || 0
+        });
+
+        post({
+          type: 'gameFinished',
+          data: {
+            earnedPoints: isVip ? 12 : 8,
+            difficulty: 'normal',
+            tierId: tier?.id || '',
+            planId: pkg?.id || '',
+            planName: pkg?.name || '',
+            price: Number(pkg?.price) || 0,
+            isVip
+          }
+        });
+
+        if (!HAS_HOST) {
+          const url = 'https://keepwork.com/vip';
+          try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (_) { location.href = url; }
+          toast('已打开 KeepWork 会员页');
+          setTimeout(() => {
+            openingVip = false;
+            $('payBtn').disabled = false;
+          }, 800);
+          return;
+        }
+
+        toast('正在打开会员充值…');
+        setTimeout(() => {
+          openingVip = false;
+          $('payBtn').disabled = false;
+        }, 1800);
+      }
+
+      function onMessage(event) {
+        const msg = event.data || {};
+        if (msg.type === 'setGameConfig' && msg.data && typeof msg.data === 'object') {
+          Object.assign(game_config, msg.data);
+          if (msg.data.petId) requestPetAvatar(msg.data.petId);
+          renderMain();
+          if (!$('payOverlay').classList.contains('hidden')) renderPackages();
+        }
+        if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+            (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+          setPetAvatar(msg.data);
+        }
+        if (msg.type === 'haqi_pet_images' && msg.ok) {
+          const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+          if (firstPet) setPetAvatar(firstPet);
+        }
+        if (msg.type === 'haqi_vip_status') {
+          isVip = !!msg.isVip;
+          renderMain();
+          if (isVip) loadTokenUsage();
+        }
+      }
+
+      async function copyAiUrl() {
+        const url = cfg().aiWorkbenchUrl || 'https://keepwork.com/chat';
+        let ok = false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+            ok = true;
+          }
+        } catch (_) {}
+        if (!ok) {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (_) {}
+        }
+        toast(ok ? '网址已复制，可粘贴到微信' : '复制失败，请长按链接手动复制');
+      }
+
+      function bind() {
+        $('mainScroll').addEventListener('click', (e) => {
+          const copyBtn = e.target.closest('[data-copy-ai]');
+          if (copyBtn) {
+            e.preventDefault();
+            copyAiUrl();
+            return;
+          }
+          const aiLink = e.target.closest('[data-open-ai]');
+          if (aiLink) {
+            openAiWorkbench(e);
+            return;
+          }
+          const tierBtn = e.target.closest('[data-tier]');
+          const usageBtn = e.target.closest('[data-refresh-usage]');
+          if (usageBtn) {
+            loadTokenUsage(true);
+            return;
+          }
+          if (!tierBtn) return;
+          if (e.target.closest('a')) return;
+          openPaySheet(tierBtn.getAttribute('data-tier') || 'standard');
+        });
+
+        $('pkgList').addEventListener('click', (e) => {
+          const pkg = e.target.closest('[data-pkg]');
+          if (!pkg) return;
+          selectedPkgId = pkg.getAttribute('data-pkg') || selectedPkgId;
+          renderPackages();
+        });
+
+        $('closePay').onclick = closePaySheet;
+        $('closeAi').onclick = closeAiWorkbench;
+        $('payOverlay').addEventListener('click', (e) => {
+          if (e.target === $('payOverlay')) closePaySheet();
+        });
+        $('payBtn').onclick = payNow;
+        $('signinBtn').onclick = signIn;
+
+        window.addEventListener('message', onMessage);
+        window.addEventListener('resize', setAppHeight);
+        window.visualViewport?.addEventListener('resize', setAppHeight);
+      }
+
+      setAppHeight();
+      bind();
+      selectedTierId = cfg().defaultTierId || 'standard';
+      selectedPkgId = cfg().defaultPackageId || 'month_6';
+      renderMain();
+      loadUserProfile();
+      window.keepwork?.onAuthStateChange?.(() => {
+        userProfileLoaded = false;
+        loadUserProfile();
+      });
+      post({ type: 'gameLoaded' });
+      post({ type: 'haqi_get_vip_status' });
+      requestPetAvatar();
+      if (!gameStarted) {
+        gameStarted = true;
+        post({ type: 'gameStarted' });
+      }
+    })();
+  </script>
+</body>
+</html>

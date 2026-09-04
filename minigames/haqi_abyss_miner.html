@@ -140,6 +140,21 @@
 
 <script>
 "use strict";
+window.parent.postMessage({ type: 'gameLoaded' }, '*');
+const HOST_PARAMS=new URLSearchParams(location.search);
+const MINERAL_HOST_MODE=HOST_PARAMS.get('host')==='mineral';
+const MINERAL_HOST_CHANNEL='magichaqi-mineral-mech';
+const MINERAL_HOST_DEPTH=Math.max(1,Math.min(12,Math.floor(Number(HOST_PARAMS.get('depth'))||1)));
+let mineralHostReported=false;
+const mineralHostStats={hits:0,misses:0,bestCombo:0};
+function reportMineralHostResult(passed){
+  if(!MINERAL_HOST_MODE||mineralHostReported)return;
+  mineralHostReported=true;
+  window.parent.postMessage({channel:MINERAL_HOST_CHANNEL,version:1,type:'MECH_MINER_RESULT',payload:{
+    passed:Boolean(passed),depth:G.level,score:G.score,goal:G.goal,hits:mineralHostStats.hits,
+    misses:mineralHostStats.misses,bestCombo:mineralHostStats.bestCombo,remainingSeconds:Math.max(0,Math.round(G.time))
+  }},'*');
+}
 /* =========================================================================
    《哈奇深渊 · 机甲矿工》—— 自包含原型（物理 + 渲染 + Juice + 肉鸽商店）
    纯 Canvas / Vanilla JS。虚拟分辨率 720×1280，等比缩放铺满。
@@ -460,6 +475,11 @@ const HOOKS={
 //---------------------------------------------------------------- 一次抓取入账
 function resolveCatch(res){
   const {ore,empty,electrocuted,blocked,knocked}=res;
+  if(MINERAL_HOST_MODE){
+    const hit=Boolean(ore&&!ore.hazard&&!ore.bad&&(ore.value>0||ore.mystery));
+    if(hit)mineralHostStats.hits++;
+    else if(empty||electrocuted||knocked||(ore&&!ore.pickup))mineralHostStats.misses++;
+  }
   if(blocked){ G.cd.shield=Math.max(2,15-3*lv('shield')); return; } // 🛡️ 抵挡电击：充能、不清连击
   if(knocked){ G.combo=0; G.time=Math.max(0,G.time-1.5); SFX.zap();
     floatText(VW/2,PIVOT.y+60,"🦇 撞飞！ -1.5s","#c9a6ff",22); return; }
@@ -474,6 +494,7 @@ function resolveCatch(res){
       floatText(VW-90,150,"COMBO x"+G.combo,"#ff7ad9",22);}
     if(G.combo>=CFG.comboMax){ if(G.frenzy<=0.1)triggerFrenzy(); else G.frenzy=Math.max(G.frenzy,4); }
   }
+  if(MINERAL_HOST_MODE)mineralHostStats.bestCombo=Math.max(mineralHostStats.bestCombo,G.combo);
   if(!ore)return;
   if(ore.mystery){ G.blackcards++; SFX.coin();
     floatText(ore.x,PIVOT.y+30,"🎴 遗物!","#c9a6ff",22); return; }
@@ -654,6 +675,10 @@ function endLevel(){
   G.state="result";
   hudBtns.classList.remove("show");
   const passed=G.score>=G.goal;
+  if(MINERAL_HOST_MODE){
+    reportMineralHostResult(passed);
+    return;
+  }
   // 黑卡鉴定
   const reveal=document.getElementById("cardReveal");
   reveal.innerHTML="";
@@ -1161,6 +1186,11 @@ document.getElementById("btnHowBack").onclick=()=>{hide(document.getElementById(
 document.getElementById("btnShopGo").onclick=()=>{ startLevel(G.level+1); };
 document.getElementById("btnReroll").onclick=rerollShop;
 document.getElementById("btnRetry").onclick=()=>{ closeAllOverlays(); show(document.getElementById("ovMenu")); G.state="menu"; };
+if(MINERAL_HOST_MODE){
+  closeAllOverlays();
+  startLevel(MINERAL_HOST_DEPTH);
+  window.parent.postMessage({channel:MINERAL_HOST_CHANNEL,version:1,type:'MECH_MINER_READY'},'*');
+}
 
 </script>
 </body>

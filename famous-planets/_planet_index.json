@@ -60,8 +60,17 @@
       },
       "onboarding": {
         "mode": "minigames",
-        "minigame": "planet_boarding",
+        "minigame": "planet_boarding_haqi",
         "progressKey": "haqi"
+      },
+      "features": ["mineralExploration"],
+      "mineralExploration": {
+        "contentPacks": [
+          "content/haqi_minerals_abyssal_echoes.json",
+          "content/haqi_minerals_molten_geocore.json",
+          "content/haqi_minerals_wasteland_punk.json",
+          "content/haqi_minerals_ancient_starcore.json"
+        ]
       },
       "fields": [
         {
@@ -78,8 +87,23 @@
           "bgMusic": "square",
           "npcs": [
             {
-              "id": "npc_1",
+              "id": "haqi_ambassador",
               "name": "哈奇岛大使",
+              "role": "新朋友接引与训练导师",
+              "smallTalk": [
+                "最近岛上来了不少新朋友。我在整理训练记录，也在找愿意带新人熟悉小镇的老朋友。",
+                "第一次训练不必追求满分。能发现自己哪里变快了，就已经是很好的进步。",
+                "广场边那面留言墙会记录大家的愿望。有空可以去看看，说不定能帮上谁的忙。",
+                "我见过不少厉害的伙伴，他们都有一个共同点：愿意把经验讲给刚出发的人听。",
+                "你的伙伴今天看起来很有精神。训练之外，也别忘了陪它散散步。"
+              ],
+              "interactions": [
+                { "id": "ask_training_tip", "label": "请教训练诀窍", "response": "先观察，再行动。连续失误时停两秒重新找节奏，往往比一味加快更有效。" },
+                { "id": "welcome_newcomer", "label": "帮忙接待新人", "prompt": "新朋友有些紧张，你会怎么欢迎他？", "choices": [
+                  { "label": "带他认识广场", "response": "好主意！熟悉环境能让人安心。大使把你的名字写进了志愿者记录。" },
+                  { "label": "先介绍自己的伙伴", "response": "伙伴是最自然的话题。新朋友看到你们相处的样子，果然放松了不少。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_ambassador_20260709083240.webp#7.20_1.21_33.33_94.85",
               "x": 76.67189092845379,
               "y": 73.33790411396086,
@@ -87,14 +111,47 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "哈奇岛大使", "text": "嗨！好久不见！想不想试试看你现在的身手有没有退步？来玩玩这个小游戏吧！", "buttonText": "好的，开始游戏吧！" }
+                { "speaker": "哈奇岛大使", "text": "欢迎回来！我负责记录岛上新老朋友的训练情况。今天帮我完成一次反应训练，我会记住你的进步。", "buttonText": "接受今日训练" }
               ],
+              "dailyCommission": {
+                "title": "大使的反应训练",
+                "completionText": "大使更新了你的训练记录。"
+              },
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/crazyspots-svg.html",
               "minigameLandscape": true
             },
             {
-              "id": "npc_2",
+              "id": "mayor_rhodes",
               "name": "罗德镇长",
+              "role": "小镇治理与居民委托",
+              "smallTalk": [
+                "今天广场的人比往常多。等巡查结束，我还要去听听居民们对新路牌的意见。",
+                "治理小镇最难的不是发布命令，而是弄清楚大家真正遇到了什么麻烦。",
+                "喷泉旁的长椅刚修好。那是居民们最喜欢交换消息的地方，我偶尔也会坐过去听听。",
+                "最近有人建议延长游乐场开放时间。我还在权衡热闹和夜间安静，你怎么看？",
+                "巡查报告里，小问题往往比大事件更重要。松动的路牌，也可能让第一次来的人迷路。"
+              ],
+              "interactions": [
+                { "id": "mayor_square_safety_patrol", "label": "和镇长巡查广场", "response": "你和罗德镇长完成了路牌、喷泉灯和长椅的联合巡查。", "play": {
+                  "type": "sceneCollect",
+                  "instruction": "跟罗德镇长走遍广场，逐一处理居民最关心的三处设施。",
+                  "success": "巡查完成！镇长在现场更新了维修记录，广场设施恢复安全。",
+                  "revisit": "镇长翻开巡查记录：路牌、喷泉灯和长椅都保持良好，你们的联合签名还在最后一页。",
+                  "markerIcon": "📋",
+                  "markerLabel": "广场巡查记录",
+                  "collaboration": { "moveNpc": true, "reactionPrefix": "镇长" },
+                  "steps": [
+                    { "id": "secure_sign", "label": "扶正路牌", "icon": "🪧", "resolvedIcon": "✅", "resolvedLabel": "路牌已固定", "feedback": "镇长扶住路牌，你拧紧底座，第一次协作完成。", "x": 20, "y": 61 },
+                    { "id": "test_fountain_light", "label": "检测喷泉灯", "icon": "💡", "resolvedIcon": "✨", "resolvedLabel": "喷泉灯已亮", "feedback": "你按下检测开关，镇长确认灯光覆盖了湿滑路面。", "x": 49, "y": 48 },
+                    { "id": "inspect_bench", "label": "检查长椅", "icon": "🪑", "resolvedIcon": "🛠️", "resolvedLabel": "长椅已加固", "feedback": "最后一颗螺丝已经加固，可以和镇长签署巡查记录了。", "x": 75, "y": 65 }
+                  ]
+                } },
+                { "id": "review_notice", "label": "查看居民留言", "response": "留言板上写着：修好喷泉边的灯、增加休息长椅、给迷路的新朋友画一张地图。" },
+                { "id": "town_opinion", "label": "参与小镇议事", "prompt": "游乐场希望延长开放时间。你更在意哪一点？", "choices": [
+                  { "label": "让大家多玩一会", "response": "镇长记下了你的意见：周末可以适当延长，但要安排巡逻。" },
+                  { "label": "别打扰附近居民", "response": "镇长点点头：可以设置安静时段，让热闹和休息都被照顾到。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/mayor_rhodes_ceremonial_attire_20260709083127.webp#3.85_3.14_36.05_91.95",
               "x": 28.082549235663816,
               "y": 76.47270035220538,
@@ -102,8 +159,12 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "罗德镇长", "text": "欢迎回家，可爱的勇士~要不要来玩一把小游戏放松放松？", "buttonText": "好的，开始吧！" }
+                { "speaker": "罗德镇长", "text": "广场今天需要一次空中巡查。完成穿云挑战，帮我确认小镇上空是否安全。", "buttonText": "接受广场巡查" }
               ],
+              "dailyCommission": {
+                "title": "镇长的广场巡查",
+                "completionText": "镇长确认了今天的巡查结果。"
+              },
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/chuanyun-svg.html",
               "minigameLandscape": true
             }
@@ -125,6 +186,15 @@
             {
               "id": "npc_1",
               "name": "咕噜大叔",
+              "role": "海滩看护与潮汐观察",
+              "smallTalk": ["退潮后石缝里会出现小水洼，里面住着许多暂时回不了海里的小家伙。", "海风变咸、海鸟飞低，往往说明天气快要变化了。"],
+              "interactions": [
+                { "id": "check_tide_pool", "label": "观察潮汐池", "response": "你在浅水里发现了寄居蟹、海藻和一枚空贝壳。咕噜大叔提醒你只观察，不把它们带走。" },
+                { "id": "beach_safety", "label": "学习海滩安全", "prompt": "潮水突然上涨时，应该怎么做？", "choices": [
+                  { "label": "马上回到高处", "response": "正确。先离开礁石和低洼区域，再寻找管理员。" },
+                  { "label": "站在原地继续看", "response": "这样不安全。潮水速度可能比想象中快，应该立刻回到高处。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#37.73_55.13_11.23_44.87",
               "x": 22.753395630648143,
               "y": 73.96486336160977,
@@ -132,7 +202,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "咕噜大叔", "text": "唔，今天的海风真舒服呀。小哈奇，要不要坐下来玩一会小游戏呢？", "buttonText": "好呀~" }
+                { "speaker": "咕噜大叔", "text": "今天海风不错。你可以陪我看看潮汐池，也可以玩一局守护挑战。", "buttonText": "开始守护挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/cropdefend-svg.html",
               "minigameLandscape": true
@@ -140,6 +210,15 @@
             {
               "id": "npc_2",
               "name": "冬冬",
+              "role": "沙滩活动向导",
+              "smallTalk": ["湿沙适合堆城堡，干沙适合画画。今天你想留下什么图案？", "我每天都会检查沙滩上有没有尖锐的贝壳碎片。"],
+              "interactions": [
+                { "id": "build_sandcastle", "label": "一起堆沙堡", "response": "你负责压紧地基，冬冬挖出护城河。浪花靠近时，沙堡稳稳地站住了。" },
+                { "id": "choose_beach_game", "label": "安排沙滩活动", "prompt": "只剩十分钟，大家适合做什么？", "choices": [
+                  { "label": "合作完成大沙画", "response": "大家分工画出一条巨大的抱抱龙，路过的人都停下来欣赏。" },
+                  { "label": "比赛找不同贝壳", "response": "冬冬规定只能拍照记录，不能带走活着的小生物。比赛开始！" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#9.56_4.24_11.50_49.04",
               "x": 63.89759625760739,
               "y": 79.60749659044988,
@@ -147,7 +226,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "冬冬", "text": "嘿！在这片沙滩里也可以愉快的玩耍小游戏哦！", "buttonText": "好的，我现在来玩。" }
+                { "speaker": "冬冬", "text": "嘿！今天可以一起堆沙堡、安排沙滩活动，也可以参加剪影挑战。", "buttonText": "开始剪影挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/farmclip-svg.html",
               "minigameLandscape": true
@@ -170,6 +249,15 @@
             {
               "id": "npc_1",
               "name": "多多",
+              "role": "密林巡路机器人",
+              "smallTalk": ["滴滴，前方湿度上升。苔藓会变滑，走路要放慢。", "我的旧地图缺了一个角，但记忆里的路还很清楚。"],
+              "interactions": [
+                { "id": "scan_forest", "label": "扫描森林声音", "response": "多多识别出三种声音：树叶摩擦、溪水和远处的鸟鸣。没有危险信号。" },
+                { "id": "choose_path", "label": "一起判断路线", "prompt": "左边有新鲜脚印，右边有折断的树枝。巡路先走哪边？", "choices": [
+                  { "label": "查看新鲜脚印", "response": "脚印来自一只搬松果的小动物。多多把它标记为安全活动。" },
+                  { "label": "检查折断树枝", "response": "树枝是昨夜大风吹断的。你们把它移到路边，清出了一条安全通道。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.64_1.57_12.36_53.76",
               "x": 26.044931680804883,
               "y": 71.1435467471897,
@@ -177,14 +265,44 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "多多", "text": "滴滴——侦测到极其熟悉的老朋友信号，逛累了来玩一会，一起寻找回忆吧？", "buttonText": "好的，开始吧！" }
+                { "speaker": "多多", "text": "滴滴——巡路系统已启动。你可以和我扫描森林、判断路线，或进行火焰挑战。", "buttonText": "开始火焰挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firemaster-svg.html",
               "minigameLandscape": true
             },
             {
-              "id": "npc_2",
+              "id": "doctor_dokter",
               "name": "多克特博士",
+              "role": "森林生态与魔法研究",
+              "smallTalk": [
+                "今早的蘑菇孢子比昨天亮了一点。森林会用很小的变化告诉我们它是否健康。",
+                "做研究要先学会观察。颜色、声音和气味的细微变化，常常比仪器更早发出提醒。",
+                "请不要随便采走发光蘑菇。它们会替附近的小树储存夜间需要的魔法能量。",
+                "我正在比较雨后和晴天的叶片样本。看似相同的叶子，魔法纹路其实完全不同。",
+                "森林不是安静的地方，只是它说话很慢。愿意多等一会儿，就能听见更多线索。"
+              ],
+              "interactions": [
+                { "id": "forest_ecology_investigation", "label": "让宠物协助生态调查", "response": "你的宠物辨认出风里残留的树脂气味，帮助博士找到了魔法信号变弱的原因。", "relationshipReward": { "affection": 8, "stageItemId": "gift_bamboo_leaf", "stageItemCount": 1 }, "play": {
+                  "type": "sceneCollect",
+                  "interactionMode": "petAssist",
+                  "instruction": "多克特博士请你的宠物先辨认树脂气味，再跟随它检查足迹，最后一起确认森林恢复标记。",
+                  "success": "宠物找到了树脂气味的来源。博士确认昨夜大风折断了树枝，并和你们设置了恢复标记。",
+                  "revisit": "博士翻开生态档案：宠物辨认的树脂气味与足迹记录吻合，森林恢复标记仍然稳定。",
+                  "markerIcon": "🐾",
+                  "markerLabel": "宠物生态调查记录",
+                  "collaboration": { "moveNpc": true, "reactionPrefix": "博士", "offsetX": 7, "offsetY": 6 },
+                  "steps": [
+                    { "id": "fresh_tracks", "role": "pet", "label": "请宠物辨认树脂气味", "icon": "🐾", "resolvedIcon": "💡", "resolvedLabel": "宠物记住了树脂气味", "x": 38, "y": 76, "feedback": "博士递来封存样本，宠物闻过后立刻转向林间的新鲜足迹。" },
+                    { "id": "broken_branch", "role": "target", "label": "跟随宠物检查足迹", "icon": "🌿", "resolvedIcon": "✅", "resolvedLabel": "气味来源已找到", "x": 57, "y": 58, "feedback": "宠物沿足迹找到折断树枝，断口残留的树脂气味和样本完全一致。" },
+                    { "id": "glowing_leaf", "role": "confirm", "label": "和博士确认恢复标记", "icon": "🍃", "resolvedIcon": "🤝", "resolvedLabel": "恢复标记已确认", "x": 73, "y": 73, "feedback": "博士记录风向，你和宠物守在发光叶片旁，确认魔法流动正在恢复。" }
+                  ]
+                } },
+                { "id": "inspect_sample", "label": "观察叶片样本", "response": "透过博士的放大镜，你看到叶脉里有微弱的蓝色光点。那是健康的水元素流动。" },
+                { "id": "research_choice", "label": "协助研究判断", "prompt": "一株蘑菇突然暗了下来，第一步该做什么？", "choices": [
+                  { "label": "记录周围温度和湿度", "response": "严谨的选择。博士先记录环境，再判断变化是否异常。" },
+                  { "label": "立刻给它施魔法", "response": "博士拦住了你：不明原因时先观察，贸然干预可能掩盖真正的问题。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#24.41_54.72_13.68_45.28",
               "x": 81.29571537986445,
               "y": 79.60749659044988,
@@ -192,8 +310,12 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "多克特博士", "text": "嘘，仔细听风的声音……森林里的魔法萤火虫都藏起来了，你去玩一会，它们或者就出来了。", "buttonText": "让我看看是什么游戏吧！" }
+                { "speaker": "多克特博士", "text": "森林主线请选“让宠物协助生态调查”；下方按钮是独立的今日反应小游戏，只结算今日委托。", "buttonText": "今日小游戏：反应训练" }
               ],
+              "dailyCommission": {
+                "title": "博士的生态观测",
+                "completionText": "博士收录了新的森林观测数据。"
+              },
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html",
               "minigameLandscape": true
             }
@@ -215,6 +337,15 @@
             {
               "id": "npc_1",
               "name": "香蕉先生",
+              "role": "游乐设施创意师",
+              "smallTalk": ["好的游乐设施不只是刺激，还要让第一次尝试的人也觉得安心。", "我正在给旋转木马设计新音乐，走路时总会忍不住哼旋律。"],
+              "interactions": [
+                { "id": "design_ride", "label": "设计新设施", "prompt": "新的空中转盘应该突出什么？", "choices": [
+                  { "label": "看见整个小镇", "response": "香蕉先生画下透明观景舱，让胆小的游客也能慢慢欣赏风景。" },
+                  { "label": "转得更快更刺激", "response": "可以，但要设置速度档位和明确提示。刺激不能牺牲安全。" }
+                ] },
+                { "id": "inspect_playground", "label": "检查游乐设施", "response": "你们逐一确认安全杆、软垫和出口标识。香蕉先生给检查表盖上了合格章。" }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#36.91_0.55_13.95_55.00",
               "x": 22.361546100867578,
               "y": 74.59182260925867,
@@ -222,7 +353,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "香蕉先生", "text": "哇哦！欢迎来到游乐场！还是以前熟悉的配方哦！", "buttonText": "好的~" }
+                { "speaker": "香蕉先生", "text": "欢迎来到游乐场！可以和我设计新设施、做安全检查，或者挑战萤火虫游戏。", "buttonText": "开始萤火虫挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firefly-svg.html",
               "minigameLandscape": true
@@ -230,6 +361,15 @@
             {
               "id": "npc_2",
               "name": "YY公主",
+              "role": "庆典甜点与舞台布置",
+              "smallTalk": ["我喜欢白日梦，因为许多好点子一开始都像不可能实现的梦。", "庆典的桌布不能全用同一种颜色，大家的作品放在一起才热闹。"],
+              "interactions": [
+                { "id": "decorate_stage", "label": "布置庆典舞台", "response": "你把彩旗从低到高排列，YY公主补上几盏星星灯。舞台立刻有了层次。" },
+                { "id": "choose_cake", "label": "挑选庆典蛋糕", "prompt": "今天的庆典蛋糕适合什么主题？", "choices": [
+                  { "label": "森林果实", "response": "清新的果香很适合白天庆典，YY公主决定用叶片装饰。" },
+                  { "label": "星空巧克力", "response": "深色蛋糕配星星糖，正好留到夜间灯光亮起时登场。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.27_58.62_12.05_40.63",
               "x": 48.30198497234093,
               "y": 72.71094486631196,
@@ -237,7 +377,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "YY公主", "text": "除了发白日梦，其实我也是很喜欢玩小游戏的。", "buttonText": "我也来玩一下。" }
+                { "speaker": "YY公主", "text": "庆典还差一点灵感。来帮我布置舞台、挑蛋糕，或者参加甜点挑战吧。", "buttonText": "开始甜点挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/deliciouscake-svg.html",
               "minigameLandscape": true
@@ -245,6 +385,53 @@
             {
               "id": "npc_3",
               "name": "丹瑟",
+              "role": "舞台排练与节奏教练",
+              "smallTalk": ["真正稳定的节奏来自呼吸，不是只盯着脚步。", "上台前紧张很正常，把第一拍站稳，身体就会记起后面的动作。"],
+              "interactions": [
+                { "id": "stage_rehearsal_collaboration", "label": "和丹瑟现场排练", "response": "你跟着丹瑟走完舞台动线，灯光、节拍和谢幕点都已确认。", "play": {
+                  "type": "sceneCollect",
+                  "instruction": "跟着丹瑟在舞台上走位，依次确认灯光点、节拍点和谢幕位。",
+                  "success": "现场排练完成！丹瑟留在谢幕位，为下一场正式演出做好准备。",
+                  "revisit": "丹瑟指着舞台上的三处标记：你们一起确认的走位已经成为新舞者的排练路线。",
+                  "markerIcon": "🎭",
+                  "markerLabel": "庆典排练路线",
+                  "collaboration": { "moveNpc": true, "reactionPrefix": "丹瑟" },
+                  "steps": [
+                    { "id": "lighting_mark", "label": "站上灯光点", "icon": "💡", "resolvedIcon": "🌟", "resolvedLabel": "灯光点已确认", "feedback": "丹瑟走到灯下示范站位，你调整位置接住了完整光束。", "x": 25, "y": 59 },
+                    { "id": "rhythm_mark", "label": "踩准节拍点", "icon": "👣", "resolvedIcon": "🎵", "resolvedLabel": "节拍点已激活", "feedback": "你们同时踏下节拍点，舞台边灯随节奏亮起。", "x": 53, "y": 47 },
+                    { "id": "curtain_call_mark", "label": "完成谢幕走位", "icon": "🙇", "resolvedIcon": "👏", "resolvedLabel": "谢幕位已确认", "feedback": "你和丹瑟在谢幕位同步停下，现场响起排练掌声。", "x": 77, "y": 66 }
+                  ]
+                } },
+                { "id": "learn_rhythm", "label": "复现四拍节奏", "response": "你准确接住四拍节奏，丹瑟邀请你加入正式排练。", "play": {
+                  "type": "rhythm",
+                  "instruction": "看清丹瑟的四拍示范，再按同样顺序复现。",
+                  "success": "四拍全部命中！你和丹瑟顺利完成了第一段合练。",
+                  "steps": [
+                    { "id": "clap", "label": "👏 拍手" },
+                    { "id": "left", "label": "👈 左踏" },
+                    { "id": "clap_again", "label": "👏 拍手" },
+                    { "id": "turn", "label": "✨ 转身" }
+                  ]
+                } },
+                { "id": "festival_stage_performance", "label": "参加庆典演出", "requires": ["weave_forest_lantern", "learn_rhythm"], "unlockHint": "魔法学院做星灯 + 先完成丹瑟四拍排练", "lockedText": "还需完成两项场景任务：前往魔法学院找青龙导师制作森林星灯，并先在这里完成丹瑟的四拍基础排练。普通小游戏不能代替这两项任务。", "response": "星灯随节拍亮起，庆典演出圆满完成。", "play": {
+                  "type": "sceneCollect",
+                  "instruction": "森林星灯已经挂好。和丹瑟沿舞台完成亮灯、踏步和谢幕走位。",
+                  "success": "演出成功！森林星灯照亮舞台，丹瑟称你为值得信赖的庆典伙伴。",
+                  "revisit": "庆典舞台仍保留着演出当晚的星灯和谢幕标记。丹瑟说，下一场还会给你留位置。",
+                  "markerIcon": "🏮",
+                  "markerLabel": "森林星灯舞台",
+                  "collaboration": { "moveNpc": true, "reactionPrefix": "丹瑟" },
+                  "steps": [
+                    { "id": "light", "label": "点亮森林星灯", "icon": "🏮", "resolvedIcon": "💡", "resolvedLabel": "星灯已亮", "feedback": "你托起星灯，丹瑟确认第一束舞台光已经到位。", "x": 18, "y": 58 },
+                    { "id": "step", "label": "完成中央踏步", "icon": "👣", "resolvedIcon": "🎶", "resolvedLabel": "中央节拍已完成", "feedback": "你和丹瑟在中央点同步踏步，星灯开始随节拍闪烁。", "x": 49, "y": 45 },
+                    { "id": "bow", "label": "走到谢幕位", "icon": "🙇", "resolvedIcon": "👏", "resolvedLabel": "庆典演出完成", "feedback": "你们走到谢幕位一起鞠躬，舞台四周亮起掌声灯。", "x": 79, "y": 64 }
+                  ]
+                } },
+                { "id": "encourage_dancer", "label": "鼓励紧张的舞者", "prompt": "新舞者忘了动作，你会怎么说？", "choices": [
+                  { "label": "跟着音乐重新开始", "response": "丹瑟赞同：失误不是结束，找到下一拍就能回到舞台。" },
+                  { "label": "先到一旁慢慢练", "response": "给自己一点空间也很好。新舞者练熟第一段后，主动回到了队伍。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#65.90_0.96_10.96_54.59",
               "x": 82.54963387516226,
               "y": 67.38179126129629,
@@ -252,7 +439,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "丹瑟", "text": "这个超级舞者的小游戏以前可受欢迎了！丹瑟我也很喜欢玩呢！", "buttonText": "我来玩玩看！" }
+                { "speaker": "丹瑟", "text": "排练要开始了！先学四拍节奏、帮帮紧张的新舞者，或者来一场舞蹈挑战。", "buttonText": "开始舞蹈挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/superdancer-svg.html",
               "minigameLandscape": true
@@ -274,6 +461,15 @@
             {
               "id": "npc_1",
               "name": "尤诺",
+              "role": "雪山魔力观测员",
+              "smallTalk": ["冰层里的蓝色纹路会随温度变化，它们就像雪山的脉搏。", "声音在雪地上传得很远，所以我们说话和行动都要轻一些。"],
+              "interactions": [
+                { "id": "read_ice", "label": "观察冰晶纹路", "response": "你发现纹路正缓慢向山下延伸。尤诺判断今晚温度会继续下降。" },
+                { "id": "snow_route", "label": "判断登山路线", "prompt": "前方一条路积雪松软，另一条结冰但有护栏，选哪条？", "choices": [
+                  { "label": "走有护栏的冰路", "response": "穿好防滑装备并扶住护栏，这条路线风险更可控。" },
+                  { "label": "踩松软积雪过去", "response": "积雪下可能藏着空洞。尤诺建议不要仅凭表面柔软判断安全。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#20.88_3.21_16.12_48.02",
               "x": 30.35527650839109,
               "y": 78.66705771897654,
@@ -281,7 +477,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "尤诺", "text": "这里的冰雪蕴含着古老的魔力……来试试你的游戏功力如何？", "buttonText": "没问题！" }
+                { "speaker": "尤诺", "text": "冰雪蕴含着古老魔力。可以和我观察冰晶、判断路线，或接受跳台挑战。", "buttonText": "开始跳台挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/jumpfloor-svg.html",
               "minigameLandscape": true
@@ -289,6 +485,34 @@
             {
               "id": "npc_2",
               "name": "古奇",
+              "role": "雪山补给与装备管理员",
+              "smallTalk": ["暖和不等于穿得越厚越好，出汗后被冷风吹到反而更容易失温。", "我的热饮配方只有三个秘密：温度合适、甜度适中，还有慢慢喝。"],
+              "interactions": [
+                {
+                  "id": "pack_mountain_bag",
+                  "label": "整理登山背包",
+                  "response": "保暖和安全装备都装好了，背包重量也很合适。古奇把紧急路线图放进外侧口袋。",
+                  "play": {
+                    "type": "dragMatch",
+                    "instruction": "把四件登山装备拖放到背包的正确区域；平板上也可以先点装备、再点区域。",
+                    "success": "保暖和安全装备都装好了，背包重量也很合适。古奇把紧急路线图放进外侧口袋。",
+                    "zones": [
+                      { "id": "quick", "label": "外侧快取袋" },
+                      { "id": "main", "label": "主收纳区" }
+                    ],
+                    "steps": [
+                      { "id": "gloves", "label": "保暖手套", "icon": "🧤", "zone": "quick", "feedback": "手套需要随时取用，应放在外侧快取袋。" },
+                      { "id": "goggles", "label": "护目镜", "icon": "🥽", "zone": "quick", "feedback": "护目镜要在强光路段前快速拿到。" },
+                      { "id": "water", "label": "温水壶", "icon": "🫗", "zone": "main", "feedback": "水壶较重，应固定在主收纳区。" },
+                      { "id": "traction", "label": "防滑链", "icon": "⛓️", "zone": "main", "feedback": "防滑链收进主收纳区，避免摆动。" }
+                    ]
+                  }
+                },
+                { "id": "make_hot_drink", "label": "调一杯热饮", "prompt": "刚运动完，热饮应该怎样喝？", "choices": [
+                  { "label": "先休息再小口喝", "response": "没错。古奇递来温度合适的果茶，身体慢慢暖了起来。" },
+                  { "label": "马上大口喝滚烫的", "response": "太烫会受伤。古奇让热饮稍微放凉，并提醒你慢慢补水。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#50.68_1.16_14.49_52.74",
               "x": 58.803552370460054,
               "y": 63.933515399227325,
@@ -296,7 +520,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "古奇", "text": "呼，太冷了太冷了！快来和我一起玩小游戏和暖和身子吧！", "buttonText": "呼！马上来！" }
+                { "speaker": "古奇", "text": "上山前先检查装备。你也可以帮我调热饮，准备好后再参加雪球挑战。", "buttonText": "开始雪球挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/snowball-svg.html",
               "minigameLandscape": true
@@ -319,6 +543,15 @@
             {
               "id": "npc_1",
               "name": "白龙导师",
+              "role": "守护魔法与耐心修习",
+              "smallTalk": ["力量并不只用来进攻。能稳稳保护别人，也是一种强大。", "咒语失败时先检查呼吸和姿势，魔力通常比语言更诚实。"],
+              "interactions": [
+                { "id": "practice_shield", "label": "练习守护术", "response": "你把魔力集中成一面薄薄的光盾。它不耀眼，却稳定挡住了飞来的纸团。" },
+                { "id": "magic_ethics", "label": "回答导师提问", "prompt": "朋友未经允许想用魔法拿走别人的东西，你该怎么做？", "choices": [
+                  { "label": "阻止并说明原因", "response": "白龙导师点头：会使用魔法，更要懂得尊重边界。" },
+                  { "label": "只要不被发现就行", "response": "导师严肃地摇头：力量不能成为伤害信任的借口。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi2_20260710071736.webp#39.09_8.45_23.37_84.06",
               "x": 76.51515111654156,
               "y": 77.09965959985428,
@@ -326,7 +559,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "白龙导师", "text": "你好啊，小哈奇。这些年，我也变得很喜欢玩小游戏了。", "buttonText": "你好，白龙导师。" }
+                { "speaker": "白龙导师", "text": "欢迎回来。今天可以练习守护术、讨论魔法责任，或进行泡泡龙训练。", "buttonText": "开始泡泡龙训练" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/paopaolong-svg.html",
               "minigameLandscape": true
@@ -334,6 +567,25 @@
             {
               "id": "npc_2",
               "name": "青龙导师",
+              "role": "自然魔法与专注修习",
+              "smallTalk": ["自然魔法不是命令植物，而是先理解它需要什么。", "专注不是一直绷紧。学会在适当的时候放松，才能维持更久。"],
+              "interactions": [
+                { "id": "listen_seed", "label": "倾听魔法种子", "response": "你把种子捧在手心，感到微弱而规律的跳动。青龙导师说它正在等待水分。" },
+                { "id": "weave_forest_lantern", "label": "制作森林星灯", "requires": ["forest_ecology_investigation"], "unlockHint": "魔法密林 → 多克特博士 → 宠物生态调查", "lockedText": "前往魔法密林，找多克特博士选择“让宠物协助生态调查”，完成宠物、足迹、恢复标记三步。注意：博士的“今日小游戏”不会解锁森林星灯。", "response": "森林星灯完成了。它使用观测光纹而不是采摘发光植物，能安全照亮庆典舞台。", "play": {
+                  "type": "sequence",
+                  "instruction": "按自然魔法的正确步骤制作森林星灯。",
+                  "success": "森林星灯亮起柔和蓝光。青龙导师请你把它带给游乐场的丹瑟。",
+                  "steps": [
+                    { "id": "trace", "label": "描摹光纹", "feedback": "你沿调查记录描下健康叶脉的光纹。" },
+                    { "id": "shape", "label": "编织灯架", "feedback": "储水藤被编成稳固灯架，没有折断活枝。" },
+                    { "id": "focus", "label": "注入微光", "feedback": "柔和魔力沿纹路流动，星灯被点亮。" }
+                  ]
+                } },
+                { "id": "choose_study", "label": "选择修习方向", "prompt": "今天只有一刻钟，你想怎样修习？", "choices": [
+                  { "label": "反复练好一个基础术", "response": "基础越稳，复杂魔法越不容易失控。导师为你安排了专注练习。" },
+                  { "label": "认识三种新植物", "response": "拓宽见识也很重要。导师带你辨认月光草、铃叶和储水藤。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi1_20260710071704.webp#2.76_4.91_33.70_81.32",
               "x": 18.286310991149712,
               "y": 74.59182260925867,
@@ -341,7 +593,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "青龙导师", "text": "小哈奇，看到你能够重返学院真是太好了。要不要来玩耍一番？", "buttonText": "好的，青龙导师。" }
+                { "speaker": "青龙导师", "text": "重返学院是新的开始。来倾听魔法种子、选择修习方向，或完成反应训练。", "buttonText": "开始反应训练" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html",
               "minigameLandscape": true
@@ -364,6 +616,34 @@
             {
               "id": "npc_1",
               "name": "咕噜大叔",
+              "role": "农场灌溉与作物照料",
+              "smallTalk": ["浇水要看土，不是看心情。表面湿润时，根部不一定缺水。", "清晨和傍晚适合照料作物，正午的阳光会让水分蒸发得太快。"],
+              "interactions": [
+                {
+                  "id": "irrigate_field",
+                  "label": "运送种子到田垄",
+                  "response": "你把种子篮稳稳送到播种台，又和咕噜大叔一起完成了播种。农场运输记录上多了一枚合作印章。",
+                  "play": {
+                    "type": "sceneCollect",
+                    "interactionMode": "carry",
+                    "instruction": "先到田边拿起种子篮，再把它送到咕噜大叔旁的播种台，最后一起确认田垄。",
+                    "success": "种子篮已经送达，播种也顺利完成。咕噜大叔给你们的农场运输记录盖了合作章。",
+                    "revisit": "咕噜大叔指着新苗说：这片田就是你把种子送来后一起播下的，长势很稳。",
+                    "markerIcon": "🌱",
+                    "markerLabel": "合作播种记录",
+                    "collaboration": { "moveNpc": true, "reactionPrefix": "咕噜大叔", "offsetX": -6, "offsetY": 7 },
+                    "steps": [
+                      { "id": "pick_seed_basket", "role": "pickup", "label": "拿起种子篮", "icon": "🧺", "resolvedIcon": "✅", "resolvedLabel": "种子篮已拿起", "feedback": "你稳稳提起种子篮。带着它去找咕噜大叔旁的播种台。", "x": 24, "y": 68 },
+                      { "id": "deliver_seed_basket", "role": "destination", "label": "送到播种台", "icon": "📍", "resolvedIcon": "🌾", "resolvedLabel": "种子已送达", "feedback": "你把种子篮放上播种台，咕噜大叔已经准备好开沟。", "x": 61, "y": 57 },
+                      { "id": "confirm_seed_rows", "role": "confirm", "label": "共同确认田垄", "icon": "🌱", "resolvedIcon": "🌿", "resolvedLabel": "新田垄已播种", "feedback": "你们沿田垄检查一遍，种子间距和覆土深度都刚刚好。", "x": 79, "y": 69 }
+                    ]
+                  }
+                },
+                { "id": "farm_work", "label": "帮忙安排农活", "prompt": "乌云快来了，先做哪件事？", "choices": [
+                  { "label": "收回晾晒的种子", "response": "及时！你们刚把种子搬进仓库，雨点就落了下来。" },
+                  { "label": "继续给田地浇水", "response": "即将下雨时应避免重复浇水。咕噜大叔带你先整理排水沟。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#13.00_56.77_11.50_43.23",
               "x": 68.36468089710583,
               "y": 48.25953420800475,
@@ -371,7 +651,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "咕噜大叔", "text": "哟！长高了不少嘛！来都来了，来玩耍一番吧？", "buttonText": "好啊！" }
+                { "speaker": "咕噜大叔", "text": "农场正忙着呢。来检查土壤、安排农活，或者参加灌溉挑战吧。", "buttonText": "开始灌溉挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/watering-svg.html",
               "minigameLandscape": true
@@ -379,6 +659,82 @@
             {
               "id": "npc_2",
               "name": "莫卡",
+              "role": "作物记录与农场运输",
+              "dailyCommission": { "title": "和宠物完成农场巡田" },
+              "smallTalk": ["我给每块田都画了生长记录，哪天发芽、哪天开花，一眼就能找到。", "运输果实时最怕堆得太高，少跑一趟不一定更有效率。"],
+              "interactions": [
+                {
+                  "id": "record_growth",
+                  "label": "巡查新播田垄",
+                  "requires": ["irrigate_field"],
+                  "unlockHint": "跳跳农场 → 咕噜大叔 → 完成播种灌溉",
+                  "lockedText": "先帮咕噜大叔把种子送到田垄，莫卡才有新苗可以记录。",
+                  "response": "你和莫卡完成了新播田垄的第一轮生长巡查。",
+                  "relationshipReward": { "affection": 6, "stageItemId": "gift_sunflower", "stageItemCount": 1 },
+                  "play": {
+                    "type": "sceneCollect",
+                    "instruction": "沿刚播好的田垄检查土壤标牌、第一株新芽和运输路线，和莫卡完成首轮生长记录。",
+                    "success": "首轮生长记录完成。莫卡把你们共同量出的数据写进农场日志。",
+                    "revisit": "莫卡翻开记录板：第一轮新苗数据是我们一起量的，之后的长高变化都有可靠起点。",
+                    "markerIcon": "📋",
+                    "markerLabel": "新苗巡查记录",
+                    "collaboration": { "moveNpc": true, "reactionPrefix": "莫卡", "offsetX": 6, "offsetY": 6 },
+                    "steps": [
+                      { "id": "check_soil_marker", "label": "核对土壤标牌", "icon": "🏷️", "resolvedIcon": "✅", "resolvedLabel": "土壤标牌已核对", "feedback": "莫卡确认标牌日期正是播种当天，记录起点没有写错。", "x": 35, "y": 61 },
+                      { "id": "measure_first_sprout", "label": "测量第一株新芽", "icon": "🌱", "resolvedIcon": "📏", "resolvedLabel": "新芽高度已记录", "feedback": "新芽刚露出土面，莫卡在记录板上画下第一片绿色新叶。", "x": 58, "y": 70 },
+                      { "id": "mark_cart_route", "label": "标记运输路线", "icon": "🛒", "resolvedIcon": "🗺️", "resolvedLabel": "运输路线已标记", "feedback": "你们避开幼苗标出小车路线，今后运货不会压到新田垄。", "x": 76, "y": 56 }
+                    ]
+                  }
+                },
+                {
+                  "id": "load_cart",
+                  "label": "协作运送第一车果实",
+                  "requires": ["record_growth"],
+                  "unlockHint": "先完成莫卡的“巡查新播田垄”",
+                  "lockedText": "先和莫卡完成新苗巡查，确认运输路线后才能装车。",
+                  "response": "你、莫卡和咕噜大叔一起把第一车果实安全送进仓库。",
+                  "relationshipReward": { "affection": 8 },
+                  "play": {
+                    "type": "sceneCollect",
+                    "interactionMode": "carry",
+                    "instruction": "先和莫卡按重量装好果篮，再沿标记路线推到仓库，最后请咕噜大叔共同验收。",
+                    "success": "第一车果实平稳入库。莫卡负责路线，你负责运送，咕噜大叔完成了入库验收。",
+                    "revisit": "莫卡指着运输记录：这第一车果实是我们和咕噜大叔一起送进仓库的，软果一颗也没压坏。",
+                    "markerIcon": "🛒",
+                    "markerLabel": "首车果实入库记录",
+                    "collaboration": { "moveNpc": true, "companionNpcId": "npc_1", "reactionPrefix": "莫卡", "offsetX": 6, "offsetY": 6, "companionOffsetX": -7, "companionOffsetY": 7 },
+                    "steps": [
+                      { "id": "load_fruit_cart", "role": "pickup", "label": "装好分层果篮", "icon": "🧺", "resolvedIcon": "✅", "resolvedLabel": "果篮已稳固装车", "feedback": "莫卡把南瓜放在下层、软果放在上层，你确认绑带已经扣紧。", "x": 27, "y": 66 },
+                      { "id": "deliver_fruit_cart", "role": "destination", "label": "推车沿路线入库", "icon": "🛒", "resolvedIcon": "🏚️", "resolvedLabel": "果车已到仓库", "feedback": "你沿巡查时标出的路线推车，莫卡在前面避开新苗引路。", "x": 54, "y": 58 },
+                      { "id": "confirm_fruit_delivery", "role": "confirm", "label": "共同验收入库", "icon": "📋", "resolvedIcon": "🤝", "resolvedLabel": "三方验收完成", "feedback": "咕噜大叔检查果实和车轮，莫卡记下损耗为零，第一车顺利入库。", "x": 76, "y": 67 }
+                    ]
+                  }
+                },
+                {
+                  "id": "pet_scent_patrol",
+                  "label": "带宠物嗅闻成熟果实",
+                  "requires": ["load_cart"],
+                  "unlockHint": "先完成莫卡的“协作运送第一车果实”",
+                  "lockedText": "先和莫卡完成第一车果实入库，宠物才能记住成熟果实的气味。",
+                  "response": "你的宠物找出了最适合采摘的果实，莫卡完成了今天的成熟度记录。",
+                  "relationshipReward": { "affection": 10, "stageItemId": "gift_fruit_basket", "stageItemCount": 1 },
+                  "play": {
+                    "type": "sceneCollect",
+                    "interactionMode": "petAssist",
+                    "instruction": "先点击自己的宠物请它闻一闻样本，再跟随它找到成熟果实，最后和莫卡、咕噜大叔确认采摘区。",
+                    "success": "宠物准确找到了成熟果实。莫卡记下气味特征，咕噜大叔也划好了今天的采摘区。",
+                    "revisit": "莫卡翻到今天的巡田页：这几个成熟点都是你的宠物闻出来的，判断得很准。",
+                    "markerIcon": "🐾",
+                    "markerLabel": "宠物嗅闻巡田记录",
+                    "collaboration": { "moveNpc": true, "companionNpcId": "npc_1", "reactionPrefix": "莫卡", "offsetX": 6, "offsetY": 6, "companionOffsetX": -7, "companionOffsetY": 7 },
+                    "steps": [
+                      { "id": "ask_pet_to_sniff", "role": "pet", "label": "请宠物闻样本", "icon": "🐾", "resolvedIcon": "💡", "resolvedLabel": "宠物记住了气味", "feedback": "宠物认真闻过样本，抬起头朝成熟果实的方向叫了一声。", "x": 30, "y": 65 },
+                      { "id": "follow_scent_marker", "role": "target", "label": "跟随宠物找果实", "icon": "🍎", "resolvedIcon": "✅", "resolvedLabel": "成熟果实已找到", "feedback": "宠物停在果树下轻轻刨地，这一片果实的颜色和香气都刚刚好。", "x": 55, "y": 59 },
+                      { "id": "confirm_harvest_zone", "role": "confirm", "label": "共同确认采摘区", "icon": "🏷️", "resolvedIcon": "🤝", "resolvedLabel": "采摘区已确认", "feedback": "莫卡记录坐标，咕噜大叔挂好采摘牌，你和宠物完成了第一次协作巡田。", "x": 76, "y": 66 }
+                    ]
+                  }
+                }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#49.41_57.39_11.87_42.61",
               "x": 23.77220440807761,
               "y": 50.45389157477591,
@@ -386,7 +742,7 @@
               "dropShadow": true,
               "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "莫卡", "text": "嘿嘿！我知道你还是一样的贪玩！来吧，一起做游戏！", "buttonText": "我准备好了！" }
+                { "speaker": "莫卡", "text": "今天的作物又长高了。帮我记录生长、整理运输车，或者进行轨道挑战吧。", "buttonText": "开始轨道挑战" }
               ],
               "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/zuma-svg.html",
               "minigameLandscape": true
@@ -763,6 +1119,26 @@
             {
               "id": "npc_1",
               "name": "大熊猫饲养员",
+              "role": "大熊猫保育与行为观察",
+              "smallTalk": ["大熊猫会挑选鲜嫩的竹子，不是每一根都吃。", "观察动物时保持安静，才能看到它最自然的行为。"],
+              "interactions": [
+                { "id": "observe_panda", "label": "限时观察熊猫", "response": "你安静记录了熊猫的自然行为。", "play": {
+                  "type": "observe",
+                  "instruction": "保持安静，记住接下来短暂出现的真实行为。",
+                  "success": "观察记录全部正确！饲养员把你的记录收入今日保育日志。",
+                  "steps": [
+                    { "id": "sniff", "label": "闻竹叶", "icon": "🎋", "feedback": "正确，熊猫先检查了竹叶气味。" },
+                    { "id": "sit", "label": "坐下进食", "icon": "🐼", "feedback": "正确，它坐下后开始慢慢进食。" },
+                    { "id": "scratch", "label": "抓挠树干", "icon": "🌳", "feedback": "正确，进食后它短暂抓挠了树干。" },
+                    { "id": "swim", "label": "跳进水池", "icon": "💦", "feedback": "这个行为刚才没有出现。", "target": false },
+                    { "id": "run", "label": "快速奔跑", "icon": "💨", "feedback": "这个行为刚才没有出现。", "target": false }
+                  ]
+                } },
+                { "id": "panda_care", "label": "学习保育判断", "prompt": "熊猫正在睡觉，游客想敲玻璃叫醒它，应该怎么做？", "choices": [
+                  { "label": "提醒大家保持安静", "response": "正确。充足休息对动物健康很重要，观察不应干扰它们。" },
+                  { "label": "一起敲玻璃", "response": "这样会惊扰动物。饲养员请大家退后，用安静等待代替打扰。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260717110253.webp#23.51_7.74_15.31_92.26",
               "x": 26.985370552278237,
               "y": 77.83552366287772,
@@ -778,6 +1154,15 @@
             {
               "id": "npc_2",
               "name": "熊猫先生",
+              "role": "竹林生活体验员",
+              "smallTalk": ["吃竹子也是技术活，嫩叶、竹笋和竹秆的口感都不一样。", "我黑眼圈很深，但那可不是熬夜熬出来的。"],
+              "interactions": [
+                { "id": "choose_bamboo", "label": "帮忙挑竹子", "prompt": "午餐应该先选哪一份？", "choices": [
+                  { "label": "带露水的新鲜竹叶", "response": "熊猫先生满意地点头，抱着竹叶坐下慢慢品尝。" },
+                  { "label": "已经发黄的干竹叶", "response": "熊猫先生闻了闻就放下了。食物新鲜度也是保育工作的重要一环。" }
+                ] },
+                { "id": "panda_pose", "label": "观察熊猫姿势", "response": "熊猫先生用后背靠住树干，两只前爪抱着竹子。这种坐姿能省力地进食。" }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#0.00_3.49_22.51_96.51",
               "x": 71.02925769961365,
               "y": 79.14171712779665,
@@ -806,6 +1191,15 @@
             {
               "id": "npc_1",
               "name": "水上乐园管理员",
+              "role": "水域安全与游客服务",
+              "smallTalk": ["下水前先做热身，突然跳进冷水会让身体不适应。", "地面看起来只有一点水，也可能让人滑倒，所以要及时清理。"],
+              "interactions": [
+                { "id": "water_safety_check", "label": "检查水域安全", "response": "救生圈、深度标记和防滑垫都在正确位置。管理员请你再确认出口没有被遮挡。" },
+                { "id": "lost_child", "label": "帮助走失游客", "prompt": "小朋友找不到家人，第一步怎么做？", "choices": [
+                  { "label": "陪他联系服务台", "response": "正确。你留在原地陪伴，管理员通过广播顺利联系到家人。" },
+                  { "label": "让他自己四处寻找", "response": "这样可能越走越远。应该联系工作人员并在安全地点等待。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260717110131.webp#22.33_4.58_19.47_95.42",
               "x": 40.93521381246632,
               "y": 78.61923974182908,
@@ -834,6 +1228,15 @@
             {
               "id": "npc_1",
               "name": "猫猫仔",
+              "role": "金鱼馆观察管理员",
+              "smallTalk": ["金鱼游动时会用鱼鳍调整方向，尾巴负责提供主要动力。", "我已经学会把金鱼当同事看待了，虽然午饭前这件事特别难。"],
+              "interactions": [
+                { "id": "count_goldfish", "label": "数一数金鱼", "response": "你耐心等它们游过水草，数到红色三尾、白色两尾，还有一尾躲在石头后面。" },
+                { "id": "aquarium_rule", "label": "判断参观行为", "prompt": "怎样观察金鱼更合适？", "choices": [
+                  { "label": "站远一点安静观察", "response": "猫猫仔赞同：减少拍打和强光，能让鱼群保持自然状态。" },
+                  { "label": "拍玻璃让它们游过来", "response": "震动会惊扰金鱼。猫猫仔请你耐心等待它们自己靠近。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#60.55_1.42_20.38_98.58",
               "x": 36.85997870274846,
               "y": 66.8634985575587,
@@ -861,6 +1264,15 @@
             {
               "id": "npc_1",
               "name": "恐龙伯伯",
+              "role": "古生物知识讲解员",
+              "smallTalk": ["我们通过化石了解恐龙，但许多结论会随着新证据不断修正。", "霸王龙的前肢虽短，骨骼和肌肉却并不弱。"],
+              "interactions": [
+                { "id": "inspect_fossil", "label": "观察足迹化石", "response": "足迹有三个清晰趾印，方向一致。恐龙伯伯推测它当时正沿河岸行走。" },
+                { "id": "fossil_reasoning", "label": "进行化石推理", "prompt": "发现一颗尖牙化石，能立刻断定它属于霸王龙吗？", "choices": [
+                  { "label": "不能，还要比较更多证据", "response": "严谨！牙齿形状、地层年代和附近骨骼都需要一起分析。" },
+                  { "label": "能，尖牙一定是霸王龙", "response": "许多食肉动物都有尖牙。恐龙伯伯提醒你，科学结论需要多种证据支持。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260718154343.webp#0.00_3.81_20.79_96.19",
               "x": 33.725182464503945,
               "y": 70.78207895231549,
@@ -888,6 +1300,15 @@
             {
               "id": "npc_1",
               "name": "科普卫士",
+              "role": "儿童科学探索引导",
+              "smallTalk": ["好问题不一定马上有答案，但它会告诉我们下一步该观察什么。", "猜错没有关系，只要愿意根据证据修正想法，就是在做科学。"],
+              "interactions": [
+                { "id": "giraffe_question", "label": "挑战长颈鹿问题", "prompt": "长颈鹿的长脖子主要帮助它做什么？", "choices": [
+                  { "label": "取食高处树叶并观察周围", "response": "答得很好。长脖子与取食和环境适应密切相关。" },
+                  { "label": "为了在水里呼吸", "response": "这个想法很有趣，但长颈鹿主要生活在陆地。再看看它常吃哪里的叶子。" }
+                ] },
+                { "id": "make_question", "label": "提出一个好问题", "response": "你问：动物怎么知道季节变化？科普卫士把问题写上探索墙，邀请大家一起寻找证据。" }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#0.00_0.57_21.51_99.43",
               "x": 50.49634233911209,
               "y": 78.88047843481286,
@@ -915,6 +1336,15 @@
             {
               "id": "npc_1",
               "name": "金丝猴大使",
+              "role": "金丝猴生态讲解与森林倡导",
+              "smallTalk": ["金丝猴常以家庭群体活动，会用叫声保持联系。", "保护动物不能只保护一只，还要保护它赖以生活的整片森林。"],
+              "interactions": [
+                { "id": "spot_monkey", "label": "寻找金丝猴", "response": "你先看到树枝晃动，再发现一只金丝猴正躲在叶片后观察游客。" },
+                { "id": "forest_choice", "label": "做出森林选择", "prompt": "步道旁发现一片漂亮羽毛，应该怎么做？", "choices": [
+                  { "label": "留在原处并拍照记录", "response": "很好。自然物也是生态的一部分，留下它能减少对环境的干扰。" },
+                  { "label": "带回家收藏", "response": "大使建议不要带走。拍照一样能保存记忆，也能让自然保持完整。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#18.80_1.44_20.56_98.56",
               "x": 68.44305080306194,
               "y": 68.43093071546141,
@@ -942,6 +1372,15 @@
             {
               "id": "npc_1",
               "name": "鸟先生",
+              "role": "鸟类声音与迁徙观察",
+              "smallTalk": ["鸟鸣可能是在求偶、警戒，也可能只是和同伴保持联系。", "迁徙的鸟会利用太阳、星星和地形寻找方向。"],
+              "interactions": [
+                { "id": "listen_birds", "label": "辨认三种鸟鸣", "response": "你听到短促警戒声、连续联络声和悠长鸣唱。鸟先生教你先记节奏，再猜种类。" },
+                { "id": "bird_watching", "label": "选择观鸟方式", "prompt": "想看清树梢上的鸟，怎么做最好？", "choices": [
+                  { "label": "保持距离使用望远镜", "response": "正确。这样既看得清楚，也不会逼迫鸟离开巢区。" },
+                  { "label": "爬树靠近鸟巢", "response": "靠近鸟巢可能惊扰成鸟和幼鸟。鸟先生请你回到步道，用望远镜观察。" }
+                ] }
+              ],
               "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#40.17_0.79_20.29_99.21",
               "x": 31.530825097732784,
               "y": 73.65570457513714,
@@ -958,226 +1397,49 @@
       ]
     },
     {
-      "id": "chongqing_zoo_copy",
-      "title": "重庆动物园星球 副本",
-      "name": "重庆动物园星球 副本",
-      "appTitle": "",
-      "planet_pets": [],
-      "badge": "官方",
-      "summary": "一颗把山城动物园、竹林溪谷和云雾坡坡装进童话里的可爱星球。",
+      "id": "mineral_qa",
+      "title": "矿区验收星",
+      "name": "矿区验收星",
+      "badge": "本地测试",
+      "summary": "仅用于验证星际矿区的 iframe 协议、内容包和跨星球存档隔离。",
+      "audience": {
+        "targetUser": "开发与测试",
+        "ageRange": "0-0",
+        "petPersona": "不适用",
+        "selfCare": 1
+      },
       "planet": {
         "readonly": true,
-        "hue": 142,
-        "bodyBackground": "radial-gradient(circle at 30% 20%, rgba(255,255,255,.84) 0%, rgba(255,255,255,.24) 18%, transparent 34%), radial-gradient(circle at 72% 70%, rgba(134,239,172,.34) 0%, transparent 36%), radial-gradient(circle at 52% 46%, #dcfce7 0%, #86efac 34%, #67e8f9 68%, #22c55e 100%)",
-        "glowColor": "rgba(34, 197, 94, 0.58)",
-        "accentColor": "#22c55e",
-        "default_zoom_level": "planet"
+        "hue": 172,
+        "bodyBackground": "radial-gradient(circle at 28% 22%, rgba(255,255,255,.86), rgba(255,255,255,.16) 24%, transparent 38%), radial-gradient(circle at 70% 70%, rgba(45,212,191,.3), transparent 34%), linear-gradient(145deg, #cffafe 0%, #5eead4 48%, #0f766e 100%)",
+        "glowColor": "rgba(45, 212, 191, 0.58)",
+        "accentColor": "#14b8a6",
+        "default_zoom_level": "field",
+        "hide_cell": true
+      },
+      "features": ["mineralExploration"],
+      "mineralExploration": {
+        "contentPacks": [
+          "content/haqi_minerals_abyssal_echoes.json",
+          "content/haqi_minerals_molten_geocore.json",
+          "content/haqi_minerals_wasteland_punk.json",
+          "content/haqi_minerals_ancient_starcore.json"
+        ]
       },
       "fields": [
         {
-          "name": "熊猫馆",
-          "typeId": "life",
-          "background": {
-            "type": "image",
-            "color": "#bbf7d0",
-            "title": "左耳",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/xiongmaoguan_20260717155113.webp"
-          },
-          "particles": ["petals"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "大熊猫饲养员",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260717110253.webp#23.51_7.74_15.31_92.26",
-              "x": 26.985370552278237,
-              "y": 77.83552366287772,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "大熊猫饲养员", "text": "你好呀小探险家！我是这里的保育员。大熊猫是国宝，它们很爱吃竹子！", "buttonText": "好的，大熊猫真可爱！" }
-              ],
-              "hatchBoostSeconds": 120
-            },
-            {
-              "id": "npc_2",
-              "name": "熊猫先生",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#0.00_3.49_22.51_96.51",
-              "x": 71.02925769961365,
-              "y": 79.14171712779665,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "熊猫先生", "text": "今天又是吃掉一百斤竹子的一天！", "buttonText": "我也想变成熊猫，那样竹子一定很好味道！" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "水上乐园",
-          "typeId": "water",
-          "background": {
-            "type": "image",
-            "color": "#bae6fd",
-            "title": "左眉",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/shatan_20260718164815.webp"
-          },
-          "particles": ["bubbles"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "水上乐园管理员",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260717110131.webp#22.33_4.58_19.47_95.42",
-              "x": 40.93521381246632,
-              "y": 78.61923974182908,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "水上乐园管理员", "text": "阳光、水花，还有冰激凌！这才是生活！", "buttonText": "我也想，一年365都可以游泳就好了！" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "金鱼馆",
+          "name": "验收控制台",
           "typeId": "sky",
           "background": {
-            "type": "image",
-            "color": "#dbeafe",
-            "title": "右眉",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/jinyu_20260717161120.webp"
+            "type": "color",
+            "color": "#ccfbf1",
+            "title": "本地矿区验收"
           },
-          "particles": ["mist"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "猫猫仔",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_20260718154045.webp#60.55_1.42_20.38_98.58",
-              "x": 36.85997870274846,
-              "y": 66.8634985575587,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "猫猫仔", "text": "咕噜咕噜……忍住，我是管理员，不能流口水……", "buttonText": "哈哈，金鱼那么可爱，不可以吃掉！" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "恐龙谷",
-          "typeId": "life",
-          "background": {
-            "type": "image",
-            "color": "#fde68a",
-            "title": "右耳",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/konglongguan_20260717160814.webp"
-          },
-          "particles": ["sparkle"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "恐龙伯伯",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_3_20260718154343.webp#0.00_3.81_20.79_96.19",
-              "x": 33.725182464503945,
-              "y": 70.78207895231549,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "恐龙伯伯", "text": "唔....霸王龙的前肢到底能用来干什么呢……", "buttonText": "hi~我对恐龙也很感兴趣！" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "儿童科普乐园",
-          "typeId": "land",
-          "background": {
-            "type": "image",
-            "color": "#d9f99d",
-            "title": "左胡子",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/kepuguan_20260717160645.webp"
-          },
-          "particles": ["petals"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "科普卫士",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#0.00_0.57_21.51_99.43",
-              "x": 50.49634233911209,
-              "y": 78.88047843481286,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "科普卫士", "text": "长颈鹿的脖子为什么那么长？来猜猜看呀。", "buttonText": "让我想想.....唔......" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "金丝猴馆",
-          "typeId": "land",
-          "background": {
-            "type": "image",
-            "color": "#fef3c7",
-            "title": "中胡子",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/houzi_20260717160517.webp"
-          },
-          "particles": ["sparkle"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "金丝猴大使",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#18.80_1.44_20.56_98.56",
-              "x": 68.44305080306194,
-              "y": 68.43093071546141,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "金丝猴大使", "text": "森林里的空气真好呀，深呼吸——金丝猴很可爱吧！", "buttonText": "对！我很喜欢它们！" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
-        },
-        {
-          "name": "鸟语林",
-          "typeId": "life",
-          "background": {
-            "type": "image",
-            "color": "#cffafe",
-            "title": "右胡子",
-            "imageUrl": "https://cdn.keepwork.com/artassets/art_project/niaoyulin_20260717155945.webp"
-          },
-          "particles": ["mist"],
-          "npcs": [
-            {
-              "id": "npc_1",
-              "name": "鸟先生",
-              "icon": "https://cdn.keepwork.com/artassets/art_project/dongwuyuan_2_20260718154558.webp#40.17_0.79_20.29_99.21",
-              "x": 31.530825097732784,
-              "y": 73.65570457513714,
-              "scale": 3,
-              "dropShadow": true,
-              "randomNearMainPet": true,
-              "dialog": [
-                { "speaker": "鸟先生", "text": "叽叽喳喳，今天的风儿带来了远方的消息。", "buttonText": "每一种鸟鸣，都是一首独特的歌。" }
-              ],
-              "hatchBoostSeconds": 120
-            }
-          ]
+          "particles": []
         }
-      ]
+      ],
+      "appTitle": "矿区验收星",
+      "planet_pets": []
     }
   ]
 }

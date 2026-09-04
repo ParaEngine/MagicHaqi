@@ -3,7 +3,8 @@ import { SHOP_ITEMS, CONFIG, DEFAULT_PLANET_ID, getPlanetOnboardingConfig, getSt
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, clearCurrentOnboardingProgress, clearOnboardingProgress, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
-import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, sicknessName, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
+import { applyStage, curePetSickness, defaultPermanentTrauma, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, sicknessName, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
+import { upgradePetData } from './pet_stats_core.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
 
@@ -343,6 +344,9 @@ function fillCurrentPetStats() {
     Object.keys(baseStats).forEach(key => {
         pet.stats[key] = clamp(CONFIG.statMax, CONFIG.statMin, CONFIG.statMax);
     });
+    pet.lifeStats = { energy: 100, mood: 100, clean: 100, bond: 100 };
+        pet.permanentTrauma = defaultPermanentTrauma();
+    upgradePetData(pet);
     pet.lastTickAt = Date.now();
     applyStage(pet);
     savePetDebounced(pet);

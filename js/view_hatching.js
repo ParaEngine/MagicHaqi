@@ -1,10 +1,10 @@
 // 孵化仓：离线照看与领养新蛋。
-import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast } from './utils.js';
+import { $, acquireActiveModal, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, releaseActiveModal, showDockDisabledToast } from './utils.js';
 import { t } from './i18n.js';
 import { displayPetName } from './dna.js';
 import { CONFIG, getStageName } from './config.js';
 import { computePlanetProgress } from './planetProgress.js';
-import { state } from './state.js';
+import { isPetDispatching, state } from './state.js';
 import {
     formatNannyCareRemaining,
     getCompanionDays,
@@ -17,18 +17,24 @@ import {
     localPlanetPets,
 } from './petLifecycle.js';
 import { petArtHtml } from './pet.js';
+import { canBreed } from './pet_breeding_core.js';
 
-export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, { onBack, onHireNanny, onAdoptEgg, onOpenAlbum, onBreed } = {}) {
+export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, { onBack, onHireNanny, onImproveNannyStat, onAdoptEgg, onOpenAlbum, onBreed } = {}) {
     const progress = computePlanetProgress();
     const localPets = localPlanetPets(pets);
-    const breedReadyCount = localPets.filter(p => p && CONFIG.breedableStages.includes(p.stage)).length;
-    const breedReady = breedReadyCount >= 2;
+    const breedablePets = localPets.filter(p => p && CONFIG.breedableStages.includes(p.stage) && !isPetDispatching(p.id));
+    const breedReadyCount = breedablePets.length;
+    const breedReady = breedablePets.some((parent, index) => breedablePets.slice(index + 1).some(other => canBreed(parent, other)));
     const limit = getPlanetPetLimit();
+    const capacityFull = localPets.length >= limit;
+    const capacityFullReason = `星球容量已满（${localPets.length}/${limit}）。请先到伙伴图鉴放养宠物，或一键研究放归重复 N / R 伙伴。`;
     const location = getPetLocationInfo(pet, planetName || t('planetFallback'));
     const nannyActive = hasNannyCare(pet);
     const hireNannyDisabled = !pet || nannyActive;
     const hireNannyDisabledReason = !pet ? t('nannyNoPet') : t('nannyBusy');
-    const breedDisabledReason = t('breedDisabledReason', { stages: CONFIG.breedableStages.map(stage => getStageName(stage)).join(t('stageSeparator')), count: breedReadyCount });
+    const breedDisabledReason = breedReadyCount >= 2
+        ? '需要两只未锁定的成年宠物，且永久战斗均达到 LV.40'
+        : t('breedDisabledReason', { stages: CONFIG.breedableStages.map(stage => getStageName(stage)).join(t('stageSeparator')), count: breedReadyCount });
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhHatchingBack" title="${escapeHtml(t('back'))}" style="width:36px;height:36px;font-size:18px">‹</button>
@@ -61,6 +67,8 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                     <span style="font-size:24px">🪐</span>
                 </div>
                 <div class="stat-bar" style="height:10px"><div style="width:${Math.min(100, Math.round(localPets.length / limit * 100))}%;background:#22c55e"></div></div>
+                ${capacityFull ? `<div style="margin-top:10px;padding:10px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.5;font-weight:700">${escapeHtml(capacityFullReason)}</div>
+                <button class="btn-secondary w-full" id="mhManagePets" style="margin-top:8px">整理伙伴</button>` : ''}
             </section>
 
             <section class="card-flat" style="margin-bottom:12px">
@@ -84,7 +92,7 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                     </div>
                     <span style="font-size:24px">🥚</span>
                 </div>
-                <button class="btn-primary w-full" id="mhAdoptEgg">${escapeHtml(t('adoptOneEgg'))}</button>
+                <button class="btn-primary w-full" id="mhAdoptEgg"${dockDisabledAttrs(capacityFull, capacityFullReason)}>${escapeHtml(t('adoptOneEgg'))}</button>
             </section>
 
             <section class="card-flat" style="margin-top:12px;background:#fff;border-color:rgba(236,72,153,.24)">
@@ -92,18 +100,24 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                 <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px">
                     ${escapeHtml(t('breedBabyDesc'))}
                 </div>
-                <button class="btn-secondary w-full" id="mhBreedBaby"${dockDisabledAttrs(!breedReady, breedDisabledReason)}>${escapeHtml(t('breedBabyBtn'))}</button>
+                <button class="btn-secondary w-full" id="mhBreedBaby"${dockDisabledAttrs(capacityFull || !breedReady, capacityFull ? capacityFullReason : breedDisabledReason)}>${escapeHtml(t('breedBabyBtn'))}</button>
             </section>
         </div>`;
 
     if ($('mhHatchingBack')) $('mhHatchingBack').onclick = () => onBack?.();
     if ($('mhHatchingAlbum')) $('mhHatchingAlbum').onclick = () => onOpenAlbum?.();
-    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => isDockButtonDisabled($('mhHireNanny')) ? showDockDisabledToast($('mhHireNanny')) : showNannyCareModal(pet, onHireNanny);
-    if ($('mhAdoptEgg')) $('mhAdoptEgg').onclick = () => showAdoptEggModal(pet, onAdoptEgg);
+    if ($('mhManagePets')) $('mhManagePets').onclick = () => onOpenAlbum?.();
+    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => isDockButtonDisabled($('mhHireNanny')) ? showDockDisabledToast($('mhHireNanny')) : showNannyCareModal(pet, onHireNanny, onImproveNannyStat);
+    if ($('mhAdoptEgg')) $('mhAdoptEgg').onclick = () => isDockButtonDisabled($('mhAdoptEgg')) ? showDockDisabledToast($('mhAdoptEgg')) : showAdoptEggModal(pet, onAdoptEgg);
     if ($('mhBreedBaby')) $('mhBreedBaby').onclick = () => isDockButtonDisabled($('mhBreedBaby')) ? showDockDisabledToast($('mhBreedBaby')) : onBreed?.();
 }
 
 function showAdoptEggModal(pet, onAdoptEgg) {
+    const modalName = 'adopt-egg';
+    if (!acquireActiveModal(modalName)) {
+        showDockDisabledToast(null);
+        return;
+    }
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
@@ -117,7 +131,7 @@ function showAdoptEggModal(pet, onAdoptEgg) {
                 <button class="btn-primary" data-adopt-ok>${escapeHtml(t('continueAdopt'))}</button>
             </div>
         </div>`;
-    const close = () => mask.remove();
+    const close = () => { mask.remove(); releaseActiveModal(modalName); };
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest('[data-adopt-cancel]')) { close(); return; }
         if (!e.target.closest('[data-adopt-ok]')) return;
@@ -127,7 +141,12 @@ function showAdoptEggModal(pet, onAdoptEgg) {
     document.body.appendChild(mask);
 }
 
-function showNannyCareModal(pet, onHireNanny) {
+function showNannyCareModal(pet, onHireNanny, onImproveNannyStat) {
+    const modalName = 'nanny-care';
+    if (!acquireActiveModal(modalName)) {
+        showDockDisabledToast(null);
+        return;
+    }
     const maxDays = Math.max(1, Number(CONFIG.hatchingCare?.maxDays) || 2);
     const costPerDay = Math.max(0, Number(CONFIG.hatchingCare?.costPerDay) || 100);
     const options = Array.from({ length: maxDays }, (_, index) => index + 1);
@@ -140,6 +159,13 @@ function showNannyCareModal(pet, onHireNanny) {
             : eligibility.ok
                 ? t('nannyEligible')
                 : eligibility.reasons.join(t('reasonSeparator'));
+    const improveActions = !pet || active || eligibility.ok ? [] : [
+        ...(eligibility.needs?.hunger ? [{ type: 'hunger', label: '去喂食补体力' }] : []),
+        ...(eligibility.needs?.mood ? [{ type: 'mood', label: '去玩耍提心情' }] : []),
+        ...(eligibility.needs?.average && !eligibility.needs?.hunger && !eligibility.needs?.mood
+            ? [{ type: 'average', label: '去照料整体状态' }]
+            : []),
+    ];
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
@@ -151,6 +177,9 @@ function showNannyCareModal(pet, onHireNanny) {
             <div style="font-size:12px;color:${eligibility.ok && !active ? 'var(--accent-dark)' : '#b45309'};line-height:1.45;margin-bottom:12px">
                 ${escapeHtml(statusText)}
             </div>
+            ${improveActions.length ? `<div style="display:grid;grid-template-columns:repeat(${Math.min(2, improveActions.length)}, minmax(0,1fr));gap:8px;margin-bottom:12px">
+                ${improveActions.map(action => `<button class="btn-secondary" data-improve-nanny-stat="${action.type}">${escapeHtml(action.label)}</button>`).join('')}
+            </div>` : ''}
             <div style="display:grid;grid-template-columns:repeat(${Math.min(2, options.length)}, minmax(0,1fr));gap:8px;margin-bottom:12px">
                 ${options.map(days => {
                     const cost = getNannyCareCost(days);
@@ -166,9 +195,16 @@ function showNannyCareModal(pet, onHireNanny) {
                 <button class="btn-secondary" data-nanny-cancel>${escapeHtml(t('cancel'))}</button>
             </div>
         </div>`;
-    const close = () => mask.remove();
+    const close = () => { mask.remove(); releaseActiveModal(modalName); };
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest('[data-nanny-cancel]')) { close(); return; }
+        const improveButton = e.target.closest('[data-improve-nanny-stat]');
+        if (improveButton) {
+            const type = improveButton.dataset.improveNannyStat;
+            close();
+            onImproveNannyStat?.(type, pet);
+            return;
+        }
         const btn = e.target.closest('[data-hire-nanny-days]');
         if (!btn) return;
         if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return; }

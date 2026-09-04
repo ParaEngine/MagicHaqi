@@ -4,7 +4,7 @@
 //               maxCamera 时已经"飞得很远" → 此处是最外层，无更外层可去。
 
 import { $, clamp, coinIconSvg, escapeHtml, prompt, randId, showToast } from './utils.js';
-import { getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, state } from './state.js';
+import { addCoins, getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, state } from './state.js';
 import { addToInventory, getLayout, loadPet, loadPlanetVisitors, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
 import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
@@ -234,7 +234,7 @@ function canAfford(cost) {
 }
 
 function spendCost(cost) {
-    state.coins = Math.max(0, (state.coins | 0) - (cost?.coins || 0));
+    addCoins(-(cost?.coins || 0), { source: 'planet-infrastructure', category: 'facility' });
     state.biofuel = Math.max(0, (state.biofuel | 0) - (cost?.biofuel || 0));
     refreshTopbarResources();
 }
@@ -307,7 +307,7 @@ function collectPlanetMiningCoins() {
     mining.lastCollectedHourAt = currentPlanetMiningHourStart(now);
     mining.lastCollectedAt = now;
     mining.fieldCollectedCoins = 0;
-    state.coins = Math.max(0, (Number(state.coins) || 0) + reward);
+    addCoins(reward, { source: 'planet-mining', category: 'mining' });
     addPlanetLog('mining', t('lpMiningLog', { reward }), '🪙');
     saveUserProfileDebounced();
     soundManager.playPointReward();
@@ -1924,7 +1924,7 @@ function claimAchievement(id) {
         return false;
     }
     ach.claimed[id] = Date.now();
-    state.coins = Math.max(0, (Number(state.coins) || 0) + ACHIEVEMENT_REWARD_COINS);
+    addCoins(ACHIEVEMENT_REWARD_COINS, { source: `achievement-${id}`, category: 'achievement' });
     addPlanetLog('achievement', t('lpAchClaimLog', { name: def.nameKey ? t(def.nameKey) : def.name, coins: ACHIEVEMENT_REWARD_COINS }), def.emoji);
     saveUserProfileDebounced();
     refreshTopbarResources();
@@ -1946,7 +1946,7 @@ function claimAllAchievements() {
     const now = Date.now();
     ready.forEach(def => { ach.claimed[def.id] = now; });
     const totalCoins = ready.length * ACHIEVEMENT_REWARD_COINS;
-    state.coins = Math.max(0, (Number(state.coins) || 0) + totalCoins);
+    addCoins(totalCoins, { source: 'achievement-batch', category: 'achievement' });
     addPlanetLog('achievement', t('lpClaimAllToast', { count: ready.length, coins: totalCoins }), '🏆');
     saveUserProfileDebounced();
     refreshTopbarResources();

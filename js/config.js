@@ -1,5 +1,6 @@
 // 全局常量配置
 import { t } from './i18n.js';
+import { getHomeTreasureFacility } from './home_treasures.js';
 export const CDN_ROOT = 'https://cdn.keepwork.com/maisi/magichaqi/';
 
 export const ZOOM_LEVEL_IDS = ['planet', 'field', 'pet', 'cell'];
@@ -25,10 +26,12 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
 // `window.__view` set before the app boots. Supported values:
 //   field | planet | pet | cell -> force the home view at that zoom level
 //   game                        -> force the minigames (mini-game) view
-export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops', 'encyclopedia'];
+//   mineral                     -> force the mineral exploration view when enabled for the planet
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'mineral', 'ops', 'encyclopedia'];
 const FORCE_VIEW_ALIASES = {
     space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
     game: 'game', games: 'game', minigame: 'game', minigames: 'game',
+    mineral: 'mineral', minerals: 'mineral', haqimineralexploration: 'mineral',
     // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
     ops: 'ops', console: 'ops', operator: 'ops',
     // 动物园动物图鉴（?view=encyclopedia / ?view=tujian）
@@ -582,7 +585,7 @@ export function normalizeOnboardingConfig(raw = {}, planetId = '') {
 }
 
 // ===== field NPC（星球编辑器摆放的可交互角色）=====
-// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, randomNearMainPet?, dialog?, hatchBoostSeconds?, minigame? }。
+// 每个 field 可带一个只读的 npcs 数组：{ id, name, role?, smallTalk?, icon, x, y, dialog?, dailyCommission?, minigame? }。
 // 默认在主宠物附近自动站位；仅 randomNearMainPet=false 时使用编辑器绝对位置。
 function normalizeFieldNpcDialog(value) {
     const raw = Array.isArray(value) ? value : [];
@@ -599,15 +602,104 @@ function normalizeFieldNpcDialog(value) {
         .filter(line => line.text);
 }
 
+function normalizeFieldNpcInteractions(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map((interaction, index) => {
+            const playType = ['sequence', 'collect', 'sceneCollect', 'rhythm', 'observe', 'dragMatch'].includes(interaction?.play?.type) ? interaction.play.type : '';
+            const playItems = (Array.isArray(interaction?.play?.steps) ? interaction.play.steps : [])
+                    .map((step, stepIndex) => ({
+                        id: String(step?.id || `step_${stepIndex + 1}`).trim().slice(0, 32),
+                        label: String(step?.label || '').trim().slice(0, 24),
+                        feedback: String(step?.feedback || '').trim().slice(0, 120),
+                        role: ['pickup', 'destination', 'confirm', 'pet', 'target'].includes(step?.role) ? step.role : '',
+                        target: step?.target !== false,
+                        zone: String(step?.zone || '').trim().slice(0, 24),
+                        icon: String(step?.icon || '🔎').trim().slice(0, 12),
+                        resolvedIcon: String(step?.resolvedIcon || '').trim().slice(0, 12),
+                        resolvedLabel: String(step?.resolvedLabel || '').trim().slice(0, 24),
+                        x: Math.max(5, Math.min(95, Number(step?.x) || 50)),
+                        y: Math.max(12, Math.min(88, Number(step?.y) || 50)),
+                    }))
+                    .filter(step => step.label)
+                    .slice(0, 8);
+            const play = playType ? {
+                type: playType,
+                interactionMode: ['carry', 'petAssist'].includes(interaction.play.interactionMode) ? interaction.play.interactionMode : '',
+                instruction: String(interaction.play.instruction || '').trim().slice(0, 160),
+                success: String(interaction.play.success || interaction?.response || '').trim().slice(0, 240),
+                revisit: String(interaction.play.revisit || interaction.play.success || interaction?.response || '').trim().slice(0, 240),
+                markerIcon: String(interaction.play.markerIcon || '').trim().slice(0, 12),
+                markerLabel: String(interaction.play.markerLabel || '').trim().slice(0, 32),
+                collaboration: interaction.play.collaboration && typeof interaction.play.collaboration === 'object'
+                    ? {
+                        moveNpc: interaction.play.collaboration.moveNpc === true,
+                        companionNpcId: String(interaction.play.collaboration.companionNpcId || '').trim().slice(0, 32),
+                        reactionPrefix: String(interaction.play.collaboration.reactionPrefix || '').trim().slice(0, 24),
+                        offsetX: Math.max(-20, Math.min(20, Number(interaction.play.collaboration.offsetX) || 0)),
+                        offsetY: Math.max(-20, Math.min(20, Number(interaction.play.collaboration.offsetY) || 0)),
+                        companionOffsetX: Math.max(-20, Math.min(20, Number(interaction.play.collaboration.companionOffsetX) || 0)),
+                        companionOffsetY: Math.max(-20, Math.min(20, Number(interaction.play.collaboration.companionOffsetY) || 0)),
+                    }
+                    : null,
+                zones: (Array.isArray(interaction.play.zones) ? interaction.play.zones : [])
+                    .map(zone => ({ id: String(zone?.id || '').trim().slice(0, 24), label: String(zone?.label || '').trim().slice(0, 24) }))
+                    .filter(zone => zone.id && zone.label)
+                    .slice(0, 4),
+                steps: playItems,
+            } : null;
+            return {
+                id: String(interaction?.id || `interaction_${index + 1}`).trim().slice(0, 32),
+                label: String(interaction?.label || '').trim().slice(0, 20),
+                relationshipReward: interaction?.relationshipReward && typeof interaction.relationshipReward === 'object'
+                    ? {
+                        affection: Math.max(0, Math.min(50, Math.floor(Number(interaction.relationshipReward.affection) || 0))),
+                        stageItemId: String(interaction.relationshipReward.stageItemId || '').trim().slice(0, 48),
+                        stageItemCount: Math.max(0, Math.min(10, Math.floor(Number(interaction.relationshipReward.stageItemCount) || 0))),
+                    }
+                    : null,
+                requires: (Array.isArray(interaction?.requires) ? interaction.requires : [])
+                    .map(id => String(id || '').trim().slice(0, 32))
+                    .filter(Boolean)
+                    .slice(0, 6),
+                unlockHint: String(interaction?.unlockHint || '').trim().slice(0, 80),
+                lockedText: String(interaction?.lockedText || '').trim().slice(0, 120),
+                prompt: String(interaction?.prompt || '').trim().slice(0, 200),
+                response: String(interaction?.response || '').trim().slice(0, 240),
+                play: play?.steps.length >= 2 && (play.type !== 'collect' || play.steps.some(step => step.target)) ? play : null,
+                choices: (Array.isArray(interaction?.choices) ? interaction.choices : [])
+                .map(choice => ({
+                    label: String(choice?.label || '').trim().slice(0, 32),
+                    response: String(choice?.response || '').trim().slice(0, 240),
+                }))
+                .filter(choice => choice.label && choice.response)
+                .slice(0, 4),
+            };
+        })
+        .filter(interaction => interaction.label && (interaction.response || interaction.choices.length || interaction.play))
+        .slice(0, 6);
+}
+
 function normalizeFieldNpcScale(value) {
     const num = Number(value);
     return Number.isFinite(num) && num > 0 ? Math.max(0.4, Math.min(3, num)) : 1;
 }
 
 export function normalizeFieldNpc(raw = {}, index = 0) {
+    const commission = raw?.dailyCommission && typeof raw.dailyCommission === 'object'
+        ? {
+            title: String(raw.dailyCommission.title || '').trim().slice(0, 48),
+            completionText: String(raw.dailyCommission.completionText || '').trim().slice(0, 160),
+        }
+        : null;
     return {
         id: String(raw?.id || `npc_${index + 1}`).trim() || `npc_${index + 1}`,
         name: String(raw?.name || '').trim().slice(0, 24) || `NPC${index + 1}`,
+        role: String(raw?.role || '').trim().slice(0, 32),
+        smallTalk: (Array.isArray(raw?.smallTalk) ? raw.smallTalk : [raw?.smallTalk])
+            .map(text => String(text || '').trim().slice(0, 200))
+            .filter(Boolean)
+            .slice(0, 8),
         icon: String(raw?.icon || raw?.emoji || raw?.imageUrl || '🧑').trim().slice(0, 300),
         x: Math.max(0, Math.min(100, Number(raw?.x) || 0)),
         y: Math.max(0, Math.min(100, Number(raw?.y) || 0)),
@@ -616,8 +708,10 @@ export function normalizeFieldNpc(raw = {}, index = 0) {
         dropShadow: !!raw?.dropShadow,
         randomNearMainPet: raw?.randomNearMainPet !== false,
         dialog: normalizeFieldNpcDialog(raw?.dialog),
+        interactions: normalizeFieldNpcInteractions(raw?.interactions),
         hatchBoostSeconds: Math.max(0, Math.min(86400, Math.round(Number(raw?.hatchBoostSeconds) || 0))),
         minigame: String(raw?.minigame || raw?.game || '').trim().slice(0, 96),
+        dailyCommission: commission?.title ? commission : null,
     };
 }
 
@@ -626,7 +720,7 @@ export function normalizeFieldNpcs(value) {
     const raw = Array.isArray(value) ? value : [];
     return raw
         .map((npc, index) => normalizeFieldNpc(npc, index))
-        .filter(npc => npc.dialog.length > 0 || npc.hatchBoostSeconds > 0 || npc.minigame);
+        .filter(npc => npc.dialog.length > 0 || npc.interactions.length > 0 || npc.hatchBoostSeconds > 0 || npc.minigame);
 }
 
 /** 规范化场景内的区域入口；targetFieldId 对应地貌槽位 id。 */
@@ -641,8 +735,25 @@ export function normalizeFieldAreaLinks(value) {
             url: String(link?.url || link?.href || '').trim().slice(0, 500),
             x: Math.max(0, Math.min(100, Number(link?.x) || 0)),
             y: Math.max(0, Math.min(100, Number(link?.y) || 0)),
+            width: Math.max(0, Math.min(100, Number(link?.width) || 0)),
+            height: Math.max(0, Math.min(100, Number(link?.height) || 0)),
         }))
         .filter(link => link.label && (link.targetFieldId || /^https?:\/\//i.test(link.url)));
+}
+
+/** 规范化场景左上 UI 按钮列表；旧 position 字段仅为兼容读取，统一归入左上列表。 */
+export function normalizeFieldUiButtons(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map((button, index) => ({
+            id: String(button?.id || `ui_button_${index + 1}`).trim() || `ui_button_${index + 1}`,
+            size: Math.max(44, Math.min(120, Math.round(Number(button?.size) || 64))),
+            icon: String(button?.icon || button?.emoji || button?.imageUrl || '🎮').trim().slice(0, 300),
+            label: String(button?.label || button?.text || '').trim().slice(0, 24),
+            minigame: String(button?.minigame || button?.game || button?.url || '').trim().slice(0, 300),
+            minigameLandscape: !!button?.minigameLandscape,
+        }))
+        .filter(button => button.minigame);
 }
 
 /** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */
@@ -710,7 +821,7 @@ export async function loadPlanetShopItems(planetOrId = null) {
 }
 
 export function getShopItemById(id) {
-    return SHOP_BY_ID.get(id) || null;
+    return SHOP_BY_ID.get(id) || getHomeTreasureFacility(id);
 }
 
 export function getShopItemsByType(type) {

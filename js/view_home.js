@@ -22,11 +22,12 @@ import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';
 import { playPetHappy } from './pet.js';
 import { getRuntimePetStats } from './petLifecycle.js';
-import { getActiveSickness, getEffectiveSicknessSeverity } from './petTick.js';
+import { getActiveSickness, getEffectiveSicknessSeverity, sicknessName } from './petTick.js';
 import { computePlanetProgress } from './planetProgress.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
+const HOME_HUD_ASSET_CDN = 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/ui/home-hud/';
 
 const LEVELS = [planetLevel, fieldLevel, petLevel, cellLevel];
 // Only the field level carries scene background music. Whenever we bind a
@@ -124,6 +125,10 @@ function currentAppTitle(lvl = state.zoomLevel, pet = __lastPet) {
         const visitName = String(state.visitingMode?.planetName || '').trim();
         if (visitName) return visitName;
     }
+    try {
+        const requestedPlanet = String(new URL(window.location.href).searchParams.get('home_planet') || window.__homePlanet || '').trim();
+        if (requestedPlanet === 'haqi') return '哈奇星球';
+    } catch (_) {}
     const title = String(state.settings?.starSettlement?.appTitle || '').trim();
     return title || t('appName');
 }
@@ -319,7 +324,19 @@ function playSceneWipe({ phase, cx = 50, cy = 50, color = '#0c1025', duration = 
     drawSceneWipeFrame(ctx, viewportWidth, viewportHeight, centerX, centerY, phase === 'closing' ? 0 : maxRadius, 0, phase, color);
 
     return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(fallbackTimer);
+            if (__sceneWipeFrame) cancelAnimationFrame(__sceneWipeFrame);
+            __sceneWipeFrame = 0;
+            if (phase === 'opening') resetSceneWipeCanvas();
+            resolve();
+        };
+        const fallbackTimer = setTimeout(finish, duration + 240);
         const draw = (now) => {
+            if (settled) return;
             const raw = Math.max(0, Math.min(1, (now - startedAt) / duration));
             const eased = ease(raw);
             const radius = phase === 'closing'
@@ -330,9 +347,7 @@ function playSceneWipe({ phase, cx = 50, cy = 50, color = '#0c1025', duration = 
                 __sceneWipeFrame = requestAnimationFrame(draw);
                 return;
             }
-            __sceneWipeFrame = 0;
-            if (phase === 'opening') resetSceneWipeCanvas();
-            resolve();
+            finish();
         };
         __sceneWipeFrame = requestAnimationFrame(draw);
     });
@@ -512,7 +527,7 @@ export function renderHome(panel, { pet }, callbacks = {}) {
             </div>
             <div class="home-hud">
                 <span class="home-hud-stats" id="mhTopbarStats">${renderTopbarHudItems(pet, lvl)}</span>
-                <button class="btn-icon" id="mhMenuBtn" title="${escapeHtml(t('menu'))}" style="width:36px;height:36px;font-size:18px">☰</button>
+                <button class="btn-icon home-hud-art-button home-hud-menu-button" id="mhMenuBtn" title="${escapeHtml(t('menu'))}" aria-label="${escapeHtml(t('menu'))}"><img src="${HOME_HUD_ASSET_CDN}home-hud-menu-v4.webp" alt="" aria-hidden="true"></button>
             </div>
         </div>
 
@@ -697,7 +712,7 @@ function getZoomStageEmergency(stageId, pet = __lastPet) {
         const severity = getEffectiveSicknessSeverity(pet);
         return {
             iconHtml: '<svg class="mh-zoom-bar-emergency-svg" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="#fee2e2" stroke="#fff" stroke-width="3"/><path d="M14 7h4v7h7v4h-7v7h-4v-7H7v-4h7Z" fill="#dc2626" stroke="#991b1b" stroke-width="1" stroke-linejoin="round"/></svg>',
-            tip: `生病：${sickness.def.name}，当前病情 ${severity}/10，进入细胞层治疗。`,
+            tip: `生病：${sicknessName(sickness.def)}，当前病情 ${severity}/10，进入细胞层治疗。`,
         };
     }
     const mood = Number(pet.stats?.mood);
@@ -832,6 +847,21 @@ function bindZoomLevelBar(root = document) {
                 return;
             }
         }
+        const track = bar.querySelector('.mh-zoom-bar-track');
+        const trackRect = track?.getBoundingClientRect();
+        const visible = visibleZoomLevels();
+        if (trackRect && visible.length > 1 && e.clientX >= trackRect.left && e.clientX <= trackRect.right) {
+            const progress = Math.max(0, Math.min(1, (e.clientX - trackRect.left) / Math.max(1, trackRect.width)));
+            const targetIndex = Math.round(progress * (visible.length - 1));
+            const targetLevel = visible[targetIndex];
+            if (targetLevel !== clampLvl(state.zoomLevel ?? 0)) {
+                closeZoomLevelBarTips();
+                bar.classList.add('suppress-tip');
+                setTimeout(() => bar.classList.remove('suppress-tip'), 2000);
+                requestZoomLevel(targetLevel);
+                return;
+            }
+        }
         const wasOpen = bar.classList.contains('tip-open');
         closeZoomLevelBarTips();
         if (!wasOpen) {
@@ -886,8 +916,16 @@ function renderCameraTransform() {
     const originY = 50 + ((focus.y ?? 50) - 50) * (focus.weight ?? 0);
     const translateX = (50 - (focus.x ?? 50)) * (focus.weight ?? 0);
     const translateY = (50 - (focus.y ?? 50)) * (focus.weight ?? 0);
-    target.style.transformOrigin = `${originX.toFixed(2)}% ${originY.toFixed(2)}%`;
-    target.style.transform = `translate3d(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%, 0) scale(${scale.toFixed(3)})`;
+    if (state.zoomLevel === 1 && target.id === 'mhFieldScene') {
+        target.style.setProperty('--field-camera-origin-x', `${originX.toFixed(2)}%`);
+        target.style.setProperty('--field-camera-origin-y', `${originY.toFixed(2)}%`);
+        target.style.setProperty('--field-camera-translate-x', `${translateX.toFixed(3)}%`);
+        target.style.setProperty('--field-camera-translate-y', `${translateY.toFixed(3)}%`);
+        target.style.setProperty('--field-camera-scale', scale.toFixed(3));
+    } else {
+        target.style.transformOrigin = `${originX.toFixed(2)}% ${originY.toFixed(2)}%`;
+        target.style.transform = `translate3d(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%, 0) scale(${scale.toFixed(3)})`;
+    }
     if (target !== inner) {
         inner.style.transformOrigin = '50% 50%';
         inner.style.transform = 'translate3d(0%, 0%, 0) scale(1)';
@@ -1146,9 +1184,12 @@ function renderTopbarStatPill(pet, key) {
     const level = stateLevel(value);
     const label = t(item.labelKey);
     const tip = `${label}：${value} · ${t(item.lowTextKey)}`;
+    const art = key === 'mood'
+        ? `<img class="home-hud-art" src="${HOME_HUD_ASSET_CDN}home-hud-mood-v4.webp" alt="" aria-hidden="true">`
+        : `<span class="hud-pill-icon">${item.icon}</span>`;
     return `
-        <button type="button" class="hud-pill hud-pill-stacked topbar-stat-pill state-${level.key}" data-topbar-stat="${escapeHtml(key)}" data-tip="${escapeHtml(tip)}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">
-            <span class="hud-pill-icon">${item.icon}</span>
+        <button type="button" class="hud-pill hud-pill-stacked topbar-stat-pill ${key === 'mood' ? 'home-hud-art-pill' : ''} state-${level.key}" data-topbar-stat="${escapeHtml(key)}" data-tip="${escapeHtml(tip)}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">
+            ${art}
             <span class="hud-pill-value" data-mh-topbar-stat-value="${escapeHtml(key)}" data-stat-value="${value}">${value}</span>
         </button>`;
 }
@@ -1157,16 +1198,16 @@ function renderTopbarResourcePill(key) {
     if (key === 'biofuel') {
         const tip = '生物燃料：收集宠物便便可获得，用于星球旅行。';
         return `
-            <span class="hud-pill hud-pill-stacked topbar-resource-pill" id="mhBiofuel" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="biofuel" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
-                <span class="hud-pill-icon">⛽</span>
+            <span class="hud-pill hud-pill-stacked topbar-resource-pill home-hud-art-pill" id="mhBiofuel" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="biofuel" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
+                <img class="home-hud-art" src="${HOME_HUD_ASSET_CDN}home-hud-biofuel-v4.webp" alt="" aria-hidden="true">
                 <span class="hud-pill-value" data-hud-value="biofuel">${state.biofuel | 0}</span>
             </span>`;
     }
     if (key === 'coins') {
         const tip = '金币：照顾和玩耍可获得，用来购买食物、家具和道具。';
         return `
-            <span class="hud-pill hud-pill-stacked hud-pill-coin topbar-resource-pill" id="mhCoins" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="coins" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
-                <span class="hud-pill-icon">${coinIconSvg()}</span>
+            <span class="hud-pill hud-pill-stacked hud-pill-coin topbar-resource-pill home-hud-art-pill" id="mhCoins" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="coins" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
+                <img class="home-hud-art" src="${HOME_HUD_ASSET_CDN}home-hud-coins-v4.webp" alt="" aria-hidden="true">
                 <span class="hud-pill-value" data-hud-value="coins">${state.coins}</span>
             </span>`;
     }
@@ -1616,6 +1657,8 @@ function runZoomTransition(from, to) {
 
         // DOM 替换（完全被 wipe 遮盖，用户不可见）
         const inner = document.getElementById('mhStageInner');
+        document.getElementById('mhFieldItemScaleControls')?.remove();
+        document.getElementById('mhRoomItemScaleControls')?.remove();
         rememberDockScrollPositions(dock);
         if (!inner || !useCachedLevel(to, pet, inner, dock)) {
             if (inner) inner.innerHTML = newLevel.stageHtml(pet);
@@ -1633,6 +1676,8 @@ function runZoomTransition(from, to) {
         const ctx = makeCtx(pet, __lastCallbacks);
         syncBgMusicForLevel(newLevel);
         newLevel.bindStage(pet, ctx);
+        newLevel.bindDock(pet, ctx);
+        bindDockHorizontalScroll();
         if (to === 1) newLevel.centerPet?.(pet, { animate: false });
         stopCameraAnimation();
         scheduleCameraRender();
@@ -1644,7 +1689,17 @@ function runZoomTransition(from, to) {
 
         // 5) 打开阶段：回收至屏幕中央
         const toWipeColor = LEVELS[to]?.wipeColor;
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise(resolve => {
+            let settled = false;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(fallbackTimer);
+                resolve();
+            };
+            const fallbackTimer = setTimeout(finish, 120);
+            requestAnimationFrame(() => requestAnimationFrame(finish));
+        });
         await playSceneWipe({ phase: 'opening', cx: 50, cy: 50, color: toWipeColor || '#0c1025', duration: 660 });
 
         stage.classList.remove('zoom-anim-in-in', 'zoom-anim-in-out');
@@ -1653,8 +1708,6 @@ function runZoomTransition(from, to) {
         __levelJumpCompleted = true;
         scheduleTransitionFollowup(() => {
             refreshTopbarStatPills(pet);
-            newLevel.bindDock(pet, ctx);
-            bindDockHorizontalScroll();
             restoreDockScrollPositions(dock);
             newLevel.onEnter?.(pet, ctx);
             if (isVisitingMode() && to === 0) showVisitReturnPrompt(pet, ctx);
@@ -2141,9 +2194,12 @@ function showTopbarStatConfirm(key, pet = __lastPet) {
     });
 }
 
-function showPetDetailsModal(pet) {
+function showPetDetailsModal(pet, callbacks = __lastCallbacks) {
     const lowest = getLowestCareStat(pet);
     const summary = lowest ? `${lowest.icon} ${t(lowest.labelKey)} ${lowest.value} · ${t(lowest.lowTextKey)}` : t('petStatusFallback');
+    const lowStats = PET_STAT_ITEMS
+        .map(item => ({ ...item, value: statValue(pet, item.k) }))
+        .filter(item => item.value < 50);
     const rows = PET_STAT_ITEMS.map(it => {
         const v = statValue(pet, it.k);
         const level = stateLevel(v);
@@ -2161,11 +2217,24 @@ function showPetDetailsModal(pet) {
             <div class="text-xs" style="color:var(--text-muted)">${escapeHtml(summary)}</div>
         </div>
         <div class="pet-state-list">${rows}</div>
+        ${lowStats.length ? `
+            <div style="margin-top:14px;text-align:left">
+                <div style="margin-bottom:8px;color:var(--text-secondary);font-size:13px;font-weight:800">${escapeHtml(t('careNow'))}</div>
+                <div style="display:grid;grid-template-columns:repeat(${Math.min(2, lowStats.length)},minmax(0,1fr));gap:8px">
+                    ${lowStats.map(item => `<button class="btn-secondary" data-act="care-stat" data-stat="${item.k}">${item.icon} ${escapeHtml(t(item.k === 'hunger' ? 'careGoFeed' : item.k === 'clean' ? 'careGoBath' : 'careGoPlay'))}</button>`).join('')}
+                </div>
+            </div>` : ''}
         <div style="text-align:center;margin-top:14px">
             <button class="btn-primary" data-act="close">${escapeHtml(t('close'))}</button>
         </div>
     `, (e, close) => {
         if (e.target.closest?.('[data-act="close"]')) close();
+        const careButton = e.target.closest?.('[data-act="care-stat"]');
+        if (careButton) {
+            soundManager.playButtonClick();
+            close();
+            callbacks?.onCareStat?.(careButton.dataset.stat, pet);
+        }
     });
     refreshPetStateUi(pet);
 }
@@ -2173,17 +2242,20 @@ function showPetDetailsModal(pet) {
 function showMenuModal(callbacks) {
     const progress = computePlanetProgress();
     const hasEncyclopedia = !!String(state.settings?.starSettlement?.encyclopediaUrl || '').trim();
+	const hasHaqiExpedition = callbacks?.canUseHaqiExpedition?.() === true;
+    const menuIconCdn = 'https://cdn.keepwork.com/maisi/magichaqi/ui/menu-icons/';
     const items = [
-        { k: 'petList',   icon: '🐾', label: t('petList') },
+        { k: 'petList',   iconSrc: `${menuIconCdn}pet-list.webp`, label: t('petList') },
+        ...(hasHaqiExpedition ? [{ k: 'haqiExplorationArchive', iconSrc: `${menuIconCdn}exploration-archive.webp`, label: '探索记录' }] : []),
         ...(hasEncyclopedia ? [{ k: 'encyclopedia', icon: '📖', label: t('encTitle') }] : []),
-        { k: 'shop',      icon: '🛒', label: t('shop') },
-        { k: 'inventory', icon: '🎒', label: t('inventory') },
-        ...(progress.level >= 3 ? [{ k: 'research', icon: '🔬', label: t('research') }] : []),
-        { k: 'mailbox',   icon: '💌', label: t('mailbox') },
-        { k: 'storyMaker', icon: '📖', label: t('storyMaker') },
-        { k: 'help',      icon: '❔', label: t('help') },
-        { k: 'profile',   icon: '📋', label: t('profile') },
-        { k: 'settings',  icon: '⚙️', label: t('settings') },
+        { k: 'shop',      iconSrc: `${menuIconCdn}shop.webp`, label: t('shop') },
+        { k: 'inventory', iconSrc: `${menuIconCdn}inventory.webp`, label: t('inventory') },
+        ...(progress.level >= 3 ? [{ k: 'research', iconSrc: `${menuIconCdn}research.webp`, label: t('research') }] : []),
+        { k: 'mailbox',   iconSrc: `${menuIconCdn}mailbox.webp`, label: t('mailbox') },
+        { k: 'storyMaker', iconSrc: `${menuIconCdn}story-maker.webp`, label: t('storyMaker') },
+        { k: 'help',      iconSrc: `${menuIconCdn}help.webp`, label: t('help') },
+        { k: 'profile',   iconSrc: `${menuIconCdn}profile.webp`, label: t('profile') },
+        { k: 'settings',  iconSrc: `${menuIconCdn}settings.webp`, label: t('settings') },
     ];
     let timeTimer = null;
     const updateTime = (root) => {
@@ -2199,7 +2271,9 @@ function showMenuModal(callbacks) {
             <div class="menu-app-grid">
                 ${items.map(it => `
                     <button class="menu-app-btn" data-nav="${it.k}" aria-label="${escapeHtml(it.label)}">
-                        <span class="menu-app-icon">${it.icon}</span>
+                        <span class="menu-app-icon${it.iconSrc ? '' : ' menu-app-icon-fallback'}">
+                            ${it.iconSrc ? `<img src="${it.iconSrc}" alt="" aria-hidden="true">` : it.icon}
+                        </span>
                         <span class="menu-app-label">${escapeHtml(it.label)}</span>
                     </button>
                 `).join('')}

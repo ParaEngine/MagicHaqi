@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#030713">
+  <title>哈奇 · 重逢之旅</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --violet: #8875ff;
+      --cyan: #6cecff;
+      --gold: #ffe29a;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    body {
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+    button { border: 0; color: inherit; font: inherit; cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    .app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    .cg-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .cg-video.is-paused-for-node { filter: brightness(.58) saturate(.82); }
+
+    /* 顶部播放进度。 */
+    .debug-bar {
+      position: absolute;
+      z-index: 30;
+      top: calc(var(--safe-top) + 10px);
+      left: 50%;
+      width: min(34vw, 180px);
+      height: 3px;
+      transform: translateX(-50%);
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.13);
+      pointer-events: none;
+    }
+    .video-progress {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: rgba(208,248,255,.72);
+      transition: width .12s linear;
+    }
+
+    /* 开场公告：视频预加载完成前也保持可读，由用户手势开始播放。 */
+    .start-gate {
+      position: absolute;
+      z-index: 40;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: calc(var(--safe-top) + 36px) 24px calc(var(--safe-bottom) + 32px);
+      background:
+        radial-gradient(circle at 50% 18%, rgba(77, 112, 191, .45), transparent 43%),
+        linear-gradient(180deg, #101936 0%, #050916 58%, #02040b 100%);
+      cursor: pointer;
+    }
+    .opening-memory {
+      width: min(88vw, 430px);
+      text-align: center;
+    }
+    .opening-memory h1 {
+      margin: 8px 0 0;
+      font-size: clamp(28px, 8vw, 42px);
+      font-weight: 700;
+      text-shadow: 0 3px 24px rgba(123, 182, 255, .35);
+      opacity: 0;
+      transform: translateY(-18px);
+      animation: memory-fall .75s .15s ease-out forwards;
+    }
+    .opening-kicker {
+      color: #cfeaff;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      opacity: 0;
+      transform: translateY(-18px);
+      animation: memory-fall .75s ease-out forwards;
+    }
+    .opening-timeline {
+      position: relative;
+      display: grid;
+      gap: 14px;
+      margin: 22px 0;
+      padding-left: 26px;
+      text-align: left;
+    }
+    .opening-timeline::before {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 8px;
+      bottom: 8px;
+      width: 1px;
+      background: linear-gradient(180deg, rgba(144,216,255,.15), rgba(144,216,255,.72), rgba(255,226,154,.92));
+      transform-origin: top;
+      animation: timeline-line 1.4s ease-out both;
+    }
+    .timeline-item {
+      position: relative;
+      opacity: 0;
+      transform: translateY(-18px);
+      animation: memory-fall .58s ease-out both;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -24px;
+      top: 6px;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #a9e8ff;
+      border-radius: 50%;
+      background: #152349;
+      box-shadow: 0 0 0 4px rgba(108,236,255,.08);
+    }
+    .timeline-item:nth-child(1) { animation-delay: .48s; }
+    .timeline-item:nth-child(2) { animation-delay: .78s; }
+    .timeline-item:nth-child(3) { animation-delay: 1.08s; }
+    .timeline-item:nth-child(4) { animation-delay: 1.38s; }
+    .timeline-year { display: block; margin-bottom: 2px; color: #9ec9e7; font-size: 12px; font-weight: 800; }
+    .timeline-copy { display: block; color: rgba(255,255,255,.88); font-size: 14px; line-height: 1.45; }
+    .timeline-item.is-today .timeline-year,
+    .timeline-item.is-today .timeline-copy { color: #fff1b8; }
+    .timeline-item.is-today::before { border-color: #ffe29a; background: #fff3c5; box-shadow: 0 0 16px rgba(255,226,154,.8); }
+    .opening-note {
+      margin: 22px 0 0;
+      color: rgba(255,255,255,.68);
+      font-size: 13px;
+      line-height: 1.7;
+      opacity: 0;
+      transform: translateY(-14px);
+      animation: memory-fall .58s 1.7s ease-out forwards;
+    }
+    .start-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--safe-bottom) + 34px);
+      margin: 0;
+      color: rgba(255,255,255,.76);
+      font-size: 14px;
+      text-align: center;
+      opacity: 0;
+      animation: start-hint-in .6s 2.05s ease-out forwards, start-hint-pulse 1.8s 2.65s ease-in-out infinite;
+    }
+    @keyframes timeline-line { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    @keyframes memory-fall { to { opacity: 1; transform: translateY(0); } }
+    @keyframes start-hint-in { to { opacity: .76; } }
+    @keyframes start-hint-pulse { 50% { opacity: .4; transform: translateY(3px); } }
+
+    /* 所有交互层默认隐藏；仅当前节点添加 .is-active。 */
+    .interaction-layer {
+      position: absolute;
+      z-index: 20;
+      inset: 0;
+      display: none;
+      overflow: hidden;
+      touch-action: none;
+      background: radial-gradient(circle at 50% 54%, transparent 15%, #01040cbc 100%);
+    }
+    .interaction-layer.is-active { display: block; animation: layer-in .28s ease both; }
+    .interaction-layer.is-completing { pointer-events: none; animation: layer-complete .72s ease both; }
+    .interaction-layer.final-layer { background: rgba(2, 5, 14, .68); backdrop-filter: blur(3px); }
+
+    .node-guide {
+      position: absolute;
+      z-index: 5;
+      top: calc(var(--safe-top) + 68px);
+      left: 50%;
+      width: min(90vw, 520px);
+      transform: translateX(-50%);
+      text-align: center;
+      text-shadow: 0 2px 14px #000;
+      pointer-events: none;
+    }
+    .node-guide h2 { margin: 0 0 8px; font-size: clamp(21px, 6vw, 31px); }
+    .node-guide p { margin: 0; color: #e1e7ff; font-size: 14px; line-height: 1.55; }
+    .success-toast {
+      position: absolute;
+      z-index: 60;
+      left: 50%;
+      bottom: calc(var(--safe-bottom) + 28px);
+      max-width: 88vw;
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      border: 1px solid #baf5ff66;
+      border-radius: 999px;
+      background: #071528eb;
+      padding: 10px 17px;
+      text-align: center;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .success-toast.show { animation: toast-show 1.45s ease both; }
+
+    /* ---------- 节点 1：拖拽种子 ---------- */
+    .soil-target {
+      position: absolute;
+      left: 50%;
+      top: 60%;
+      width: 166px;
+      height: 78px;
+      transform: translate(-50%, -50%);
+      border: 2px dashed #adffbcbf;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, #76502dd6, #3521129c 62%, transparent 65%);
+      box-shadow: 0 0 50px #5dff8742;
+    }
+    .soil-target.is-ready { border-style: solid; box-shadow: 0 0 22px #beffc8, 0 0 70px #5dff8799; }
+    .seed {
+      position: absolute;
+      z-index: 3;
+      left: 50%;
+      bottom: calc(var(--safe-bottom) + 84px);
+      width: 72px;
+      height: 72px;
+      margin-left: -36px;
+      border-radius: 52% 48% 48% 52%;
+      background: radial-gradient(circle at 38% 30%, #fff, #fff0a4 12%, #73e991 35%, #228f59 72%);
+      box-shadow: 0 0 18px #b4ffc2, 0 0 58px #62ff8d96;
+      touch-action: none;
+      animation: breathe 1.25s ease-in-out infinite;
+    }
+    .seed.is-dragging { animation: none; transform: scale(1.1); }
+
+    /* ---------- 节点 2：经典退出弹窗 ---------- */
+    .retro-window {
+      position: absolute;
+      left: 50%;
+      top: 52%;
+      width: min(88vw, 390px);
+      transform: translate(-50%, -50%);
+      border: 3px ridge #eee;
+      background: #d4d0c8;
+      color: #111;
+      box-shadow: 13px 15px 0 #0008;
+      font-family: "SimSun", monospace;
+    }
+    .retro-title { padding: 7px 9px; background: linear-gradient(90deg, #001978, #178cc5); color: #fff; font-weight: 700; }
+    .retro-content { padding: 26px 16px 12px; text-align: center; line-height: 1.7; }
+    .retro-actions { display: flex; justify-content: center; gap: 13px; padding: 15px 16px 20px; }
+    .retro-actions button { min-width: 92px; border: 2px outset #eee; background: #d4d0c8; padding: 8px; color: #111; }
+    .retro-actions button:disabled { color: #888; }
+    .retro-actions .confirm-exit { animation: old-focus 1s steps(2) infinite; }
+
+    /* ---------- 节点 3：Canvas 灰尘蒙版 ---------- */
+    .dust-canvas { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; touch-action: none; }
+    .scratch-meter {
+      position: absolute;
+      z-index: 4;
+      left: 50%;
+      bottom: calc(var(--safe-bottom) + 44px);
+      width: min(72vw, 340px);
+      height: 9px;
+      transform: translateX(-50%);
+      overflow: hidden;
+      border-radius: 99px;
+      background: #ffffff29;
+    }
+    .scratch-meter span { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--cyan), #fff); transition: width .1s linear; }
+
+    /* ---------- 节点 4：点击游戏图标 ---------- */
+    #layer-reconnect {
+      background:
+        linear-gradient(180deg, rgba(250,252,253,.98) 0 25%, rgba(236,246,246,.8) 38%, rgba(0,211,194,.14) 100%),
+        radial-gradient(circle at 50% 62%, transparent 12%, rgba(2,18,24,.42) 100%);
+    }
+    #layer-reconnect .node-guide {
+      top: calc(var(--safe-top) + 24px);
+      color: #172126;
+      text-shadow: none;
+    }
+    #layer-reconnect .node-guide h2 {
+      margin-bottom: 6px;
+      color: #00bfae;
+      font-size: clamp(28px, 8vw, 38px);
+      font-weight: 900;
+    }
+    #layer-reconnect .node-guide p { color: #4f5b61; line-height: 1.55; }
+    .reconnect-download {
+      display: block;
+      margin-top: 5px;
+      color: #00a998;
+      font-weight: 800;
+    }
+    .phone-screen {
+      position: absolute;
+      left: 50%;
+      top: 56%;
+      width: min(72vw, 310px);
+      height: min(56vh, 520px);
+      transform: translate(-50%, -50%);
+      border: 7px solid #dbe4e7;
+      border-radius: 35px;
+      background: linear-gradient(155deg, #fff, #eff5f5 52%, #dcebea);
+      box-shadow: 0 24px 70px rgba(0,55,60,.3), inset 0 0 40px rgba(0,211,194,.08);
+    }
+    .phone-screen::before { content: ""; position: absolute; top: 9px; left: 50%; width: 30%; height: 7px; transform: translateX(-50%); border-radius: 99px; background: #b8c7ca; }
+    .game-icon {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: 92px;
+      height: 92px;
+      transform: translate(-50%, -50%);
+      border-radius: 23px;
+      border: 3px solid rgba(133,255,244,.85);
+      background: linear-gradient(145deg, #22dfcf, #00bfae);
+      box-shadow: 0 0 0 6px rgba(0,211,194,.1), 0 0 18px rgba(0,211,194,.38);
+      animation: reconnect-edge-pulse 1.8s ease-in-out infinite;
+    }
+    .game-icon::before { content: "魔法哈奇"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; font-weight: 900; white-space: nowrap; text-shadow: 0 2px 5px #00766f; }
+    .app-name { position: absolute; top: calc(46% + 58px); left: 0; right: 0; color: #344247; text-align: center; font-size: 13px; font-weight: 700; }
+
+    /* ---------- 节点 5：长按回应拥抱 ---------- */
+    .hold-zone {
+      position: absolute;
+      left: 50%;
+      top: 57%;
+      width: min(46vw, 210px);
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      touch-action: none;
+    }
+    .hold-progress {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(#fff var(--hold-progress, 0%), #ffffff20 0);
+      filter: drop-shadow(0 0 18px #8ceaff);
+    }
+    .hold-progress::after {
+      content: "按住回应拥抱";
+      position: absolute;
+      inset: 11px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: radial-gradient(circle, #756cff70, #10162fe9 72%);
+      font-weight: 800;
+    }
+    .hold-zone.is-holding { transform: translate(-50%, -50%) scale(.97); }
+    .heart-burst { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle, #fff 0 2%, #ff9ee688 12%, transparent 42%); }
+    .heart-burst.play { animation: heart-burst .72s ease-out both; }
+
+    /* ---------- 节点 6：向上划卡 QTE ---------- */
+    .qte-card {
+      position: absolute;
+      left: 50%;
+      bottom: calc(var(--safe-bottom) + 54px);
+      width: 132px;
+      height: 184px;
+      transform: translate(calc(-50% + var(--drag-x, 0px)), var(--drag-y, 0px));
+      border: 2px solid #c7f3ff;
+      border-radius: 15px;
+      background: radial-gradient(circle, #be9aff, #5140d3 45%, #171b4e 75%);
+      box-shadow: 0 0 24px #6ceaff, inset 0 0 26px #fff5;
+      touch-action: none;
+    }
+    .qte-card::before { content: "✦"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 58px; text-shadow: 0 0 20px #fff; }
+    .qte-card.is-dragging { transition: none; }
+    .qte-card.is-cast { animation: cast-card .7s ease-in forwards; }
+    .swipe-arrow { position: absolute; left: 50%; bottom: calc(var(--safe-bottom) + 250px); transform: translateX(-50%); color: #d0f8ff; font-size: 44px; animation: arrow-up 1.05s ease-in-out infinite; }
+
+    /* ---------- 节点 7：终极认领（暗调高级毛玻璃） ---------- */
+    .claim-backdrop-stars,
+    .claim-backdrop-stars::before,
+    .claim-backdrop-stars::after {
+      position: absolute;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255,255,255,.78) 1px, transparent 1.5px);
+      background-size: 64px 64px;
+      opacity: .2;
+    }
+    .claim-backdrop-stars::before { transform: translate(23px, 17px) scale(.78); opacity: .28; }
+    .claim-backdrop-stars::after { transform: translate(-31px, 29px) scale(1.2); opacity: .12; }
+    .claim-panel {
+      position: absolute;
+      z-index: 2;
+      left: 50%;
+      top: 52%;
+      width: min(90vw, 430px);
+      transform: translate(-50%, -50%);
+      padding: 30px 28px 28px;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 24px;
+      background: rgba(20, 25, 40, .6);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      text-align: center;
+    }
+    .claim-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 18px;
+      color: rgba(255,255,255,.8);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .04em;
+    }
+    .claim-status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #82d9b2;
+      box-shadow: 0 0 0 4px rgba(130,217,178,.1);
+    }
+    .dragon-choice-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+      margin: 0 0 18px;
+    }
+    .dragon-choice {
+      min-height: 98px;
+      padding: 8px 5px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 12px;
+      background: rgba(255,255,255,.05);
+      color: rgba(255,255,255,.78);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+      transition: border-color .16s ease, background .16s ease, transform .16s ease;
+    }
+    .dragon-choice:hover,
+    .dragon-choice:active,
+    .dragon-choice.is-selected {
+      border-color: rgba(255,226,154,.9);
+      background: rgba(255,226,154,.14);
+      color: #fff6d5;
+      transform: translateY(-2px);
+    }
+    .dragon-choice-art {
+      display: block;
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 4px;
+      background-image: var(--dragon-sheet);
+      background-position: 0 0;
+      background-repeat: no-repeat;
+      background-size: 400% 400%;
+      filter: drop-shadow(0 4px 7px rgba(0,0,0,.22));
+    }
+    .claim-panel h2 {
+      margin: 0 0 10px;
+      color: #fff;
+      font-size: clamp(25px, 6vw, 30px);
+      line-height: 1.25;
+      letter-spacing: -.02em;
+      text-shadow: 0 2px 4px rgba(0,0,0,.28);
+    }
+    .claim-intro { margin: 0 0 18px; color: rgba(255,255,255,.82); font-size: 14px; line-height: 1.7; }
+    .claim-bond-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 22px;
+      padding: 13px 14px;
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, .2);
+      text-align: left;
+    }
+    .claim-bond-icon {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 10px;
+      background: rgba(255,255,255,.08);
+      font-size: 18px;
+    }
+    .claim-bond-copy strong { display: block; color: #fff; font-size: 13px; }
+    .claim-bond-copy span { display: block; margin-top: 4px; color: rgba(255,255,255,.68); font-size: 12px; line-height: 1.4; }
+    .claim-button {
+      width: 100%;
+      min-height: 54px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f9d423 0%, #ff4e50 100%);
+      color: #333;
+      box-shadow: 0 10px 25px rgba(255, 78, 80, .22);
+      font-weight: 900;
+      transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+    }
+    .claim-button:active { transform: translateY(2px) scale(.99); filter: brightness(.94); box-shadow: 0 5px 14px rgba(255,78,80,.18); }
+    .claim-next { margin: 14px 0 0; color: rgba(255,255,255,.8); font-size: 12px; line-height: 1.5; }
+    .claim-panel.claimed .claim-button { pointer-events: none; }
+    .final-layer.is-claim-success {
+      pointer-events: none;
+      animation: claim-success-fade .72s cubic-bezier(.4, 0, .2, 1) forwards;
+    }
+
+    @keyframes layer-in { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes layer-complete { 0%, 35% { opacity: 1 } 100% { opacity: 0; filter: brightness(2) } }
+    @keyframes toast-show { 15%, 80% { opacity: 1; transform: translate(-50%, 0) } }
+    @keyframes breathe { 50% { transform: scale(.94); filter: brightness(1.25) } }
+    @keyframes old-focus { 50% { outline: 2px dotted #111; outline-offset: -6px } }
+    @keyframes reconnect-edge-pulse {
+      50% { border-color: #d5fffb; box-shadow: 0 0 0 8px rgba(0,211,194,.08), 0 0 25px rgba(0,211,194,.55); }
+    }
+    @keyframes heart-burst { 0% { opacity: 0; transform: scale(.4) } 35% { opacity: 1 } 100% { opacity: 0; transform: scale(2) } }
+    @keyframes arrow-up { 50% { transform: translate(-50%, -18px); opacity: .45 } }
+    @keyframes cast-card { to { transform: translate(calc(-50% + var(--drag-x, 0px)), -135vh) rotate(18deg) scale(.5); filter: brightness(3) } }
+    @keyframes egg-float { 50% { transform: translateY(-10px) rotate(1.5deg) } }
+    @keyframes claim-success-fade {
+      0% { opacity: 1; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+
+    /* 竖屏手机保持全屏；超过 3:4 的宽屏统一使用竖屏舞台，左右留黑。 */
+    @media (min-aspect-ratio: 3/4) {
+      .app {
+        width: calc(100vh * 3 / 4);
+        height: 100vh;
+        box-shadow: 0 0 0 1px #000;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app" class="app">
+    <!--
+      【视频素材替换位置】
+      1. 可直接把 src 改成线上 CDN 地址；
+      2. 可通过 URL 参数 ?video=https://example.com/haqi.mp4 动态指定；
+      3. 开发调试时可点击右上角“选择视频”载入本地文件。
+      最终视频必须不少于 02:15，否则第 7 节点无法到达。
+    -->
+    <video id="cgVideo" class="cg-video" playsinline webkit-playsinline preload="auto" src="https://cdn.keepwork.com/keepwork/cdn/haqi_onboarding.mp4"></video>
+
+    <div class="debug-bar" aria-hidden="true"><span id="videoProgress" class="video-progress"></span></div>
+
+    <section id="startGate" class="start-gate" role="button" tabindex="0" aria-label="点击任意位置开始新故事">
+      <div class="opening-memory">
+        <div class="opening-kicker">一段没有结束的冒险</div>
+        <h1>哈奇 · 重逢之旅</h1>
+        <div class="opening-timeline" aria-label="魔法哈奇时间轴">
+          <div class="timeline-item"><span class="timeline-year">2009 年 11 月</span><span class="timeline-copy">《哈奇小镇》上线</span></div>
+          <div class="timeline-item"><span class="timeline-year">2010 - 2011 年</span><span class="timeline-copy">《魔法哈奇》诞生，抱抱龙陪伴每一次冒险</span></div>
+          <div class="timeline-item"><span class="timeline-year">2026 年 6 月</span><span class="timeline-copy">哈奇微信小程序发布</span></div>
+          <div class="timeline-item is-today"><span class="timeline-year">今天</span><span class="timeline-copy">《魔法哈奇》手机版登录 TapTap</span></div>
+        </div>
+        <p id="startText" class="opening-note">有些故事，会在重逢时继续。</p>
+      </div>
+      <p id="startHint" class="start-hint">点击任意位置 · 开始新故事</p>
+    </section>
+
+    <!-- 节点 1：00:29。替换种子、土地区域时，可将 .seed/.soil-target 换成透明 PNG。 -->
+    <section id="layer-seed" class="interaction-layer" aria-label="播种回忆">
+      <div class="node-guide"><h2>播种回忆</h2><p>拖动发光种子，把小小心愿种进泥土</p></div>
+      <div class="soil-target" data-soil></div>
+      <div class="seed" data-seed role="button" aria-label="可拖动的种子"></div>
+    </section>
+
+    <!-- 节点 2：00:48。玩家只能点击“确认”，取消按钮固定禁用。 -->
+    <section id="layer-exit" class="interaction-layer" aria-label="无奈离别">
+      <div class="retro-window">
+        <div class="retro-title">Magic Haqi Online</div>
+        <div class="retro-content">是否确认退出游戏？<br><small>未保存的冒险进度可能丢失。</small></div>
+        <div class="retro-actions">
+          <button type="button" disabled>取消</button>
+          <button class="confirm-exit" type="button" data-confirm-exit>确认</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 节点 3：01:06。Canvas 覆盖整个视频视口，手指轨迹会擦除其 alpha。 -->
+    <section id="layer-scratch" class="interaction-layer" aria-label="擦拭时光">
+      <div class="node-guide"><h2>擦拭时光</h2><p>滑动屏幕，擦去旧法杖上的灰尘</p></div>
+      <canvas class="dust-canvas" data-dust-canvas></canvas>
+      <div class="scratch-meter"><span data-scratch-meter></span></div>
+    </section>
+
+    <!-- 节点 4：01:30。正式素材可用 background-image 替换 .game-icon。 -->
+    <section id="layer-reconnect" class="interaction-layer" aria-label="重连世界">
+      <div class="node-guide"><h2>魔法哈奇</h2><p>手机版在 TapTap 正式公测<br>15 款经典小游戏被 AI 重新复活<span class="reconnect-download">100% 迁移 PC 端玩法，支持老账号召回 · 请到 TapTap 下载</span></p></div>
+      <div class="phone-screen">
+        <button class="game-icon" type="button" data-game-icon aria-label="打开哈奇游戏"></button>
+        <div class="app-name">Magic Haqi</div>
+      </div>
+    </section>
+
+    <!-- 节点 5：01:40。长按 2 秒后触发亲密度光效。 -->
+    <section id="layer-hug" class="interaction-layer" aria-label="破防重逢">
+      <div class="node-guide"><h2>破防重逢</h2><p>长按屏幕 2 秒，回应抱抱龙和糖豆豆的拥抱</p></div>
+      <div class="hold-zone" data-hold-zone><div class="hold-progress" data-hold-progress></div></div>
+      <div class="heart-burst" data-heart-burst></div>
+    </section>
+
+    <!-- 节点 6：01:50。滑动必须从卡牌区域开始，且主要方向为向上。 -->
+    <section id="layer-card" class="interaction-layer" aria-label="热血划卡">
+      <div class="node-guide"><h2>热血划卡</h2><p>从卡牌上向上滑动，释放魔法击飞怪物</p></div>
+      <div class="swipe-arrow">↑</div>
+      <div class="qte-card" data-qte-card></div>
+    </section>
+
+    <!-- 节点 7：02:15。召回自己的抱抱龙。 -->
+    <section id="layer-claim" class="interaction-layer final-layer" aria-label="认领抱抱龙">
+      <div class="claim-backdrop-stars" aria-hidden="true"></div>
+      <div class="claim-panel" data-claim-panel>
+        <div class="claim-status">哈奇世界已重新连接</div>
+        <h2>召回你的抱抱龙</h2>
+        <p class="claim-intro">选择你要召回的抱抱龙。<br>它会在哈奇星球自动孵化。</p>
+        <div class="dragon-choice-grid" data-dragon-choices aria-label="选择抱抱龙">
+          <button class="dragon-choice is-selected" type="button" data-dragon-id="dragon_green">
+            <span class="dragon-choice-art" style="--dragon-sheet:url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp')"></span>
+            抱抱龙小绿
+          </button>
+          <button class="dragon-choice" type="button" data-dragon-id="dragon_orange">
+            <span class="dragon-choice-art" style="--dragon-sheet:url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_orange_20260528090846.webp')"></span>
+            抱抱龙小橙
+          </button>
+          <button class="dragon-choice" type="button" data-dragon-id="dragon_purple">
+            <span class="dragon-choice-art" style="--dragon-sheet:url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_purple_20260528090706.webp')"></span>
+            抱抱龙小紫
+          </button>
+        </div>
+        <div class="claim-bond-card">
+          <span class="claim-bond-icon" aria-hidden="true">♥</span>
+          <span class="claim-bond-copy"><strong>你们的冒险还在继续</strong><span>已经拥有的抱抱龙不会重复孵化</span></span>
+        </div>
+        <button class="claim-button" type="button" data-claim>召回抱抱龙</button>
+        <p class="claim-next">下一站 · 哈奇星球</p>
+      </div>
+    </section>
+
+    <div id="toast" class="success-toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const video = document.querySelector('#cgVideo');
+      const startGate = document.querySelector('#startGate');
+      const startText = document.querySelector('#startText');
+      const startHint = document.querySelector('#startHint');
+      const videoProgress = document.querySelector('#videoProgress');
+      const toast = document.querySelector('#toast');
+      let gameStartedSent = false;
+
+      function post(type, data = {}) {
+        try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+      }
+
+      function sendGameStarted() {
+        if (gameStartedSent) return;
+        gameStartedSent = true;
+        post('gameStarted');
+      }
+
+      /**
+       * 七个“绝对时间点”，单位为秒。
+       * 不设置提前量；只有 currentTime >= triggerAt 时才允许 pause()。
+       * 29 / 48 / 66 / 90 / 100 / 110 / 135 分别对应需求中的精确时间。
+       */
+      const TIMELINE = [
+        { id: 'seed',      triggerAt: 29,  layer: '#layer-seed',      setup: setupSeed },
+        { id: 'exit',      triggerAt: 48,  layer: '#layer-exit',      setup: setupExit },
+        { id: 'scratch',   triggerAt: 66,  layer: '#layer-scratch',   setup: setupScratch },
+        { id: 'reconnect', triggerAt: 90,  layer: '#layer-reconnect', setup: setupReconnect },
+        { id: 'hug',       triggerAt: 100, layer: '#layer-hug',       setup: setupHug },
+        { id: 'card',      triggerAt: 110, layer: '#layer-card',      setup: setupCard },
+        { id: 'claim',     triggerAt: 135, layer: '#layer-claim',     setup: setupClaim, terminal: true }
+      ];
+
+      class VideoOnboardingController {
+        constructor(media, timeline) {
+          this.video = media;
+          this.timeline = timeline.map(item => ({
+            ...item,
+            element: document.querySelector(item.layer),
+            triggered: false
+          }));
+          this.activeNode = null;
+          this.completing = false;
+          this.lastObservedTime = 0;
+
+          // 核心要求：使用 timeupdate 监听 HTML5 video.currentTime。
+          this.video.addEventListener('timeupdate', () => this.handleTimeUpdate());
+          this.video.addEventListener('seeking', () => {
+            this.lastObservedTime = this.video.currentTime;
+          });
+          this.video.addEventListener('loadedmetadata', () => this.updateVideoProgress());
+          this.video.addEventListener('ended', () => {
+            this.dispatch('haqi:video-ended');
+            // 当前绑定的测试片约 02:11.936，短于终局节点 02:15。
+            // 测试片结束时直接进入认领层；替换为正式 02:15+ 素材后仍严格在 135 秒触发。
+            const claimNode = this.timeline.find(item => item.id === 'claim');
+            if (claimNode && !claimNode.triggered && !this.activeNode && this.video.duration < claimNode.triggerAt) {
+              claimNode.triggered = true;
+              this.activeNode = claimNode;
+              this.video.classList.add('is-paused-for-node');
+              claimNode.element.classList.add('is-active');
+              claimNode.setup?.(this, claimNode);
+            }
+          });
+        }
+
+        handleTimeUpdate() {
+          const now = this.video.currentTime;
+          this.updateVideoProgress();
+
+          if (!this.activeNode && !this.video.seeking) {
+            // 选择尚未触发、且已经真正到达绝对秒数的第一个节点。
+            // 这里绝不使用 triggerAt - 0.1 之类的提前量，避免旁白未落就暂停。
+            const node = this.timeline.find(item => !item.triggered && now >= item.triggerAt);
+            if (node) {
+              this.pauseAtNode(node, now);
+              return;
+            }
+          }
+          this.lastObservedTime = now;
+        }
+
+        pauseAtNode(node, observedTime) {
+          // 双重保护：若浏览器异常回调发生在目标秒数之前，不执行暂停。
+          if (observedTime < node.triggerAt || node.triggered || this.activeNode) return;
+
+          node.triggered = true;
+          this.activeNode = node;
+          this.video.pause();
+          // timeupdate 回调可能晚于目标时间；回拨到绝对时间点，避免交互覆盖在错误画面上。
+          if (Math.abs(this.video.currentTime - node.triggerAt) > .04) {
+            this.video.currentTime = node.triggerAt;
+          }
+          this.lastObservedTime = node.triggerAt;
+          this.video.classList.add('is-paused-for-node');
+          node.element.classList.add('is-active');
+          node.setup?.(this, node);
+
+          this.dispatch('haqi:node-enter', {
+            id: node.id,
+            expectedTime: node.triggerAt,
+            actualTime: observedTime,
+            drift: observedTime - node.triggerAt
+          });
+        }
+
+        /**
+         * 普通节点统一成功接口：
+         * 1. 播放 CSS/业务特效；2. 隐藏 UI；3. 调用 video.play() 续播。
+         * extraEffect 可替换为粒子系统、音效、埋点或网络请求。
+         */
+        async complete(message, extraEffect, effectDuration = 680) {
+          if (!this.activeNode || this.completing || this.activeNode.terminal) return;
+          this.completing = true;
+          const node = this.activeNode;
+          node.element.classList.add('is-completing');
+          showToast(message);
+
+          try {
+            await Promise.resolve(extraEffect?.({ node, video: this.video, layer: node.element }));
+          } catch (error) {
+            console.error('交互成功特效执行失败：', error);
+          }
+
+          this.dispatch('haqi:node-complete', { id: node.id, currentTime: this.video.currentTime });
+          await delay(effectDuration);
+          node.element.classList.remove('is-active', 'is-completing');
+          this.video.classList.remove('is-paused-for-node');
+          this.activeNode = null;
+          this.completing = false;
+
+          try {
+            await this.video.play();
+          } catch (error) {
+            // 部分 iOS/微信环境会在异步动画后再次拦截 play()，显示用户续播按钮兜底。
+            console.warn('自动续播被浏览器拦截：', error);
+            startText.textContent = '浏览器阻止了自动续播，请点击继续。';
+            startHint.textContent = '点击任意位置 · 继续播放';
+            startGate.hidden = false;
+          }
+        }
+
+        reset() {
+          this.timeline.forEach(node => {
+            node.triggered = false;
+            node.element.classList.remove('is-active', 'is-completing');
+          });
+          this.activeNode = null;
+          this.completing = false;
+          this.lastObservedTime = 0;
+          this.video.classList.remove('is-paused-for-node');
+        }
+
+        updateVideoProgress() {
+          const ratio = Number.isFinite(this.video.duration) && this.video.duration > 0
+            ? Math.min(1, this.video.currentTime / this.video.duration)
+            : 0;
+          videoProgress.style.width = `${ratio * 100}%`;
+        }
+
+        dispatch(name, detail = {}) {
+          window.dispatchEvent(new CustomEvent(name, { detail }));
+        }
+      }
+
+      const controller = new VideoOnboardingController(video, TIMELINE);
+
+      /* ==================== 节点 1：拖拽种子 ==================== */
+      function setupSeed(ctrl, node) {
+        const seed = node.element.querySelector('[data-seed]');
+        const soil = node.element.querySelector('[data-soil]');
+        let dragging = false;
+        let offsetX = 0;
+        let offsetY = 0;
+        let layerBounds = null;
+
+        seed.onpointerdown = event => {
+          if (ctrl.completing) return;
+          const rect = seed.getBoundingClientRect();
+          layerBounds = node.element.getBoundingClientRect();
+          dragging = true;
+          offsetX = event.clientX - rect.left;
+          offsetY = event.clientY - rect.top;
+          seed.setPointerCapture?.(event.pointerId);
+          seed.classList.add('is-dragging');
+          event.preventDefault();
+        };
+
+        seed.onpointermove = event => {
+          if (!dragging || !layerBounds) return;
+          seed.style.left = `${event.clientX - layerBounds.left - offsetX}px`;
+          seed.style.top = `${event.clientY - layerBounds.top - offsetY}px`;
+          seed.style.bottom = 'auto';
+          seed.style.marginLeft = '0';
+          soil.classList.toggle('is-ready', overlapRatio(seed.getBoundingClientRect(), soil.getBoundingClientRect()) >= .35);
+          event.preventDefault();
+        };
+
+        const drop = event => {
+          if (!dragging) return;
+          dragging = false;
+          layerBounds = null;
+          seed.classList.remove('is-dragging');
+          if (overlapRatio(seed.getBoundingClientRect(), soil.getBoundingClientRect()) >= .35) {
+            soil.classList.add('is-ready');
+            ctrl.complete('心愿已经种进家园', () => seed.animate(
+              [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.25)', opacity: 0 }],
+              { duration: 620, easing: 'ease-in', fill: 'forwards' }
+            ).finished);
+          }
+          event.preventDefault();
+        };
+
+        seed.onpointerup = drop;
+        seed.onpointercancel = drop;
+      }
+
+      /* ==================== 节点 2：确认退出 ==================== */
+      function setupExit(ctrl, node) {
+        node.element.querySelector('[data-confirm-exit]').onclick = () => {
+          // 瞬间压暗模拟“切断画面”，随后恢复视频进入现实加班镜头。
+          ctrl.complete('再见……我会一直等你', () => document.querySelector('#app').animate(
+            [{ filter: 'brightness(1)' }, { filter: 'brightness(0)' }, { filter: 'brightness(1)' }],
+            { duration: 620, easing: 'steps(2,end)' }
+          ).finished, 650);
+        };
+      }
+
+      /* ==================== 节点 3：Canvas 擦拭 ==================== */
+      function setupScratch(ctrl, node) {
+        const canvas = node.element.querySelector('[data-dust-canvas]');
+        const meter = node.element.querySelector('[data-scratch-meter]');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const completeRatio = .42;
+        let drawing = false;
+        let previous = null;
+        let coverageCheckPending = false;
+
+        // Canvas 的位图尺寸按 DPR 放大，保证 Retina 屏不模糊；最高取 2，控制内存开销。
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // 灰尘层绘制位置：可在这里将渐变替换为灰尘纹理图片 drawImage()。
+        const dust = context.createLinearGradient(0, 0, rect.width, rect.height);
+        dust.addColorStop(0, '#6f6c70');
+        dust.addColorStop(.48, '#b4aca0');
+        dust.addColorStop(1, '#4f4d52');
+        context.fillStyle = dust;
+        context.fillRect(0, 0, rect.width, rect.height);
+        context.fillStyle = '#f5ecdc24';
+        for (let i = 0; i < 900; i++) {
+          context.fillRect(Math.random() * rect.width, Math.random() * rect.height, Math.random() * 3 + 1, Math.random() * 3 + 1);
+        }
+
+        const scratchAt = event => {
+          const bounds = canvas.getBoundingClientRect();
+          const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+          context.globalCompositeOperation = 'destination-out';
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.lineWidth = Math.max(44, Math.min(bounds.width, bounds.height) * .09);
+          context.beginPath();
+          context.moveTo(previous?.x ?? point.x, previous?.y ?? point.y);
+          context.lineTo(point.x, point.y);
+          context.stroke();
+          previous = point;
+          scheduleCoverageCheck();
+        };
+
+        const scheduleCoverageCheck = () => {
+          if (coverageCheckPending || ctrl.completing) return;
+          coverageCheckPending = true;
+          requestAnimationFrame(() => {
+            coverageCheckPending = false;
+            const erased = calculateErasedRatio(context, canvas, 14);
+            meter.style.width = `${Math.min(100, erased / completeRatio * 100)}%`;
+            if (erased >= completeRatio) {
+              ctrl.complete('旧日时光重新亮了起来', () => canvas.animate(
+                [{ opacity: 1 }, { opacity: 0 }],
+                { duration: 680, fill: 'forwards' }
+              ).finished);
+            }
+          });
+        };
+
+        canvas.onpointerdown = event => {
+          drawing = true;
+          previous = null;
+          canvas.setPointerCapture?.(event.pointerId);
+          scratchAt(event);
+          event.preventDefault();
+        };
+        canvas.onpointermove = event => {
+          if (!drawing) return;
+          scratchAt(event);
+          event.preventDefault();
+        };
+        canvas.onpointerup = canvas.onpointercancel = event => {
+          drawing = false;
+          previous = null;
+          event.preventDefault();
+        };
+      }
+
+      /* ==================== 节点 4：点击游戏图标 ==================== */
+      function setupReconnect(ctrl, node) {
+        const icon = node.element.querySelector('[data-game-icon]');
+        icon.onclick = () => ctrl.complete('服务器连接中……', () => icon.animate(
+          [{ opacity: 1, boxShadow: '0 0 18px rgba(0,211,194,.38)' }, { opacity: 0, boxShadow: '0 0 45px rgba(0,211,194,.85)' }],
+          { duration: 700, easing: 'ease-in', fill: 'forwards' }
+        ).finished);
+      }
+
+      /* ==================== 节点 5：长按 2 秒 ==================== */
+      function setupHug(ctrl, node) {
+        const zone = node.element.querySelector('[data-hold-zone]');
+        const ring = node.element.querySelector('[data-hold-progress]');
+        const burst = node.element.querySelector('[data-heart-burst]');
+        const requiredDuration = 2000;
+        let startedAt = 0;
+        let startPoint = null;
+        let animationFrame = 0;
+
+        const resetHold = () => {
+          cancelAnimationFrame(animationFrame);
+          animationFrame = 0;
+          startedAt = 0;
+          startPoint = null;
+          zone.classList.remove('is-holding');
+          ring.style.setProperty('--hold-progress', '0%');
+        };
+
+        const updateProgress = now => {
+          const ratio = Math.min(1, (now - startedAt) / requiredDuration);
+          ring.style.setProperty('--hold-progress', `${ratio * 100}%`);
+          if (ratio >= 1) {
+            cancelAnimationFrame(animationFrame);
+            navigator.vibrate?.([35, 30, 70]);
+            burst.classList.add('play');
+            ctrl.complete('亲密度 +100 · 欢迎回来', null, 760);
+          } else {
+            animationFrame = requestAnimationFrame(updateProgress);
+          }
+        };
+
+        zone.onpointerdown = event => {
+          if (ctrl.completing) return;
+          startPoint = { x: event.clientX, y: event.clientY };
+          startedAt = performance.now();
+          zone.setPointerCapture?.(event.pointerId);
+          zone.classList.add('is-holding');
+          animationFrame = requestAnimationFrame(updateProgress);
+          event.preventDefault();
+        };
+        zone.onpointermove = event => {
+          if (!startedAt) return;
+          // 位移超过 48px 视为取消长按，防止滑动误触。
+          if (Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y) > 48) resetHold();
+          event.preventDefault();
+        };
+        zone.onpointerup = zone.onpointercancel = event => {
+          if (!ctrl.completing) resetHold();
+          event.preventDefault();
+        };
+      }
+
+      /* ==================== 节点 6：向上滑卡 ==================== */
+      function setupCard(ctrl, node) {
+        const card = node.element.querySelector('[data-qte-card]');
+        let startPoint = null;
+        let startedAt = 0;
+
+        const resetCardPosition = () => {
+          card.classList.remove('is-dragging');
+          card.style.setProperty('--drag-x', '0px');
+          card.style.setProperty('--drag-y', '0px');
+        };
+
+        card.onpointerdown = event => {
+          startPoint = { x: event.clientX, y: event.clientY };
+          startedAt = performance.now();
+          card.setPointerCapture?.(event.pointerId);
+          card.classList.add('is-dragging');
+          event.preventDefault();
+        };
+        card.onpointermove = event => {
+          if (!startPoint) return;
+          card.style.setProperty('--drag-x', `${event.clientX - startPoint.x}px`);
+          card.style.setProperty('--drag-y', `${event.clientY - startPoint.y}px`);
+          event.preventDefault();
+        };
+        card.onpointerup = event => {
+          if (!startPoint) return;
+          const dx = event.clientX - startPoint.x;
+          const dy = event.clientY - startPoint.y;
+          const elapsed = Math.max(1, performance.now() - startedAt);
+          const distance = Math.hypot(dx, dy);
+          const directionIsUp = dy <= -72 && Math.abs(dy) > Math.abs(dx) * 1.25;
+          const velocityIsEnough = distance / elapsed >= .18;
+          startPoint = null;
+
+          if (directionIsUp && velocityIsEnough) {
+            card.classList.remove('is-dragging');
+            card.classList.add('is-cast');
+            ctrl.complete('魔法卡牌释放成功', null, 720);
+          } else {
+            resetCardPosition();
+            showToast('请从卡牌上快速向上滑动');
+          }
+          event.preventDefault();
+        };
+        card.onpointercancel = () => {
+          startPoint = null;
+          resetCardPosition();
+        };
+      }
+
+      /* ==================== 节点 7：认领完成 ==================== */
+      let gameFinishedSent = false;
+      function onClaimSuccess(petId) {
+        if (gameFinishedSent) return;
+        gameFinishedSent = true;
+        post('gameFinished', {
+          earnedPoints: 10,
+          completed: true,
+          passed: true,
+          petId,
+          selectedPet: { id: petId, source: 'haqi' },
+          setHomePlanet: 'haqi',
+          autoHatch: true,
+          finishedAt: Date.now()
+        });
+      }
+
+      function setupClaim(ctrl, node) {
+        const panel = node.element.querySelector('[data-claim-panel]');
+        const button = node.element.querySelector('[data-claim]');
+        const choices = [...node.element.querySelectorAll('[data-dragon-id]')];
+        let selectedPetId = choices.find(choice => choice.classList.contains('is-selected'))?.dataset.dragonId || 'dragon_green';
+
+        choices.forEach(choice => {
+          choice.onclick = () => {
+            if (button.disabled) return;
+            selectedPetId = choice.dataset.dragonId || 'dragon_green';
+            choices.forEach(item => item.classList.toggle('is-selected', item === choice));
+          };
+        });
+
+        // 终局节点保持 video.pause()；成功后直接淡出，不再进入第二层孵化器弹窗。
+        button.onclick = async () => {
+          if (button.disabled) return;
+          button.disabled = true;
+          button.textContent = '正在召回抱抱龙...';
+          panel.classList.add('claimed');
+          showToast('抱抱龙正在回到哈奇星球！');
+          navigator.vibrate?.([45, 35, 90]);
+
+          ctrl.dispatch('haqi:pet-claimed', {
+            petId: selectedPetId,
+            autoHatch: true,
+            claimedAt: new Date().toISOString()
+          });
+
+          await delay(420);
+          node.element.classList.add('is-claim-success');
+          await delay(720);
+          node.element.classList.remove('is-active', 'is-claim-success');
+          ctrl.video.classList.remove('is-paused-for-node');
+          ctrl.activeNode = null;
+          onClaimSuccess(selectedPetId);
+        };
+      }
+
+      /* ==================== 通用函数 ==================== */
+      function overlapRatio(a, b) {
+        const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        return (width * height) / Math.max(1, a.width * a.height);
+      }
+
+      function calculateErasedRatio(context, canvas, sampleStep = 14) {
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let erased = 0;
+        let total = 0;
+        // 采用网格抽样，不逐像素统计，避免中低端手机持续卡顿。
+        for (let y = 0; y < canvas.height; y += sampleStep) {
+          for (let x = 0; x < canvas.width; x += sampleStep) {
+            total++;
+            if (pixels[(y * canvas.width + x) * 4 + 3] < 24) erased++;
+          }
+        }
+        return erased / Math.max(1, total);
+      }
+
+      function formatTime(seconds) {
+        if (!Number.isFinite(seconds)) return '--:--';
+        const minutes = Math.floor(seconds / 60);
+        const remainder = (seconds % 60).toFixed(3).padStart(6, '0');
+        return `${String(minutes).padStart(2, '0')}:${remainder}`;
+      }
+
+      function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.remove('show');
+        void toast.offsetWidth;
+        toast.classList.add('show');
+      }
+
+      /* ==================== 视频载入和播放控制 ==================== */
+      const query = new URLSearchParams(location.search);
+      const queryVideo = query.get('video');
+      if (queryVideo) video.src = queryVideo;
+
+      async function startPlayback() {
+        video.muted = false;
+        try {
+          await video.play();
+          startGate.hidden = true;
+        } catch (error) {
+          console.warn('视频播放失败：', error);
+          startText.textContent = '视频还在准备中，请稍后再试。';
+          startHint.textContent = '点击任意位置 · 重新尝试';
+        }
+      }
+
+      startGate.addEventListener('click', startPlayback);
+      startGate.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        startPlayback();
+      });
+
+      video.addEventListener('error', () => {
+        startText.textContent = '绑定的视频资源加载失败，请检查 assets/haqi_onboarding.mp4。';
+        startHint.textContent = '点击任意位置 · 重新加载';
+        startGate.hidden = false;
+      });
+
+      // 首屏期间只预加载；故事必须由用户点击开始。
+      video.load();
+
+      // 每次双击快进 15 秒，但始终停在下一个未完成互动点之前，不跨过或触发互动。
+      video.addEventListener('dblclick', event => {
+        if (video.paused || controller.activeNode || video.seeking || !Number.isFinite(video.duration)) return;
+        const nextNode = controller.timeline.find(node => !node.triggered && node.triggerAt > video.currentTime);
+        const nextNodeLimit = nextNode ? Math.max(video.currentTime, nextNode.triggerAt - .08) : video.duration;
+        video.currentTime = Math.min(video.currentTime + 15, nextNodeLimit, video.duration);
+        controller.lastObservedTime = video.currentTime;
+        event.preventDefault();
+      });
+
+      // 切换浏览器或系统打断后若视频停住，单击视频区域即可继续；互动期间不抢占点击。
+      video.addEventListener('click', async () => {
+        if (!startGate.hidden || controller.activeNode || controller.completing || !video.paused || video.ended) return;
+        try {
+          await video.play();
+        } catch (error) {
+          console.warn('单击续播失败：', error);
+          startText.textContent = '视频已暂停，请点击任意位置继续。';
+          startHint.textContent = '点击任意位置 · 继续播放';
+          startGate.hidden = false;
+        }
+      });
+
+      // 切到后台时主动暂停，防止恢复页面后已跨过节点。
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && !video.paused) video.pause();
+      });
+
+      // 阻止移动端双指缩放及长按菜单；交互层本身也设置了 touch-action:none。
+      document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
+      document.addEventListener('contextmenu', event => event.preventDefault());
+
+      /**
+       * 调试接口：导演可在控制台执行 HaqiOnboarding.jumpTo('hug') 快速验收节点。
+       * jumpTo 会跳到目标时间前 0.5 秒并播放；真正 pause 仍由 timeupdate 在绝对时间触发。
+       */
+      window.HaqiOnboarding = {
+        controller,
+        timeline: TIMELINE.map(({ id, triggerAt }) => ({ id, triggerAt })),
+        jumpTo(id) {
+          const node = controller.timeline.find(item => item.id === id);
+          if (!node) throw new Error(`未知节点：${id}`);
+          controller.activeNode?.element.classList.remove('is-active', 'is-completing');
+          controller.activeNode = null;
+          node.triggered = false;
+          video.currentTime = Math.max(0, node.triggerAt - .5);
+          video.play();
+        },
+        reset() {
+          controller.reset();
+          video.currentTime = 0;
+        }
+      };
+
+      post('gameLoaded');
+      sendGameStarted();
+    })();
+  </script>
+</body>
+</html>

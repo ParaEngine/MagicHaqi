@@ -3,8 +3,33 @@ import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { itemName, t } from './i18n.js';
 import { getShopItemById } from './config.js';
 import { state } from './state.js';
+import { formatHomeTreasureReward, getHomeTreasureDailyReward, getHomeTreasureFusion, getHomeTreasureGrowth, getHomeTreasures, HOME_TREASURE_META, isHomeTreasureId, isHomeTreasurePlaced } from './home_treasures.js';
+import { COLLECTIBLE_CATEGORIES, COLLECTIBLE_ITEMS, GIFT_FRESHNESS_MS, collectibleItem, getCollectibleFreshness } from './npc_gifts.js';
+import { EXPEDITION_MATERIAL_ART, rewardArtHtml } from './reward_art.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
+const EXPEDITION_MATERIAL_PREFIX = 'expedition_material_';
+const EXPEDITION_MATERIAL_META = Object.freeze({
+    hpShard: { name: '生命碎块', emoji: '🧬' },
+    manaDust: { name: '魔力尘', emoji: '✨' },
+    attackCore: { name: '攻击晶核', emoji: '🔴' },
+    guardPlate: { name: '守护甲片', emoji: '🛡️' },
+    stellarEssence: { name: '星核精粹', emoji: '🌟' },
+    captureLens: { name: '捕捉透镜', emoji: '🔍' },
+    cometAlloy: { name: '彗星合金', emoji: '☄️' },
+    relicCircuit: { name: '遗物回路', emoji: '🧩' },
+    phaseCrystal: { name: '相位晶体', emoji: '💠' },
+    starMoss: { name: '星光苔藓', emoji: '🌿' },
+    lunarFiber: { name: '月丝纤维', emoji: '🧵' },
+    nebulaPearl: { name: '星云珍珠', emoji: '🔮' },
+});
+const HOME_TREASURE_STYLE = `<style>
+    .mh-home-treasures { box-sizing:border-box; container-type:inline-size; max-width:100%; overflow:hidden; }
+    @container (max-width: 480px) {
+        .mh-home-treasure-row { grid-template-columns: auto minmax(0, 1fr) !important; }
+        .mh-home-treasure-row [data-claim-treasure] { grid-column: 1 / -1; width: 100%; min-height: 36px; }
+    }
+</style>`;
 
 function getInventoryItemHint(item) {
     const name = itemName(item?.name) || t('invHintThisItem');
@@ -13,17 +38,35 @@ function getInventoryItemHint(item) {
     return t('invHintDefault', { name });
 }
 
-export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}) {
+export function renderInventory(panel, _data, { onBack, onSell, onReorder, onClaimTreasure, onPlaceTreasure, focusTreasureId = '' } = {}) {
     const inv = state.inventory || {};
+    const treasures = getHomeTreasures({ inventory: inv });
+    const ownedTreasures = Object.entries(treasures).filter(([, count]) => count > 0);
+    const ownedCollectibles = COLLECTIBLE_ITEMS.filter(item => Math.max(0, Number(inv[item.id]) || 0) > 0);
+    const freshness = state.settings?.npcGiftFreshness || {};
+    const freshnessText = item => {
+        const status = getCollectibleFreshness(item.id, inv, freshness);
+        if (!status.perishable) return '永久保存';
+        if (status.staleCount > 0) return `${status.staleCount} 件已陈旧 · 送礼按普通心意`;
+        if (!status.nextExpiryAt) return '旧藏品 · 永久保鲜';
+        const days = Math.max(1, Math.ceil((status.nextExpiryAt - Date.now()) / GIFT_FRESHNESS_MS * 7));
+        return `保鲜剩余 ${days} 天`;
+    };
     const savedOrder = Array.isArray(state.inventoryOrder) ? state.inventoryOrder : [];
-    const ownedIds = Object.keys(inv).filter(id => (inv[id] || 0) > 0 && ITEM_BY_ID[id]);
+    const itemMeta = id => {
+        const materialId = id.startsWith(EXPEDITION_MATERIAL_PREFIX) ? id.slice(EXPEDITION_MATERIAL_PREFIX.length) : '';
+        return ITEM_BY_ID[id] || (EXPEDITION_MATERIAL_ART[materialId] && EXPEDITION_MATERIAL_META[materialId]
+            ? { id, type: 'expedition_material', ...EXPEDITION_MATERIAL_META[materialId] }
+            : null);
+    };
+    const ownedIds = Object.keys(inv).filter(id => (inv[id] || 0) > 0 && itemMeta(id) && !isHomeTreasureId(id) && !collectibleItem(id));
     const ownedSet = new Set(ownedIds);
     // Preserve saved order for known ids, then append any new ids not yet ordered.
     const orderedIds = [
         ...savedOrder.filter(id => ownedSet.has(id)),
         ...ownedIds.filter(id => !savedOrder.includes(id)),
     ];
-    const entries = orderedIds.map(id => ({ ...ITEM_BY_ID[id], qty: inv[id] }));
+    const entries = orderedIds.map(id => ({ ...itemMeta(id), qty: inv[id] }));
 
     panel.innerHTML = `
         <div class="topbar">
@@ -32,17 +75,48 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
             <span class="font-bold text-sm mh-coin-amount" style="color:var(--accent-dark)">${coinIconSvg()} ${state.coins}</span>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px">
+            ${ownedTreasures.length ? `${HOME_TREASURE_STYLE}<section class="card-flat mb-3 mh-home-treasures" aria-label="家园珍宝">
+                <div class="text-xs font-bold mb-2" style="color:var(--text-secondary)">🏡 家园珍宝</div>
+                <div style="display:grid;gap:8px">
+                    ${ownedTreasures.map(([id, count]) => {
+                        const treasure = HOME_TREASURE_META[id];
+                        const placed = isHomeTreasurePlaced(state.layouts, id);
+                        const growth = getHomeTreasureGrowth(state.planetActions, id);
+                        const fusion = getHomeTreasureFusion(count);
+                        const rewardText = formatHomeTreasureReward(getHomeTreasureDailyReward(id, state.planetActions, count));
+                        const fusionText = fusion.extraCopies > 0
+                            ? `强化 Lv.${fusion.level} · 产出 +${fusion.bonusPercent}%`
+                            : '强化 Lv.1 · 重复获得自动融合';
+                        return `<div class="mh-home-treasure-row" data-home-treasure-id="${escapeHtml(id)}" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px;border:1.5px solid ${focusTreasureId === id ? '#0891b2' : 'var(--border-card)'};border-radius:8px;background:${focusTreasureId === id ? '#ecfeff' : 'var(--bg-pill)'};${focusTreasureId === id ? 'box-shadow:0 0 0 3px rgba(8,145,178,.16)' : ''}">
+                            <span style="display:grid;place-items:center;width:42px;height:42px;font-size:25px" aria-hidden="true">${rewardArtHtml(treasure.image, treasure.icon, 'mh-home-treasure-image')}</span>
+                            <div style="min-width:0"><div class="text-sm font-bold" style="color:var(--text-primary)">${escapeHtml(treasure.name)} · ${escapeHtml(fusionText)}</div><div class="text-xs" style="color:var(--text-muted)">${placed ? `运行 Lv.${growth.level} · 已运行 ${growth.days} 天` : '未摆放，尚未启动'} · 每日 ${escapeHtml(rewardText)}</div></div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btn-secondary text-xs" type="button" data-place-treasure="${escapeHtml(id)}">${placed ? '移动' : '摆放'}</button><button class="btn-primary text-xs" type="button" data-claim-treasure="${escapeHtml(id)}" ${placed ? '' : 'disabled'}>领取</button></div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </section>` : ''}
+            <section class="card-flat mb-3 mh-collectibles" aria-label="旅途收藏">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><div class="text-xs font-bold" style="color:var(--text-secondary)">🎁 旅途收藏</div><small style="color:var(--text-muted)">${ownedCollectibles.length} / ${COLLECTIBLE_ITEMS.length} 种 · 可赠送给 NPC</small></div>
+                ${ownedCollectibles.length ? Object.entries(COLLECTIBLE_CATEGORIES).map(([categoryId, category]) => {
+                    const categoryItems = ownedCollectibles.filter(item => item.category === categoryId);
+                    if (!categoryItems.length) return '';
+                    return `<div style="margin-top:8px"><div class="text-xs font-bold" style="color:var(--text-muted);margin-bottom:5px">${category.icon} ${escapeHtml(category.name)}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:6px">${categoryItems.map(item => `<button type="button" data-collectible-id="${escapeHtml(item.id)}" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:1px 7px;text-align:left;padding:7px;border:1px solid var(--border-card);border-radius:7px;background:var(--bg-pill);color:var(--text-primary)"><span style="grid-row:1/3;font-size:22px">${item.icon}</span><b class="text-xs" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.name)} ×${Math.max(0, Number(inv[item.id]) || 0)}</b><small style="color:var(--text-muted);font-size:9px">${escapeHtml(freshnessText(item))}</small></button>`).join('')}</div></div>`;
+                }).join('') : '<div class="text-xs" style="padding:12px;text-align:center;color:var(--text-muted)">挖矿、远征和场景探索时，会遇到可收藏和送礼的意外掉落。</div>'}
+            </section>
             ${entries.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px">${escapeHtml(t('inventoryEmpty'))}</div>`
                 : `<div class="grid grid-cols-3 gap-2" id="mhInvGrid">
                     ${entries.map(it => `
                         <div class="shop-item mh-inv-item" draggable="true" data-iid="${escapeHtml(it.id)}" data-type="${escapeHtml(it.type)}">
-                            <div class="emoji">${it.emoji}</div>
-                            <div class="name">${escapeHtml(itemName(it.name))} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
+                            <div class="emoji">${it.id.startsWith(EXPEDITION_MATERIAL_PREFIX)
+                                ? rewardArtHtml(EXPEDITION_MATERIAL_ART[it.id.slice(EXPEDITION_MATERIAL_PREFIX.length)], it.emoji, 'mh-expedition-material-image')
+                                : it.emoji}</div>
+                            <div class="name">${escapeHtml(itemName(it.name))} ×${it.unlimited ? '∞' : it.qty}</div>
                         </div>
                     `).join('')}
                 </div>`}
         </div>`;
+    panel.querySelectorAll('.mh-home-treasure-image, .mh-expedition-material-image').forEach(image => Object.assign(image.style, { width: '100%', height: '100%', objectFit: 'contain' }));
     if ($('mhBack')) $('mhBack').onclick = () => onBack?.();
 
     const grid = $('mhInvGrid');
@@ -56,7 +130,7 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
             if (el.dataset.dragSuppress === '1') { delete el.dataset.dragSuppress; return; }
             const id = el.dataset.iid;
             const type = el.dataset.type;
-            const it = ITEM_BY_ID[id];
+            const it = itemMeta(id);
             if (!it) return;
             const owned = inv[id] || 0;
             if (it.unlimited || !it.price || owned < 1) {
@@ -66,6 +140,21 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
             showSellConfirm({ ...it, qty: owned }, onSell);
         };
     });
+    $$('[data-collectible-id]').forEach(button => {
+        button.onclick = () => {
+            const item = collectibleItem(button.dataset.collectibleId);
+            if (item) showToast(`${item.icon} ${item.name}：${item.source}。${freshnessText(item)}，可在 NPC 对话中赠送。`, 'info', 3000);
+        };
+    });
+    $$('[data-claim-treasure]').forEach(button => {
+        button.onclick = () => onClaimTreasure?.(button.dataset.claimTreasure);
+    });
+    $$('[data-place-treasure]').forEach(button => {
+        button.onclick = () => onPlaceTreasure?.(button.dataset.placeTreasure);
+    });
+    if (focusTreasureId) {
+        requestAnimationFrame(() => panel.querySelector(`[data-home-treasure-id="${CSS.escape(focusTreasureId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    }
 }
 
 function wireDragReorder(grid, initialIds, onReorder) {

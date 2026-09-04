@@ -19,6 +19,7 @@ const SHEET_ROWS = 4;
 const TRANSPARENT_CORNER_SAMPLE_SIZE = 3;
 const DEFAULT_GRID_LINE_RATIO = 0.045;
 const DEFAULT_GRID_LINE_MAX_WIDTH = 18;
+const CENTER_ALPHA_THRESHOLD = 12;
 
 function getSheetGrid(options = {}) {
     const cols = Math.max(1, Math.min(16, Math.round(Number(options.sheetCols) || SHEET_COLS)));
@@ -87,6 +88,104 @@ function clearGridLineBands(data, width, height, options = {}) {
         const y = Math.round(row * height / rows);
         clearAlphaBand(data, width, height, 0, y - half, width, y + half + 1);
     }
+}
+
+function transformSheetCells(data, width, height, options = {}) {
+    const { cols, rows } = getSheetGrid(options);
+    const source = new Uint8ClampedArray(data);
+    const output = new Uint8ClampedArray(data.length);
+    const transforms = new Map((Array.isArray(options.cellTransforms) ? options.cellTransforms : [])
+        .map(transform => [Math.round(Number(transform?.index)), transform])
+        .filter(([index]) => index >= 0 && index < cols * rows));
+    const claimedBy = new Int16Array(width * height);
+    claimedBy.fill(-1);
+
+    const getBleed = transform => {
+        const fallback = Math.max(0, Math.round(Number(transform?.bleed) || 0));
+        return {
+            left: Math.max(0, Math.round(Number(transform?.bleedLeft) || fallback)),
+            top: Math.max(0, Math.round(Number(transform?.bleedTop) || fallback)),
+            right: Math.max(0, Math.round(Number(transform?.bleedRight) || fallback)),
+            bottom: Math.max(0, Math.round(Number(transform?.bleedBottom) || fallback)),
+        };
+    };
+
+    for (const [index, transform] of transforms) {
+        const row = Math.floor(index / cols);
+        const col = index % cols;
+        const cellX = Math.floor(col * width / cols);
+        const cellY = Math.floor(row * height / rows);
+        const nextCellX = Math.floor((col + 1) * width / cols);
+        const nextCellY = Math.floor((row + 1) * height / rows);
+        const bleed = getBleed(transform);
+        for (let y = Math.max(0, cellY - bleed.top); y < Math.min(height, nextCellY + bleed.bottom); y++) {
+            for (let x = Math.max(0, cellX - bleed.left); x < Math.min(width, nextCellX + bleed.right); x++) {
+                const pixelIndex = y * width + x;
+                if (source[pixelIndex << 2 | 3] > CENTER_ALPHA_THRESHOLD) claimedBy[pixelIndex] = index;
+            }
+        }
+    }
+
+    for (let index = 0; index < cols * rows; index++) {
+        const row = Math.floor(index / cols);
+        const col = index % cols;
+        const cellX = Math.floor(col * width / cols);
+        const cellY = Math.floor(row * height / rows);
+        const nextCellX = Math.floor((col + 1) * width / cols);
+        const nextCellY = Math.floor((row + 1) * height / rows);
+        const cellW = nextCellX - cellX;
+        const cellH = nextCellY - cellY;
+        const transform = transforms.get(index);
+        const bleed = getBleed(transform);
+        const sourceX0 = Math.max(0, cellX - bleed.left);
+        const sourceY0 = Math.max(0, cellY - bleed.top);
+        const sourceX1 = Math.min(width, nextCellX + bleed.right);
+        const sourceY1 = Math.min(height, nextCellY + bleed.bottom);
+        let minX = nextCellX;
+        let minY = nextCellY;
+        let maxX = cellX - 1;
+        let maxY = cellY - 1;
+
+        for (let y = sourceY0; y < sourceY1; y++) {
+            for (let x = sourceX0; x < sourceX1; x++) {
+                const pixelIndex = y * width + x;
+                const owner = claimedBy[pixelIndex];
+                if (source[pixelIndex << 2 | 3] <= CENTER_ALPHA_THRESHOLD || (owner >= 0 && owner !== index)) continue;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+        if (maxX < minX || maxY < minY) continue;
+
+        const autoCenter = transform?.autoCenter ?? (options.autoCenter !== false);
+        const autoOffsetX = autoCenter ? Math.round((cellX + nextCellX - 1 - minX - maxX) / 2) : 0;
+        const autoOffsetY = autoCenter ? Math.round((cellY + nextCellY - 1 - minY - maxY) / 2) : 0;
+        const manualOffsetX = Math.round(Number(transform?.offsetX) || 0);
+        const manualOffsetY = Math.round(Number(transform?.offsetY) || 0);
+        const offsetX = autoOffsetX + manualOffsetX;
+        const offsetY = autoOffsetY + manualOffsetY;
+
+        for (let y = sourceY0; y < sourceY1; y++) {
+            const targetY = y + offsetY;
+            if (targetY < cellY || targetY >= nextCellY) continue;
+            for (let x = sourceX0; x < sourceX1; x++) {
+                const targetX = x + offsetX;
+                if (targetX < cellX || targetX >= nextCellX) continue;
+                const pixelIndex = y * width + x;
+                const owner = claimedBy[pixelIndex];
+                const sourceIndex = pixelIndex << 2;
+                if (source[sourceIndex + 3] === 0 || (owner >= 0 && owner !== index)) continue;
+                const targetIndex = (targetY * width + targetX) << 2;
+                output[targetIndex] = source[sourceIndex];
+                output[targetIndex + 1] = source[sourceIndex + 1];
+                output[targetIndex + 2] = source[sourceIndex + 2];
+                output[targetIndex + 3] = source[sourceIndex + 3];
+            }
+        }
+    }
+    data.set(output);
 }
 
 function hasOpaqueInternalGridBands(data, width, height, options = {}) {
@@ -247,11 +346,13 @@ async function processSheet(bitmap, options = {}) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
-    if (areCornersFullyTransparent(data, width, height) && !hasOpaqueInternalGridBands(data, width, height, options)) {
+    const shouldCenter = options.autoCenter !== false || (Array.isArray(options.cellTransforms) && options.cellTransforms.length > 0);
+    if (!shouldCenter && areCornersFullyTransparent(data, width, height) && !hasOpaqueInternalGridBands(data, width, height, options)) {
         return { direct: true, width, height };
     }
 
-    clearGridLineBands(data, width, height, options);
+    const alreadyTransparent = areCornersFullyTransparent(data, width, height);
+    if (!alreadyTransparent || hasOpaqueInternalGridBands(data, width, height, options)) clearGridLineBands(data, width, height, options);
 
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -259,9 +360,12 @@ async function processSheet(bitmap, options = {}) {
             const cellY = Math.floor(row * height / rows);
             const nextCellX = Math.floor((col + 1) * width / cols);
             const nextCellY = Math.floor((row + 1) * height / rows);
-            removeCellBackground(data, width, height, cellX, cellY, nextCellX - cellX, nextCellY - cellY, options);
+            const cellW = nextCellX - cellX;
+            const cellH = nextCellY - cellY;
+            if (!alreadyTransparent) removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, options);
         }
     }
+    if (shouldCenter) transformSheetCells(data, width, height, options);
 
     ctx.putImageData(imageData, 0, 0);
     const blob = await canvas.convertToBlob({ type: 'image/png' });

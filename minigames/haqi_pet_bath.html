@@ -1122,8 +1122,11 @@
       const stars = scoreStars();
       showResult(t('winTitle'), t('winText', { level: state.level, collected: state.collectedDucks, total: state.ducks.length, stars }), t('nextLevel'), nextLevel);
       post('gameFinished', {
+        status: 'completed',
         completed: true,
         passed: true,
+        success: true,
+        outcome: 'victory',
         earnedPoints: Math.max(12, cfg().score + state.score),
         score: state.score,
         difficulty: difficultyLevel,

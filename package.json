@@ -4,7 +4,8 @@
     "scripts": {
         "build": "vite build --config vite.config.mjs",
         "dev": "vite --config vite.config.mjs",
-        "upload": "npm run build && node uploadRelease.mjs"
+        "test:loading:browser": "node tests/minigame_loading.playwright.mjs",
+        "upload": "vite build --config vite.config.mjs --mode upload && node uploadRelease.mjs"
     },
     "devDependencies": {
         "playwright": "^1.61.0",

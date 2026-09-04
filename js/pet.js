@@ -1227,14 +1227,16 @@ export function hatchPetFromEgg(pet) {
         return true;
     }
     let dna = pet.dna || '';
-    // 1) 领地偏置：以孵化时玩家当前最大屋所在的 field 为准
-    try {
-        const territory = findLargestHouseAcrossLayouts(state.layouts);
-        if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
-    } catch (_) {}
-    // 2) 喂食 trait 偏置
-    const dominant = _dominantFeedTrait(pet);
-    if (dominant) dna = biasDnaForTrait(dna, dominant);
+    if (!pet.breeding?.geneticDna) {
+        // 1) 领地偏置：以孵化时玩家当前最大屋所在的 field 为准
+        try {
+            const territory = findLargestHouseAcrossLayouts(state.layouts);
+            if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
+        } catch (_) {}
+        // 2) 喂食 trait 偏置
+        const dominant = _dominantFeedTrait(pet);
+        if (dominant) dna = biasDnaForTrait(dna, dominant);
+    }
     pet.dna = dna;
     pet.traits = decodeDna(dna);
     pet.rarity = dnaRarity(dna);

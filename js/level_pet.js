@@ -12,6 +12,8 @@ import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage, randomBathCompleteLine } from './petInteractions.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 import { injectVisitAnimationStyles } from './visit_animations.js';
+import { getHomeTreasureFacility, getHomeTreasures } from './home_treasures.js';
+import { isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const BASIC_FEED_ID = 'food_basic_feed';
@@ -1557,6 +1559,10 @@ export const petLevel = {
         const petEl = $('mhPet');
         petEl?.classList.add('mh-pet-room-instant');
         applyRoomMeterLayout();
+        if (state.isFeedMode) {
+            applyRoomPan();
+            setPetFollowUser();
+        }
         requestAnimationFrame(() => {
             if (isRoomPlacementMode()) {
                 applyRoomPan();
@@ -1591,12 +1597,16 @@ export const petLevel = {
             playPetClickFeedback(petEl, pet);
         };
         $$('.mh-released-room-pet').forEach(el => {
-            el.onclick = (e) => {
+            el.onclick = async (e) => {
                 if (isRoomPlacementMode()) return;
                 e.stopPropagation();
                 const releasedPet = state.pets[el.dataset.releasedRoomPet];
                 if (isPetInteractionBlocked(releasedPet)) { showSleepingBlocked(releasedPet); return; }
-                if (releasedPet) playPetClickFeedback(el, releasedPet);
+                if (!releasedPet) return;
+                const switched = !isVisitingMode()
+                    ? await ctx.callbacks.onSelectPet?.(releasedPet.id, { zoomLevel: 2 })
+                    : false;
+                if (!switched) playPetClickFeedback(el, releasedPet);
             };
         });
     },
@@ -2135,6 +2145,10 @@ function bindTrayDrag(el, ctx) {
         if (!current.active) {
             if (current?.sourceEl) {
                 current.sourceEl.__mhTrayTapHandledAt = Date.now();
+                if (state.isFeedMode && ITEM_BY_ID[current.itemId]?.type === 'food') {
+                    runFeedServingSequence(current.itemId, { source: 'dock', targetPetEl: $('mhPet') }, ctx);
+                    return;
+                }
                 clearRoomItemSelection(ctx);
                 ctx.dock?.querySelectorAll('[data-tray-item]').forEach(x => x.style.outline = '');
                 ctx.selectedTrayItem = current.itemId;
@@ -2256,15 +2270,18 @@ function stripActionIcon(label) {
 
 function renderDecorTray(inv) {
     const currentRoom = state.currentRoom || 'living';
-    const items = Object.entries(inv)
+    const planetId = state.settings?.starSettlement?.source === 'official' ? state.settings.starSettlement.planetId : 'default';
+    const ownedFacilities = (isHaqiExpeditionEnabled(planetId) ? Object.entries(getHomeTreasures({ inventory: inv })) : [])
+        .filter(([, count]) => count > 0)
+        .map(([id, qty]) => ({ ...getHomeTreasureFacility(id), qty }))
+        .filter(it => it && canPlaceItemInArea(it, currentRoom));
+    const items = [...Object.entries(inv)
         .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
-        .filter(it => it && it.id && it.type === 'furniture' && canPlaceItemInArea(it, currentRoom));
+        .filter(it => it && it.id && it.type === 'furniture' && canPlaceItemInArea(it, currentRoom)), ...ownedFacilities];
     const shopButton = renderRoomShopButton('indoor', { minWidth: 62, padding: '6px' });
     return `
         <div class="mh-dock-tray mh-scroll-x">
-            ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('trayEmpty'))}</div>`
-                : items.map(it => `
+            ${items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
                         <div class="name" style="font-size:10px">${escapeHtml(itemName(it.name))}</div>
@@ -2286,7 +2303,7 @@ function renderFeedTray(inv) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('trayEmpty'))}</div>`
+                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('feedTrayEmpty'))}</div>`
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" data-feed-tray-item="true" class="shop-item" style="min-width:76px;padding:10px 8px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>

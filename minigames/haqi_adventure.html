@@ -2173,6 +2173,7 @@
     if (!state.finishPosted) {
       state.finishPosted = true;
       post('gameFinished', {
+        status: won ? 'completed' : 'failed', completed: won, passed: won, success: won, outcome: won ? 'victory' : 'defeat',
         earnedPoints: Math.max(0, Math.round(state.score)), score: state.score, crystals: state.crystals, mined: state.mined,
         totalCrystals: state.totalCrystals, totalMined: state.totalMined, coins: state.coins, level: state.level, won, difficulty: state.difficulty, timeSec, roundId: state.roundId, bondBonus: won ? 28 : 12, moodBonus: won ? 12 : 5, finishedAt: Date.now()
       });

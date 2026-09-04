@@ -6,10 +6,56 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 
 const rootDir = import.meta.dirname;
-const sideBySideDirs = ['minigames', 'dev_tools', 'famous-pets', 'famous-planets', 'pet-story'];
+const sideBySideDirs = ['minigames', 'dev_tools', 'analytics', 'famous-pets', 'famous-planets', 'pet-story'];
 const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
+const staticAssetDir = 'assets';
+const runtimeGameModules = [
+    'expedition_tactical_core.js',
+    'mineral_expedition_core.js',
+    'mineral_interaction_core.js',
+    'mineral_cooperation_core.js',
+    'pet_species_growth_core.js',
+    'petQuality.js',
+];
+const mineralContentPacks = [
+    'haqi_minerals_wasteland_punk.json',
+    'haqi_minerals_molten_geocore.json',
+    'haqi_minerals_ancient_starcore.json',
+    'haqi_minerals_abyssal_echoes.json',
+];
+const petRuntimeModules = new Set([
+    'pet.js',
+    'petInteractions.js',
+    'petLifecycle.js',
+    'petTick.js',
+    'petQuality.js',
+    'pet_stats_core.js',
+    'pet_species_growth_core.js',
+]);
+const expeditionRuntimeModules = new Set([
+    'expedition.js',
+    'expedition_buff.js',
+    'expedition_difficulty_core.js',
+    'expedition_history.js',
+    'expedition_investigation_core.js',
+    'expedition_sector_event_core.js',
+    'expedition_settlement.js',
+    'expedition_tactical_core.js',
+    'haqi_expedition_plugin.js',
+    'mineral_host_core.js',
+    'mineral_pet_support_core.js',
+]);
 const sdkCdnPattern = /https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js(?:\?v=[^'"\s<)]*)?/g;
 const sdkCdnBase = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js';
+
+function runtimeChunkName(moduleId) {
+    const normalizedId = moduleId.replaceAll('\\', '/');
+    if (!normalizedId.includes('/js/')) return undefined;
+    const moduleName = normalizedId.slice(normalizedId.lastIndexOf('/') + 1);
+    if (petRuntimeModules.has(moduleName)) return 'pet-runtime';
+    if (expeditionRuntimeModules.has(moduleName)) return 'expedition-runtime';
+    return undefined;
+}
 
 // Download the live keepworkSDK bundle and return a short content hash. A random
 // query param busts the CDN edge cache so we always hash the freshest bytes; the
@@ -40,12 +86,18 @@ function syncAppSdkCdnVersion() {
             }
             const appJsPath = path.join(rootDir, 'js', 'app.js');
             const appJs = fs.readFileSync(appJsPath, 'utf8');
+            const sdkCdnDeclarationPattern = /(const\s+sdkCdnUrl\s*=\s*['"]https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js)(?:\?v=[^'"]*)?(['"])/;
+            if (!sdkCdnDeclarationPattern.test(appJs)) {
+                this.warn('[sync-app-sdk-cdn-version] sdkCdnUrl not found in js/app.js');
+                return;
+            }
             const nextAppJs = appJs.replace(
-                /(const\s+sdkCdnUrl\s*=\s*['"]https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js)(?:\?v=[^'"]*)?(['"])/,
+                sdkCdnDeclarationPattern,
                 `$1?v=${hash}$2`,
             );
             if (nextAppJs === appJs) {
-                this.warn('[sync-app-sdk-cdn-version] sdkCdnUrl not found / already current in js/app.js');
+                // eslint-disable-next-line no-console
+                console.log(`[sync-app-sdk-cdn-version] sdkCdnUrl already current (?v=${hash})`);
                 return;
             }
             fs.writeFileSync(appJsPath, nextAppJs);
@@ -109,6 +161,25 @@ function copySideBySideDirs() {
                 fs.mkdirSync(path.dirname(targetFile), { recursive: true });
                 fs.copyFileSync(sourceFile, targetFile);
                 syncSdkCdnVersionInHtml(targetFile, sdkUrl);
+            }
+            const sourceAssets = path.join(rootDir, staticAssetDir);
+            const targetAssets = path.join(distDir, staticAssetDir);
+            if (fs.existsSync(sourceAssets)) {
+                fs.cpSync(sourceAssets, targetAssets, { recursive: true, force: true });
+            }
+            const targetRuntimeModules = path.join(distDir, 'js');
+            for (const moduleName of runtimeGameModules) {
+                const sourceModule = path.join(rootDir, 'js', moduleName);
+                if (!fs.existsSync(sourceModule)) continue;
+                fs.mkdirSync(targetRuntimeModules, { recursive: true });
+                fs.copyFileSync(sourceModule, path.join(targetRuntimeModules, moduleName));
+            }
+            const targetContentPacks = path.join(distDir, 'content');
+            for (const packName of mineralContentPacks) {
+                const sourcePack = path.join(rootDir, 'content', packName);
+                if (!fs.existsSync(sourcePack)) continue;
+                fs.mkdirSync(targetContentPacks, { recursive: true });
+                fs.copyFileSync(sourcePack, path.join(targetContentPacks, packName));
             }
         },
     };
@@ -436,10 +507,10 @@ export default defineConfig({
         rollupOptions: {
             input: path.join(rootDir, 'MagicHaqi.html'),
             output: {
-                inlineDynamicImports: true,
                 entryFileNames: 'assets/MagicHaqi-[hash].js',
-                chunkFileNames: 'assets/MagicHaqi-[hash].js',
+                chunkFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash][extname]',
+                manualChunks: runtimeChunkName,
             },
         },
     },

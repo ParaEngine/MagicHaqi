@@ -1015,6 +1015,7 @@ art_assets = []; // 程序化体素绘制，无外部图片。
   computeStats();
   owned.push({ def: wById('sushi_dart'), level: 1, cd: 0 });
   showStart();
+  window.parent.postMessage({ type: 'gameLoaded' }, '*');
 
   let last = performance.now();
   function loop(now) { const dt = Math.min((now - last) / 1000, 0.05); last = now; if (fx.hitstop > 0) { fx.hitstop -= dt; } else { update(dt); } render(); requestAnimationFrame(loop); }

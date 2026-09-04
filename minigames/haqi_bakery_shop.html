@@ -535,7 +535,10 @@ function endGame() {
                    t('endComment0');
   $('endModal').classList.remove('hidden');
   $('endModal').classList.add('flex');
-  window.parent.postMessage({ type: 'gameFinished', data: { score: coins, served, maxCombo, difficulty: cfg.difficulty } }, '*');
+  window.parent.postMessage({ type: 'gameFinished', data: {
+    status: 'completed', completed: true, passed: true, success: true, outcome: 'shift-complete',
+    score: coins, served, maxCombo, difficulty: cfg.difficulty
+  } }, '*');
 }
 
 // ================= 静态文本本地化 =================

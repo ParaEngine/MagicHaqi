@@ -13,7 +13,7 @@ MagicHaqi (蛋蛋星球) is a mobile-first H5 virtual-pet game: pure ES Module +
 To check your work: open `MagicHaqi.html` in a browser (VS Code Live Preview) or hit the local dev server. Do **not** start a server "to test"; Live Preview / opening the file is enough.
 
 - `npm run dev` — Vite dev server (optional; prefer `127.0.0.1`/Vite URL over a raw `file://` URL so the SDK behaves and local SDK source resolves).
-- `npm run build` / `npm run upload` — **human-only**, for CDN distribution packaging (`dist/`, `release/MagicHaqi_v1.html`, content-hashed CDN folders). Never run these for development or verification.
+- `npm run build` / `npm run upload` — **human-only**, for CDN distribution packaging. Build writes only `dist/`; upload uses the dedicated Vite `upload` mode, generates `release/*.html`, and uploads to a content-hashed CDN folder. Never run these for development or verification.
 - There is **no test suite** and no lint config — do not look for `npm test`.
 
 Standalone HTML files (`minigames/*.html`, `dev_tools/*.html`, `MagicHaqi.html`) are each self-contained and opened directly; they are copied verbatim at distribution time, not bundled.
