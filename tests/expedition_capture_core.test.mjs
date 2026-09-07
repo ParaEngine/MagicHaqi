@@ -69,9 +69,10 @@ test('所有叠加仍受全局安全上限约束', () => {
     assert.equal(chance, 0.95);
 });
 
-test('整体倍率将最终捕捉率相对提高 10%，且不突破安全上限', () => {
+test('整体倍率只提高基础捕捉率，额外加成保持标注百分点，且不突破安全上限', () => {
     const enemy = { hp: 35, maxHp: 100, rarity: '稀有', captureModifier: 0.91 };
     const player = { captureBonus: 0.08, lowHpCaptureBonus: 0.12 };
+    const base = calculateExpeditionCaptureChance(enemy, {}, rules);
     const baseline = calculateExpeditionCaptureChance(enemy, player, rules);
     const boosted = calculateExpeditionCaptureChance(enemy, player, { ...rules, overallMultiplier: 1.1 });
     const capped = calculateExpeditionCaptureChance(enemy, { captureBonus: 2 }, {
@@ -79,6 +80,7 @@ test('整体倍率将最终捕捉率相对提高 10%，且不突破安全上限'
         overallMultiplier: 1.1,
     });
 
-    assert.ok(Math.abs(boosted - baseline * 1.1) < 1e-12);
+    assert.ok(Math.abs(boosted - (base * 1.1 + 0.2)) < 1e-12);
+    assert.ok(Math.abs(boosted - baseline - base * 0.1) < 1e-12);
     assert.equal(capped, 0.95);
 });

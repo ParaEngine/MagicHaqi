@@ -31,6 +31,8 @@ export function renderProfile(panel, { pet }, { onBack } = {}) {
     panel.innerHTML = `
         <style>
             .mh-profile-view { position:absolute;inset:0;overflow:hidden;background:#8ed5e4 url('https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/expedition-backgrounds/star-map-background.webp') center / cover no-repeat }
+            .mh-profile-back { width:64px;height:64px;padding:0;border:0;background:transparent;box-shadow:none;overflow:visible }
+            .mh-profile-back img { display:block;width:100%;height:100%;object-fit:contain;pointer-events:none }
             .mh-profile-content { --profile-stack-gap:8px;--profile-align-nudge:.52px;container-type:size;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);height:100%;min-height:0;gap:12px;align-items:center }
             .mh-profile-left-column { display:flex;flex-direction:column;justify-content:center;align-items:center;gap:var(--profile-stack-gap);height:100%;min-height:0 }
             .mh-profile-left { position:relative;width:min(100%, calc((100cqh - var(--profile-stack-gap)) * 1.0588235294));max-width:720px;aspect-ratio:720/445;flex:none }
@@ -168,9 +170,11 @@ export function renderProfile(panel, { pet }, { onBack } = {}) {
         </style>
         <div class="mh-profile-view">
             <div class="topbar mh-profile-topbar" style="height:140px">
-                <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
+                <button class="btn-icon mh-profile-back" id="mhBack" type="button" aria-label="返回">
+                    <img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/ui/profile/cc3-back.webp" width="158" height="155" alt="">
+                </button>
                 <img class="mh-profile-title-art" src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/ui/profile/cc1-520.webp" width="520" height="151" alt="档案" style="display:block;width:auto;max-width:calc(100% - 96px);height:auto;max-height:132px;margin:0 auto;object-fit:contain">
-                <span style="width:36px"></span>
+                <span style="width:64px"></span>
             </div>
             <div class="absolute mh-profile-stage" style="top:140px;left:0;right:0;bottom:0;overflow:hidden;padding:10px 14px 14px">
                 <div class="mh-profile-content fade-in">

@@ -25,9 +25,11 @@ import { completeNpcCommission } from './minigame_daily.js';
 import { isSceneTaskCompleted, isSceneTaskStepAvailable, npcProgressId as scopedNpcProgressId, reconcileSceneTaskCompletion, sceneTaskProgressFeedback, shouldShowSceneTaskSteps, withPrimarySceneInteraction } from './npc_scene_tasks.js';
 import { applyNpcGiftSettlement, applyNpcInteractionReward, getNpcRelationshipBonuses, registerCollectibleAcquisition, rollCollectibleDrop, settleNpcGift } from './npc_gifts.js';
 import { shouldPrioritizeOnboarding } from './onboarding.js';
+import { dismissHomeWelcome, shouldShowHomeWelcome } from './home_welcome.js';
 
 const soundManager = SoundManager.getInstance();
 const HOME_HUD_MUSIC_ASSET = 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/ui/home-hud/home-hud-music-v4.webp';
+const HOME_WELCOME_ASSET = 'https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/qq.png';
 
 const BLIND_BOX_EGG_STORAGE_KEY = 'haqi_blind_box_egg_state_v1';
 const CHONGQING_ZOO_PLANET_ID = 'chongqing_zoo';
@@ -103,6 +105,8 @@ const FIELD_OTHER_PET_Z_BASE = 10;
 const FIELD_OTHER_PET_Z_RANGE = 10;
 const FIELD_CURRENT_PET_Z_BASE = 32;
 const FIELD_CURRENT_PET_Z_RANGE = 10;
+let homeDailyMissionClientPosition = null;
+let homeDailyMissionDraggedAt = 0;
 
 function fieldPetZIndex(y, isCurrent) {
     const base = isCurrent ? FIELD_CURRENT_PET_Z_BASE : FIELD_OTHER_PET_Z_BASE;
@@ -3321,15 +3325,6 @@ export const fieldLevel = {
             <div class="field-pets">
                 ${fieldPetsHtml(pet, fld.id)}
             </div>
-            </div>
-            <nav class="field-ui-buttons" aria-label="场景快捷操作">
-                ${currentFieldUiButtons(fld.id).map(fieldUiButtonHtml).join('')}
-            </nav>
-            ${showExpedition ? `<section class="home-haqi-identity" aria-label="哈奇星球伙伴家园">
-                <span>哈奇星球 · 哈奇小镇</span>
-                <strong>${onboardingHasPriority ? `欢迎来到，${escapeHtml(petName)}正等你认识它` : `欢迎回来，${escapeHtml(petName)}在等你`}</strong>
-                <small>${onboardingHasPriority ? '跟随新手航线，开始你们的第一段旅程' : '照顾伙伴、建设家园，再一起去冒险'}</small>
-            </section>` : ''}
             ${showExpedition && !onboardingHasPriority ? `<section class="home-daily-mission is-frame-${escapeHtml(dailyMission.frameKey)}${urgentCare ? ' is-care' : ''}${dailyComplete ? ' is-complete' : ''}" aria-labelledby="homeDailyMissionTitle">
                 <span class="home-daily-mission__copy">
                     <span class="home-daily-mission__eyebrow">${dailyComplete ? '今日目标完成' : '今日一起做'}</span>
@@ -3338,12 +3333,37 @@ export const fieldLevel = {
                 </span>
                 <button class="home-daily-mission__action" type="button" ${urgentCare ? `data-home-daily-care="${urgentCare.key}"` : 'data-field-scene-nav="expeditionMap"'}><span>${escapeHtml(dailyMission.action)}</span></button>
             </section>` : ''}
-            ${showExpedition || showMineral ? `<nav class="home-adventure-shortcuts" aria-label="探索入口">
-                ${showExpedition ? '<button class="home-adventure-shortcut is-expedition" type="button" data-field-scene-nav="expeditionMap" title="星球探险"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-expedition-shortcut.webp" alt=""></span><span>星球探险</span></button>' : ''}
-                ${showMineral ? '<button class="home-adventure-shortcut is-mineral" type="button" data-field-scene-nav="haqiMineralExploration" title="星际矿区"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-mineral-shortcut.webp" alt=""></span><span>矿区</span></button>' : ''}
+            </div>
+            <nav class="field-ui-buttons" aria-label="场景快捷操作">
+                ${currentFieldUiButtons(fld.id).map(fieldUiButtonHtml).join('')}
+            </nav>
+            ${showExpedition && shouldShowHomeWelcome(state.user, state.offlineMode) ? `<section class="home-haqi-identity" aria-label="欢迎回到哈奇小镇">
+                <img src="${HOME_WELCOME_ASSET}" alt="">
+                <span class="home-haqi-identity__copy">
+                    <span>哈奇星球 · 哈奇小镇</span>
+                    <strong>${onboardingHasPriority ? `欢迎来到，${escapeHtml(petName)}正等你认识它` : `欢迎回来，${escapeHtml(petName)}在等你`}</strong>
+                    <small>${onboardingHasPriority ? '跟随新手航线，开始你们的第一段旅程' : '照顾伙伴、建设家园，再一起去冒险'}</small>
+                </span>
+                <button type="button" class="home-haqi-identity__close" data-home-welcome-close aria-label="关闭欢迎提示" title="关闭"></button>
+            </section>` : ''}
+            ${showExpedition || showMineral ? `<nav class="home-adventure-shortcuts" aria-label="学习与探索入口">
+                ${showExpedition ? '<button class="home-adventure-shortcut is-expedition" type="button" data-field-scene-nav="expeditionMap" title="星球探险"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-expedition-shortcut-v3.webp" alt=""></span><span class="sr-only">星球探险</span></button>' : ''}
+                ${showMineral ? '<button class="home-adventure-shortcut is-mineral" type="button" data-field-scene-nav="haqiMineralExploration" title="星际矿区"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-mineral-shortcut-v3.webp" alt=""></span><span class="sr-only">矿区</span></button>' : ''}
+                ${showExpedition ? '<button class="home-adventure-shortcut is-english" type="button" data-field-scene-nav="helloLearner" title="学英语"><span class="home-adventure-shortcut__icon" aria-hidden="true"><img src="https://cdn.keepwork.com/keepwork/cdn/magichaqi/assets/home-english-shortcut-v3.webp" alt=""></span><span class="sr-only">学英语</span></button>' : ''}
             </nav>` : ''}
             ${fieldMusicToggleHtml(fld.id)}
         `;
+
+        const welcomePanel = scene.querySelector('.home-haqi-identity');
+        const englishShortcut = scene.querySelector('.home-adventure-shortcut.is-english');
+        if (welcomePanel && englishShortcut) {
+            const panelRect = welcomePanel.getBoundingClientRect();
+            const shortcutRect = englishShortcut.getBoundingClientRect();
+            const scale = clientScaleForElement(scene);
+            const alignedWidth = Math.max(0, shortcutRect.right - panelRect.left) * scale.x;
+            const preferredWidth = parseFloat(getComputedStyle(welcomePanel).width) || 0;
+            welcomePanel.style.width = `${Math.min(760, Math.max(alignedWidth, preferredWidth))}px`;
+        }
     },
 
     bindStage(pet, ctx) {
@@ -3359,6 +3379,15 @@ export const fieldLevel = {
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
         const fieldMusic = selectedFieldMusic(fld.id);
         const dailyMissionButton = document.querySelector('.home-daily-mission__action');
+        const welcomeCloseButton = document.querySelector('[data-home-welcome-close]');
+        if (welcomeCloseButton) {
+            welcomeCloseButton.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dismissHomeWelcome(state.user, state.offlineMode);
+                welcomeCloseButton.closest('.home-haqi-identity')?.remove();
+            };
+        }
         if (dailyMissionButton) {
             const missionType = dailyMissionButton.dataset.homeDailyCare ? 'care' : 'expedition';
             const missionComplete = document.querySelector('.home-daily-mission')?.classList.contains('is-complete') === true;
@@ -3423,6 +3452,7 @@ export const fieldLevel = {
         }
         window.addEventListener('resize', applyFieldPan, { passive: true });
         bindFieldPan(ctx);
+        bindHomeDailyMissionDrag(ctx);
         $$('.poop-btn').forEach(el => {
             el.onclick = (e) => {
                 e.stopPropagation();
@@ -3539,7 +3569,8 @@ export const fieldLevel = {
                     onConfirmed: () => {
                         recordChongqingNpcTalk(npc, fld.id);
                         if (!isChongqingZooPlanet()) applyNpcHatchBoost(npc, fld.id);
-                        if (npc.minigame) ctx.callbacks.onLaunchNpcMinigame?.(npc);
+                        if (npc.helloLearner) ctx.callbacks.onLaunchHelloLearner?.(npc);
+                        else if (npc.minigame) ctx.callbacks.onLaunchNpcMinigame?.(npc);
                     },
                 });
             };
@@ -4158,6 +4189,98 @@ function bindFieldPan(ctx) {
         if (Date.now() - (stage.__mhFieldPannedAt || 0) > 260) return;
         e.preventDefault();
         e.stopPropagation();
+    }, true);
+}
+
+function bindHomeDailyMissionDrag(ctx) {
+    const stage = ctx.stage;
+    const scene = $('mhFieldScene');
+    const mission = scene?.querySelector('.home-daily-mission');
+    if (!stage || !scene || !mission || mission.__mhDragBound) return;
+    mission.__mhDragBound = true;
+    let drag = null;
+
+    const placeMission = (clientLeft, clientTop) => {
+        const stageRect = stage.getBoundingClientRect();
+        const sceneRect = scene.getBoundingClientRect();
+        const missionRect = mission.getBoundingClientRect();
+        const shortcutRect = document.querySelector('.home-adventure-shortcuts')?.getBoundingClientRect();
+        const scale = clientScaleForElement(scene);
+        const left = clampRange(clientLeft, stageRect.left, Math.max(stageRect.left, stageRect.right - missionRect.width));
+        const safeTop = Math.max(stageRect.top, shortcutRect?.bottom + 8 || stageRect.top);
+        const top = clampRange(clientTop, safeTop, Math.max(safeTop, stageRect.bottom - missionRect.height));
+        mission.style.left = `${(left - sceneRect.left) * scale.x}px`;
+        mission.style.top = `${(top - sceneRect.top) * scale.y}px`;
+        mission.style.bottom = 'auto';
+        mission.style.transform = 'none';
+        homeDailyMissionClientPosition = { left, top };
+    };
+
+    if (homeDailyMissionClientPosition) {
+        placeMission(homeDailyMissionClientPosition.left, homeDailyMissionClientPosition.top);
+    }
+
+    const stopDrag = (event = null) => {
+        if (!drag || (event && drag.id !== event.pointerId)) return;
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        if (drag.active) homeDailyMissionDraggedAt = Date.now();
+        try { mission.releasePointerCapture?.(drag.id); } catch {}
+        mission.classList.remove('is-dragging');
+        drag = null;
+        window.removeEventListener('pointermove', moveDrag);
+        window.removeEventListener('pointerup', stopDrag);
+        window.removeEventListener('pointercancel', stopDrag);
+        window.removeEventListener('blur', stopDrag);
+    };
+
+    const moveDrag = (event) => {
+        if (!drag || drag.id !== event.pointerId) return;
+        if (!mission.isConnected || !stage.classList.contains('zoom-field')) {
+            stopDrag();
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const deltaX = event.clientX - drag.x;
+        const deltaY = event.clientY - drag.y;
+        if (!drag.active && Math.hypot(deltaX, deltaY) < 5) return;
+        if (!drag.active) {
+            drag.active = true;
+            mission.classList.add('is-dragging');
+        }
+        const desiredLeft = event.clientX - drag.grabOffsetX;
+        const desiredTop = event.clientY - drag.grabOffsetY;
+        placeMission(desiredLeft, desiredTop);
+    };
+
+    mission.addEventListener('pointerdown', (event) => {
+        if (event.button != null && event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const missionRect = mission.getBoundingClientRect();
+        drag = {
+            id: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            grabOffsetX: event.clientX - missionRect.left,
+            grabOffsetY: event.clientY - missionRect.top,
+            width: missionRect.width,
+            height: missionRect.height,
+            active: false,
+        };
+        try { mission.setPointerCapture?.(event.pointerId); } catch {}
+        window.addEventListener('pointermove', moveDrag, { passive: false });
+        window.addEventListener('pointerup', stopDrag);
+        window.addEventListener('pointercancel', stopDrag);
+        window.addEventListener('blur', stopDrag);
+    });
+    mission.addEventListener('click', (event) => {
+        if (Date.now() - homeDailyMissionDraggedAt > 300) return;
+        event.preventDefault();
+        event.stopPropagation();
     }, true);
 }
 

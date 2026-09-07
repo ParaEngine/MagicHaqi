@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aggregateExpeditionPlaytests, buildExpeditionHistoryEntry, formatExpeditionHistoryProgress, recordExpeditionHistory } from '../js/expedition_history.js';
+import { aggregateExpeditionPlaytests, buildExpeditionHistoryEntry, formatExpeditionHistoryProgress, mergeCapturedPets, recordExpeditionHistory } from '../js/expedition_history.js';
 import { getHaqiWeeklyProgress } from '../js/haqi_weekly_progress.js';
 
 const launch = {
@@ -28,6 +28,29 @@ test('远征历史记录保留结算摘要且未完成远征不携带奖励状�
     assert.equal(entry.lootCount, 3);
     assert.equal(entry.captureCount, 1);
     assert.equal(entry.finishedAt, 1000);
+});
+
+test('远征历史永久保存捕捉物种与素材作为再次孵化凭证', () => {
+    const entry = buildExpeditionHistoryEntry({ params: { expedition: { id: 'exp-1' } } }, {
+        captures: [{ speciesId: 'sugar_patrol', imageSheetUrl: 'https://cdn.example.com/flame-puppy.webp?version=2' }],
+    }, 123);
+
+    assert.deepEqual(entry.capturedPets, [{
+        speciesId: 'sugar_patrol',
+        imageSheetUrl: 'https://cdn.example.com/flame-puppy.webp?version=2',
+        imageUrl: '',
+    }]);
+});
+
+test('累计捕捉索引不受最近十次远征上限影响并按素材去重', () => {
+    const previous = [{ speciesId: 'old', imageSheetUrl: 'https://cdn.example.com/old.webp', imageUrl: '' }];
+    const merged = mergeCapturedPets(previous, [
+        { expeditionSpeciesId: 'old-copy', imageSheetUrl: 'https://cdn.example.com/old.webp' },
+        { expeditionSpeciesId: 'new', imageSheetUrl: 'https://cdn.example.com/new.webp' },
+    ]);
+
+    assert.equal(merged.length, 2);
+    assert.equal(merged[1].speciesId, 'new');
 });
 
 test('远征历史保存规范化的定向试玩构筑与行为快照', () => {

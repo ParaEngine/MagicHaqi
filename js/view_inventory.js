@@ -27,7 +27,8 @@ const HOME_TREASURE_STYLE = `<style>
     .mh-home-treasures { box-sizing:border-box; container-type:inline-size; max-width:100%; overflow:hidden; }
     @container (max-width: 480px) {
         .mh-home-treasure-row { grid-template-columns: auto minmax(0, 1fr) !important; }
-        .mh-home-treasure-row [data-claim-treasure] { grid-column: 1 / -1; width: 100%; min-height: 36px; }
+        .mh-home-treasure-actions { grid-column: 1 / -1; width: 100%; }
+        .mh-home-treasure-actions > button { flex: 1 1 0; min-height: 36px; }
     }
 </style>`;
 
@@ -90,7 +91,7 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder, onCla
                         return `<div class="mh-home-treasure-row" data-home-treasure-id="${escapeHtml(id)}" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px;border:1.5px solid ${focusTreasureId === id ? '#0891b2' : 'var(--border-card)'};border-radius:8px;background:${focusTreasureId === id ? '#ecfeff' : 'var(--bg-pill)'};${focusTreasureId === id ? 'box-shadow:0 0 0 3px rgba(8,145,178,.16)' : ''}">
                             <span style="display:grid;place-items:center;width:42px;height:42px;font-size:25px" aria-hidden="true">${rewardArtHtml(treasure.image, treasure.icon, 'mh-home-treasure-image')}</span>
                             <div style="min-width:0"><div class="text-sm font-bold" style="color:var(--text-primary)">${escapeHtml(treasure.name)} · ${escapeHtml(fusionText)}</div><div class="text-xs" style="color:var(--text-muted)">${placed ? `运行 Lv.${growth.level} · 已运行 ${growth.days} 天` : '未摆放，尚未启动'} · 每日 ${escapeHtml(rewardText)}</div></div>
-                            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btn-secondary text-xs" type="button" data-place-treasure="${escapeHtml(id)}">${placed ? '移动' : '摆放'}</button><button class="btn-primary text-xs" type="button" data-claim-treasure="${escapeHtml(id)}" ${placed ? '' : 'disabled'}>领取</button></div>
+                            <div class="mh-home-treasure-actions" style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btn-secondary text-xs" type="button" data-place-treasure="${escapeHtml(id)}">${placed ? '移动' : '摆放'}</button><button class="btn-primary text-xs" type="button" data-claim-treasure="${escapeHtml(id)}" ${placed ? '' : 'disabled'}>领取</button></div>
                         </div>`;
                     }).join('')}
                 </div>

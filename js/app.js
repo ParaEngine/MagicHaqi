@@ -29,6 +29,7 @@ import { normalizeTerrainFieldSlotId, renderTerrainFields, resolveTerrainFieldTy
 import { applySettledOfficialPlanetFromProfile, applyTemporaryHomePlanetFromUrl, renderStarSettlements } from './view_star_settlements.js';
 import { hasPostcardParams } from './view_postcard.js';
 import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId } from './dna.js';
+import { hasGuestSession, setGuestSessionActive } from './guest_session.js';
 import './petQuality.js';
 import { randId } from './utils.js';
 import { itemName, t } from './i18n.js';
@@ -77,7 +78,7 @@ import { chooseExpeditionInvestigationBranch, createExpeditionConfrontationMissi
 import { chooseSectorSideCase, createSectorEventFinaleMission, discoverSectorSideCase, getSectorEventAvailability, getSectorEventProgress, prepareSectorEventFinale, resolveSectorEvent, startSectorEvent, synchronizeSectorEvent } from './expedition_sector_event_core.js';
 import { hasMineralBridgeSyncChanges, mergeMineralBridgeSync, settleMineralRoutePreparation } from './mineral_host_core.js';
 import { calculateMineralPetSupport } from './mineral_pet_support_core.js';
-import { recordExpeditionHistory } from './expedition_history.js';
+import { mergeCapturedPets, recordExpeditionHistory } from './expedition_history.js';
 import { claimDailyHomeTreasureEffect, formatHomeTreasureReward, getHomeTreasureDailyReward, getHomeTreasureFacility, getHomeTreasureGrowth, getHomeTreasureInventoryId, getHomeTreasures, HOME_TREASURE_META, isHomeTreasureId, isHomeTreasurePlaced } from './home_treasures.js';
 import { getHaqiExpeditionSettlement, HAQI_EXPEDITION_PLUGIN, isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
 import { getHaqiWeeklyProgress } from './haqi_weekly_progress.js';
@@ -88,17 +89,21 @@ import { configureFirstDayFunnelReporter, configureFirstDayFunnelScope, createAn
 import { configureCoinLedgerScope, exportCoinLedger, getCoinLedger, summarizeCoinLedger } from './coin_ledger.js';
 import { completeReturnRouteStep, getReturnRouteProgress, RETURN_ROUTE_REWARD_COINS, RETURN_ROUTE_STEPS, scheduleReturnRoute } from './return_route.js';
 import { completeNpcCommission } from './minigame_daily.js';
+import { findHelloLearnerSessionCompletion, settleHelloLearnerReward } from './hello_learner_rewards.js';
 import { getNpcRelationshipBonuses, registerCollectibleAcquisition, rollCollectibleDrop } from './npc_gifts.js';
 import { getCollectibleSeriesOutcomes, getCollectibleSeriesProgress } from './reward_outcome_core.js';
+import { resetHomeWelcomeForLogin } from './home_welcome.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=f4a87c064328';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=c1ff58c09d76';
 const LOCAL_EXPEDITION_RESET_INTENT_KEY = 'mh_reset_today_expeditions';
 let firstDaySessionRecorded = false;
 const analyticsSessionId = createAnalyticsSessionId();
 const analyticsVisitorId = getAnalyticsVisitorId();
 let pendingInventoryTreasureFocus = '';
+let pendingHelloLearnerSession = null;
+let helloLearnerFocusTimer = null;
 const rewardOutcomeReturnTracker = createRewardOutcomeReturnTracker();
 
 const localDataScope = () => (
@@ -155,6 +160,13 @@ function importRuntimeModule(src) {
     return new Function('src', 'return import(src)')(src);
 }
 
+function importRuntimeModuleWithTimeout(src, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => reject(new Error(`Module import timed out after ${timeoutMs}ms: ${src}`)), timeoutMs);
+        importRuntimeModule(src).then(resolve, reject).finally(() => clearTimeout(timeoutId));
+    });
+}
+
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
     // 在 SDK 入口执行前预设默认实例参数：index.ts 会用它构造 window.keepwork，
@@ -167,10 +179,12 @@ async function ensureKeepworkSDK() {
     };
     const host = window.location.hostname;
     const isLocalHost = host === '127.0.0.1' || host === 'localhost';
-    const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
+    const localSdkRequested = window.__useLocalKeepworkSDK === true
+        || new URL(window.location.href).searchParams.get('local_sdk') === '1';
+    const useLocalIndex = isLocalHost && localSdkRequested && !window.location.pathname.includes('/dist/');
     try {
         if (useLocalIndex) {
-            await importRuntimeModule('http://127.0.0.1:5001/index.ts');
+            await importRuntimeModuleWithTimeout('http://127.0.0.1:5001/index.ts', 2000);
         } else {
             await loadScript(sdkCdnUrl);
         }
@@ -240,6 +254,43 @@ function bindOnboardingStepClickObserver() {
     }, true);
 }
 
+function fitOnboardingPanelToField(panel, fieldStage) {
+    if (panel.hidden || !fieldStage?.isConnected) return;
+    const card = panel.querySelector('.mh-onboarding-card');
+    if (!card) return;
+    const margin = 8;
+    const stageWidth = fieldStage.clientWidth;
+    const stageHeight = fieldStage.clientHeight;
+    const isPortraitCompact = card.classList.contains('mh-onboarding-intro')
+        && window.matchMedia('(max-width: 1024px) and (orientation: portrait)').matches;
+    const stageRect = fieldStage.getBoundingClientRect();
+    const shortcutsRect = isPortraitCompact
+        ? fieldStage.querySelector('.home-adventure-shortcuts')?.getBoundingClientRect()
+        : null;
+    const availableTop = shortcutsRect
+        ? Math.min(stageHeight - margin, Math.max(margin, shortcutsRect.bottom - stageRect.top + margin))
+        : margin;
+    panel.style.transform = 'none';
+    panel.style.transformOrigin = 'top left';
+    panel.style.maxHeight = 'none';
+    panel.style.left = `${margin}px`;
+    panel.style.top = `${availableTop}px`;
+    panel.style.right = 'auto';
+    const naturalWidth = panel.offsetWidth;
+    const naturalHeight = Math.max(panel.offsetHeight, card.scrollHeight);
+    const maxScale = card.classList.contains('mh-onboarding-intro') ? 0.84 : 1;
+    const scale = Math.min(
+        maxScale,
+        Math.max(0, stageWidth - margin * 2) / naturalWidth,
+        Math.max(0, stageHeight - availableTop - margin) / naturalHeight,
+    );
+    panel.style.left = isPortraitCompact
+        ? `${Math.max(margin, (stageWidth - naturalWidth * scale) / 2)}px`
+        : `${stageWidth - margin - naturalWidth * scale}px`;
+    panel.style.transform = `scale(${scale})`;
+    panel.dataset.fieldFitScale = scale.toFixed(4);
+}
+
 function ensureOnboardingPanelRoot() {
     let panel = document.getElementById('mhOnboardingPanel');
     if (panel) return panel;
@@ -261,10 +312,12 @@ function ensureOnboardingPanelRoot() {
         if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) onboardingDragState.moved = true;
         if (!onboardingDragState.moved) return;
         const rect = panel.getBoundingClientRect();
-        const left = Math.min(Math.max(8, onboardingDragState.left + deltaX), window.innerWidth - rect.width - 8);
-        const top = Math.min(Math.max(8, onboardingDragState.top + deltaY), window.innerHeight - rect.height - 8);
-        panel.style.left = `${left}px`;
-        panel.style.top = `${top}px`;
+        const fieldStage = panel.closest('#mhStage.zoom-field');
+        const stageRect = fieldStage?.getBoundingClientRect();
+        const clientLeft = Math.min(Math.max((stageRect?.left || 0) + 8, onboardingDragState.left + deltaX), (stageRect?.right || window.innerWidth) - rect.width - 8);
+        const clientTop = Math.min(Math.max((stageRect?.top || 0) + 8, onboardingDragState.top + deltaY), (stageRect?.bottom || window.innerHeight) - rect.height - 8);
+        panel.style.left = `${clientLeft - (stageRect?.left || 0)}px`;
+        panel.style.top = `${clientTop - (stageRect?.top || 0)}px`;
         panel.style.right = 'auto';
     });
     panel.addEventListener('pointerup', (event) => {
@@ -281,6 +334,10 @@ function ensureOnboardingPanelRoot() {
         }
     });
     panel.addEventListener('pointercancel', () => { onboardingDragState = null; });
+    window.addEventListener('resize', () => {
+        const fieldStage = app.querySelector('#mhStage.zoom-field');
+        if (fieldStage) requestAnimationFrame(() => fitOnboardingPanelToField(panel, fieldStage));
+    });
     document.body.appendChild(panel);
     bindOnboardingStepClickObserver();
     return panel;
@@ -363,14 +420,6 @@ function showReturnRouteStepFeedback(step, completed, total) {
 function renderHaqiOnboardingIntro(panel, onboarding, task, planetId) {
     panel.classList.remove('is-drawer');
     panel.innerHTML = `<section class="mh-onboarding-card mh-onboarding-intro" aria-label="哈奇星球新手旅程">
-        <div class="mh-onboarding-intro-scene" aria-hidden="true">
-            <span class="mh-onboarding-intro-planet"></span>
-            <span class="mh-onboarding-intro-route"></span>
-            <span class="mh-onboarding-intro-ship">🚀</span>
-            <span class="mh-onboarding-intro-star">✦</span>
-            <span class="mh-onboarding-intro-star">✦</span>
-            <span class="mh-onboarding-intro-star">✦</span>
-        </div>
         <div class="mh-onboarding-intro-copy">
             <span class="mh-onboarding-kicker">哈奇星球 · 新手航线</span>
             <h2>和伙伴完成第一次星际远征</h2>
@@ -497,12 +546,14 @@ function completeDailyReturnRouteStep(stepId) {
 
 function renderOnboardingPanel() {
     const panel = ensureOnboardingPanelRoot();
-    if (!shouldShowOnboardingPanel(state.currentView)) {
+    const fieldStage = app.querySelector('#mhStage.zoom-field');
+    if (!shouldShowOnboardingPanel(state.currentView) || !fieldStage) {
         panel.hidden = true;
         panel.classList.remove('is-drawer');
         clearOnboardingHighlight();
         return;
     }
+    if (panel.parentElement !== fieldStage) fieldStage.appendChild(panel);
     const planetId = getActivePlanetId();
     const onboarding = ensureOnboardingState(state.settings, planetId);
     const task = getActiveOnboardingTask(state.settings, planetId);
@@ -519,6 +570,7 @@ function renderOnboardingPanel() {
         return;
     }
     panel.hidden = false;
+    requestAnimationFrame(() => fitOnboardingPanelToField(panel, fieldStage));
     if (planetId === 'haqi' && !onboarding.introSeenAt && progress.completed === 0) {
         clearOnboardingHighlight();
         renderHaqiOnboardingIntro(panel, onboarding, task, planetId);
@@ -1774,6 +1826,7 @@ function recordExpeditionOutcome(launch, data = {}, progress = null) {
         mineralBonuses: launch?.params?.mineralBonuses,
     } : data;
     settlement.history = recordExpeditionHistory(settlement.history, launch, outcome);
+    settlement.capturedPets = mergeCapturedPets(settlement.capturedPets, outcome.captures);
     const investigation = recordExpeditionInvestigationOutcome(settlement, launch, outcome);
     if (investigation.applied) synchronizeExpeditionSectorEvent(settlement, investigation.progress);
     saveUserProfileDebounced();
@@ -2364,7 +2417,10 @@ function renderMinigamesRoute() {
                     if (markDailyExpeditionExplored(settlement, launch.params?.expedition, { planetName: state.planetName || '哈奇星球' })) {
                         saveUserProfileDebounced();
                     }
-					recordExpeditionOutcome(launch, data, progress);
+                    recordExpeditionOutcome(launch, {
+                        ...data,
+                        captures: captures?.pets?.length ? captures.pets : data?.captures,
+                    }, progress);
                     if (progress.applied) {
                         recordFinishedExpedition(true, { completed: true });
 						checkOnboardingTask('complete-first-expedition');
@@ -2628,7 +2684,8 @@ async function renderPetListRoute() {
         onBecomeMember: launchKeepworkVipMinigame,
         onBack:   () => navigateToView(rewardOutcomeReturnTracker.consume('petList', fallbackView)),
         onLoadPet: async (id) => {
-            if (!id || state.pets[id] || state.currentView !== 'petList') return;
+            if (!id || state.currentView !== 'petList') return null;
+            if (state.pets[id]) return state.pets[id];
             try { await loadPet(id); }
             catch (e) { console.warn('加载宠物卡片失败', id, e); }
             return state.pets[id] || null;
@@ -2652,6 +2709,7 @@ function homeCallbacks() {
         onAction:     handleAction,
         onSelectPet:  handleSelectScenePet,
         onBecomeMember: launchKeepworkVipMinigame,
+        onZoomLevelChange: renderOnboardingPanel,
         onSwitchRoom: (id) => { state.currentRoom = id; const p = getCurrentPet(); if (p) p.activeRoom = id; savePetDebounced(p); render(); },
         onToggleDecor: handleToggleDecor,
         onToggleFeed:  handleToggleFeed,
@@ -2670,6 +2728,7 @@ function homeCallbacks() {
         canUseMineralExploration: () => isMineralExplorationEnabled(getActivePlanetId()),
         onTreatSickness: handleTreatSickness,
         onLaunchNpcMinigame: handleNpcMinigameLaunch,
+        onLaunchHelloLearner: handleHelloLearnerLaunch,
         // 「星球→星球表面(field)」缩放过渡前的同步拦截：领养仪式型星球且玩家尚无真实宠物时，
         // 直接弹出领养小游戏并返回 true，view_home 据此取消本次缩放（不进入 field）。
         onPlanetToFieldOnboarding: () => {
@@ -2969,8 +3028,13 @@ async function loadCurrentUser() {
 }
 
 function clearUnauthenticatedSession() {
-    try { sdk.logout?.(); } catch (_) {}
-    sdk.token = null;
+    resetHomeWelcomeForLogin(state.user, state.offlineMode);
+    try {
+        if (typeof sdk.setToken === 'function') sdk.setToken(null);
+        else sdk.token = null;
+    } catch (_) {
+        sdk.token = null;
+    }
     state.user = null;
     state.offlineMode = false;
 }
@@ -3116,6 +3180,10 @@ async function bootstrap() {
         if (sdk.token && !state.user) clearUnauthenticatedSession();
         // 微信小程序 web-view：跳过登录页，直接静默授权登录（整页跳转，维持闪屏）。
         if (maybeStartMiniProgramSilentLogin({ wxRedirectHandled })) return;
+        if (hasGuestSession()) {
+            await handleOfflineMode();
+            return;
+        }
         await applyTemporaryHomePlanetFromUrl();
         finishBootstrap();
         setView('login');
@@ -3828,6 +3896,7 @@ async function handleLogin() {
 // 游客模式下从设置页发起登录：跳到登录页（含隐私协议勾选行），由用户主动勾选并
 // 登录，保证登录前完成协议同意；游客也可在登录页再次选择游客体验返回。
 function handleGuestLogin() {
+    setGuestSessionActive(false);
     setView('login');
 }
 
@@ -3835,6 +3904,7 @@ async function handleOfflineMode() {
     try {
         state.offlineMode = true;
         state.user = { id: 'offline', username: 'offline', name: 'Offline', offline: true };
+        setGuestSessionActive(true);
         await loadUserProfile();
         await applyTemporaryHomePlanetFromUrl();
         await resetTodayExpeditionsIfRequested();
@@ -3864,6 +3934,7 @@ async function handleOfflineMode() {
         setView(resolveLandingView());
     } catch (e) {
         console.warn('离线模式启动失败', e);
+        setGuestSessionActive(false);
         state.offlineMode = false;
         state.user = null;
         showToast('离线模式启动失败：' + (e?.message || e), 'error');
@@ -3872,7 +3943,9 @@ async function handleOfflineMode() {
 }
 
 function handleLogout() {
+    resetHomeWelcomeForLogin(state.user, state.offlineMode);
     try { sdk.logout?.(); } catch (_) {}
+    setGuestSessionActive(false);
     sdk.token = null;
     state.user = null;
     state.offlineMode = false;
@@ -5110,6 +5183,75 @@ function handleNpcMinigameLaunch(npc) {
     navigateToView('minigames', { preserveMinigameLaunch: true });
 }
 
+function helloLearnerUrl() {
+    const url = new URL('../tools/HelloLearner/HelloLearner.html', window.location.href);
+    if (sdk?.token) url.searchParams.set('token', sdk.token);
+    url.searchParams.set('workspace', 'HelloLearner');
+    return url.toString();
+}
+
+async function readHelloLearnerProgress() {
+    if (!state.user || !sdk?.personalPageStore?.withWorkspace) return null;
+    const store = sdk.personalPageStore.withWorkspace('HelloLearner');
+    const content = await store.readFile('.hellolearner/progress.json');
+    return content ? JSON.parse(String(content)) : null;
+}
+
+async function settlePendingHelloLearnerSession() {
+    const session = pendingHelloLearnerSession;
+    if (!session || session.settling) return;
+    session.settling = true;
+    try {
+        const completion = findHelloLearnerSessionCompletion(await readHelloLearnerProgress(), session.startedAt);
+        if (!completion) {
+            if (session.popup?.closed) pendingHelloLearnerSession = null;
+            return;
+        }
+        const reward = settleHelloLearnerReward(state.settings, completion);
+        pendingHelloLearnerSession = null;
+        if (!reward.rewarded) {
+            showToast(reward.reason === 'daily-limit'
+                ? '今天的英语学习奖励已经领取，明天再来继续学习。'
+                : '这次学习记录已经结算过了。', 'info', 2800);
+            return;
+        }
+        addCoins(reward.coins, { source: 'hello-learner-completion', category: 'learning', planetId: getActivePlanetId() });
+        let commissionText = '';
+        if (session.npc?.dailyCommission) {
+            const commission = completeNpcCommission(state.settings, session.npc);
+            if (commission.completed) commissionText = `，${session.npc.name}记录了今日修习`;
+        }
+        saveUserProfileDebounced();
+        notify();
+        recordProductEvent('hello_learner_rewarded', { source: session.npc ? 'mentor' : 'home', npcId: session.npc?.id || '', completionType: completion.type });
+        showToast(`英语学习完成，获得 ${reward.coins} 金币${commissionText}！`, 'success', 3600);
+    } catch (error) {
+        console.warn('读取 HelloLearner 学习进度失败', error);
+        if (session.popup?.closed) pendingHelloLearnerSession = null;
+        showToast('学习体验已结束，暂时无法核验云端进度，未发放奖励。', 'info', 3200);
+    } finally {
+        session.settling = false;
+    }
+}
+
+function handleHelloLearnerLaunch(npc = null) {
+    const popup = window.open(helloLearnerUrl(), '_blank');
+    if (!popup) {
+        showToast('浏览器阻止了学习窗口，请允许弹出窗口后重试。', 'info', 3000);
+        return;
+    }
+    try { popup.opener = null; } catch (_) {}
+    pendingHelloLearnerSession = { startedAt: Date.now(), npc, popup, settling: false };
+    recordProductEvent('hello_learner_opened', { source: npc ? 'mentor' : 'home', npcId: npc?.id || '' });
+    showToast(state.user ? '完成一节英语学习后返回哈奇星球领取奖励。' : '游客可体验英语学习，登录后完成课程可领取奖励。', 'info', 3200);
+}
+
+window.addEventListener('focus', () => {
+    if (!pendingHelloLearnerSession) return;
+    clearTimeout(helloLearnerFocusTimer);
+    helloLearnerFocusTimer = setTimeout(() => void settlePendingHelloLearnerSession(), 700);
+});
+
 async function handleStoryMinigameResult(_game, data = {}) {
     const mod = await loadStoryPlayerView();
     mod.completeStoryMinigameActivity?.(data);
@@ -5275,6 +5417,10 @@ function postTowerDefenseTreatmentControl(type) {
 }
 
 function handleNav(target, options = {}) {
+    if (target === 'helloLearner') {
+        handleHelloLearnerLaunch();
+        return;
+    }
     navigateToView(target, options);
 }
 

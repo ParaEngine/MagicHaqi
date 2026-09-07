@@ -75,6 +75,11 @@ export function buildExpeditionHistoryEntry(launch, data = {}, now = Date.now())
         chapter: [1, 2].includes(nonNegativeInteger(data.chapter)) ? nonNegativeInteger(data.chapter) : 0,
         completedNodes: nonNegativeInteger(data.completedNodes),
         captureCount: captures.length,
+        capturedPets: captures.slice(0, 3).map(capture => ({
+            speciesId: text(capture?.speciesId),
+            imageSheetUrl: text(capture?.imageSheetUrl),
+            imageUrl: text(capture?.imageUrl),
+        })).filter(capture => capture.speciesId || capture.imageSheetUrl || capture.imageUrl),
         lootCount: loot.reduce((total, entry) => total + nonNegativeInteger(entry?.amount), 0),
         mineralContribution: {
             attackPercent: Math.max(0, Number(mineralBonuses.attackPercent) || 0),
@@ -98,6 +103,22 @@ export function recordExpeditionHistory(history, launch, data = {}, options = {}
         && text(item?.playtest?.investigation?.branchId) === draft.playtest.investigation.branchId);
     const entry = restartSource ? { ...draft, restartOfRunId: text(restartSource.runId) } : draft;
     return [entry, ...previous.filter(item => text(item?.runId) !== entry.runId)].slice(0, MAX_HISTORY_ENTRIES);
+}
+
+export function mergeCapturedPets(previous, captures) {
+    const merged = [...(Array.isArray(previous) ? previous : [])];
+    for (const capture of Array.isArray(captures) ? captures : []) {
+        const normalized = {
+            speciesId: text(capture?.expeditionSpeciesId || capture?.speciesId),
+            imageSheetUrl: text(capture?.imageSheetUrl),
+            imageUrl: text(capture?.imageUrl),
+        };
+        const key = normalized.imageSheetUrl || normalized.imageUrl || normalized.speciesId;
+        if (key && !merged.some(item => (text(item?.imageSheetUrl) || text(item?.imageUrl) || text(item?.speciesId)) === key)) {
+            merged.push(normalized);
+        }
+    }
+    return merged;
 }
 
 export function aggregateExpeditionPlaytests(history) {

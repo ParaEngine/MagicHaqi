@@ -16,6 +16,7 @@ import { getExperienceToNextLevel } from './expedition_settlement.js';
 import { getHaqiExpeditionSettlement, isHaqiExpeditionEnabled } from './haqi_expedition_plugin.js';
 import { calculateMineralPetSupport } from './mineral_pet_support_core.js';
 import { EXPEDITION_MATERIAL_ART, rewardArtHtml } from './reward_art.js';
+import { hasCapturedFamousPet } from './pet_capture_unlock_core.js';
 
 // 阶段顺序（与 4×4 精灵图行对齐）：baby=0, teen=1, adult=2, elder=3
 const ALBUM_STAGES = [
@@ -721,6 +722,16 @@ function hasHatchedFamousPet(entry, pets) {
     });
 }
 
+function famousPetCaptureHistory() {
+    const settlement = getHaqiExpeditionSettlement(state.settings);
+    return [...(settlement.capturedPets || []), ...(settlement.history || [])];
+}
+
+function isFamousPetDiscovered(entry, pets) {
+    return hasHatchedFamousPet(entry, pets)
+        || hasCapturedFamousPet(entry, pets, famousPetCaptureHistory());
+}
+
 function rarePetArtHtml(entry, unlocked) {
     const canShowBaby = !!(entry?.imageSheetUrl || entry?.imageUrl);
     if (!unlocked && !canShowBaby) {
@@ -739,7 +750,7 @@ function rarePetArtHtml(entry, unlocked) {
 }
 
 function rarePetCardHtml(entry, pets) {
-    const unlocked = hasHatchedFamousPet(entry, pets);
+    const unlocked = isFamousPetDiscovered(entry, pets);
     const name = unlocked ? (entry.name || entry.id) : '???';
     const rarity = Math.max(0, Math.round(Number(entry.rarity) || 0));
     return `
@@ -866,7 +877,9 @@ async function loadFamousPetConfig(entry) {
 }
 
 function openRarePetModal(entry, pets, refreshPetList) {
-    const unlocked = hasHatchedFamousPet(entry, pets);
+    const owned = hasHatchedFamousPet(entry, pets);
+    const captured = hasCapturedFamousPet(entry, pets, famousPetCaptureHistory());
+    const unlocked = owned || captured;
     const price = rarePetPrice(entry);
     const canAfford = (Number(state.coins) || 0) >= price;
     const mask = document.createElement('div');
@@ -882,15 +895,18 @@ function openRarePetModal(entry, pets, refreshPetList) {
             </div>
             ${rarePetPhotoGridHtml(entry, unlocked)}
             <div class="mh-rare-modal-actions">
-                ${unlocked
+                ${owned
                     ? '<button class="btn-secondary" data-rare-close type="button">已拥有</button>'
-                    : `<button class="btn-primary" data-rare-hatch type="button" ${canAfford ? '' : 'disabled'}>${escapeHtml(t('hatchRareBtn'))} ${coinIconSvg()} ${price}</button>`}
+                    : captured
+                        ? `<button class="btn-primary" data-rare-hatch type="button" ${canAfford ? '' : 'disabled'}>${escapeHtml(t('hatchRareAgainBtn'))} ${coinIconSvg()} ${price}</button>`
+                        : `<button class="btn-primary" data-rare-capture type="button">${escapeHtml(t('captureRareBtn'))}</button>`}
             </div>
         </div>`;
     const close = () => mask.remove();
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest?.('[data-rare-close]')) { close(); return; }
         if (e.target.closest?.('[data-rare-hatch]')) hatchRarePet(entry, mask, refreshPetList);
+        if (e.target.closest?.('[data-rare-capture]')) { close(); setView('expeditionMap'); }
     });
     document.body.appendChild(mask);
     setupLazyRawPetImages(mask);
@@ -898,6 +914,10 @@ function openRarePetModal(entry, pets, refreshPetList) {
 }
 
 async function hatchRarePet(entry, mask, refreshPetList) {
+    if (!hasCapturedFamousPet(entry, Object.values(state.pets || {}), famousPetCaptureHistory())) {
+        showToast(t('captureRequired'), 'info', 2200);
+        return;
+    }
     const price = rarePetPrice(entry);
     if ((Number(state.coins) || 0) < price) {
         showToast(`金币不足，需要 ${price} 金币`, 'error', 1800);
@@ -933,6 +953,7 @@ async function hatchRarePet(entry, mask, refreshPetList) {
     }
 
     const now = Date.now();
+    const quality = window.MHPetQuality?.snapshot?.('N') || { id: 'N', name: '初芽', stats: {} };
     const pet = {
         ...JSON.parse(JSON.stringify(config)),
         id: config.id || entry.id || `rare_${randId(8)}`,
@@ -941,6 +962,8 @@ async function hatchRarePet(entry, mask, refreshPetList) {
         imageSheetUrl: config.imageSheetUrl || entry.imageSheetUrl || null,
         source: 'famous-pets',
         sourcePetId: `famous-pets/${entry.id}`,
+        quality,
+        battleStats: { ...quality.stats },
         stats: eggStats(),
         permanentTrauma: defaultPermanentTrauma(),
         bornAt: now,
@@ -1270,7 +1293,7 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
             ${canDelete && !lazy ? `<button class="mh-pet-icon-action mh-pet-card-delete" data-delete-pet="${escapeHtml(pet.id)}" title="${escapeHtml(t('exilePetTitle', { name }))}" aria-label="${escapeHtml(t('exilePetTitle', { name }))}">×</button>` : ''}
             <div class="mh-pet-card-identity">
             <div class="mh-pet-card-avatar ${qualityClass}"><div class="mh-pet-avatar-frame ${qualityClass}">
-                ${lazy ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">${escapeHtml(t('petLazyLoading'))}</div>` : rawPetArtHtml(pet, displayPetName(pet))}
+                ${lazy ? `<button type="button" class="mh-pet-lazy-status" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--text-faint);font-size:12px;cursor:pointer">${escapeHtml(t('petLazyLoading'))}</button>` : rawPetArtHtml(pet, displayPetName(pet))}
             </div>${dispatching ? '<span class="mh-pet-dispatch-stamp">🔒 勘探中</span>' : ''}</div>
             <div class="mh-pet-card-identity-copy">
                 <div class="mh-pet-card-title-row">
@@ -1313,8 +1336,19 @@ function setupLazyPetCards(panel, onLoadPet, { renderLoadedCard, onCardReady } =
         const id = el?.dataset?.petId;
         if (!id || el.dataset.petLazyLoading === '1') return;
         el.dataset.petLazyLoading = '1';
-        const loadedPet = await onLoadPet(id, el);
-        if (!loadedPet || !el.isConnected || typeof renderLoadedCard !== 'function') return;
+        const loadingLabel = el.querySelector('.mh-pet-lazy-status');
+        if (loadingLabel) loadingLabel.textContent = t('petLazyLoading');
+        let loadedPet = null;
+        try {
+            loadedPet = await onLoadPet(id, el);
+        } catch (error) {
+            console.warn('加载宠物卡片失败', id, error);
+        }
+        if (!loadedPet || !el.isConnected || typeof renderLoadedCard !== 'function') {
+            delete el.dataset.petLazyLoading;
+            if (loadingLabel) loadingLabel.textContent = t('petLazyRetry');
+            return;
+        }
         const holder = document.createElement('div');
         holder.innerHTML = renderLoadedCard(loadedPet);
         const next = holder.firstElementChild;
@@ -1323,12 +1357,19 @@ function setupLazyPetCards(panel, onLoadPet, { renderLoadedCard, onCardReady } =
         setupLazyRawPetImages(next);
         onCardReady?.(next, loadedPet);
     };
+    targets.forEach((el) => {
+        el.querySelector('.mh-pet-lazy-status')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            load(el);
+        });
+    });
     if (typeof IntersectionObserver !== 'undefined') {
         const observer = new IntersectionObserver((entries, obs) => {
             entries.forEach((entry) => {
                 if (!entry.isIntersecting && entry.intersectionRatio <= 0) return;
-                load(entry.target);
-                obs.unobserve(entry.target);
+                load(entry.target).then(() => {
+                    if (!entry.target.isConnected) obs.unobserve(entry.target);
+                });
             });
         }, { root: null, rootMargin: '140px 0px', threshold: 0.01 });
         targets.forEach(el => observer.observe(el));
@@ -1352,7 +1393,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
     const list = sortPetsByRecentBirthday(pets || []);
     const rareList = Array.isArray(famousPetsIndex) ? famousPetsIndex : [];
     const rareFilteredList = filteredFamousPets(rareList);
-    const rareUnlockedCount = rareList.filter(item => hasHatchedFamousPet(item, pets || [])).length;
+    const rareUnlockedCount = rareList.filter(item => isFamousPetDiscovered(item, pets || [])).length;
     const isPicker = !!pickerMode;
     if (isPicker) activePetListTab = 'mine';
     const isRareTab = !isPicker && activePetListTab === 'rare';

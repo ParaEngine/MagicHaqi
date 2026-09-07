@@ -1169,19 +1169,8 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
             .mh-gm-file-link:hover { color:#c7d2fe; }
 
             .mh-gm-input-area { padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px)); border-top:1px solid rgba(148,163,184,.16); flex-shrink:0; }
-            .mh-gm-workbuddy-strip { display:flex; gap:8px; margin:0 0 8px; }
-            .mh-gm-workbuddy-action { min-height:44px; border:0; border-radius:12px; cursor:pointer; font-size:14px; font-weight:900; display:flex; align-items:center; justify-content:center; gap:8px; padding:0 14px; box-shadow:0 10px 24px rgba(22,163,74,.18); }
-            .mh-gm-workbuddy-action.primary { flex:1 1 auto; background:linear-gradient(135deg,#22c55e,#16a34a); color:#ecfdf5; }
-            .mh-gm-workbuddy-action.primary:hover { filter:brightness(1.06); }
-            .mh-gm-workbuddy-action.secondary { flex:0 0 auto; min-width:108px; background:rgba(34,197,94,.13); color:#bbf7d0; border:1px solid rgba(34,197,94,.32); box-shadow:none; }
-            .mh-gm-workbuddy-action.secondary:hover { border-color:#22c55e; color:#dcfce7; background:rgba(34,197,94,.2); }
-            .mh-gm-workbuddy-action svg { width:18px; height:18px; flex:0 0 auto; }
             .mh-gm-draft-textarea { width:100%; min-height:210px; resize:vertical; border-radius:12px; border:1px solid rgba(148,163,184,.28); background:rgba(15,39,71,.92); color:#e2e8f0; font-size:13px; line-height:1.5; padding:10px 12px; outline:none; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
             .mh-gm-draft-textarea::placeholder { color:#64748b; }
-            @media (max-width: 420px) {
-                .mh-gm-workbuddy-strip { flex-direction:column; }
-                .mh-gm-workbuddy-action.secondary { width:100%; min-width:0; }
-            }
             .mh-gm-input-box { display:flex; align-items:flex-end; gap:8px; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.24); border-radius:14px; padding:8px 10px 8px 14px; }
             .mh-gm-textarea { flex:1; background:none; border:0; color:#e2e8f0; font-size:16px; resize:none; outline:none; line-height:1.5; min-height:48px; max-height:200px; font-family:inherit; }
             .mh-gm-textarea::placeholder { color:#64748b; }
@@ -1296,15 +1285,6 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
                         <div class="mh-gm-history-pop" id="mhGmHistoryPop"></div>
                     </div>
                     <div class="mh-gm-input-area">
-                        <div class="mh-gm-workbuddy-strip">
-                            <button type="button" class="mh-gm-workbuddy-action primary" id="mhGmWorkBuddy" title="${escapeHtml(t('mgGameWorkBuddyLabel'))}" aria-label="${escapeHtml(t('mgGameWorkBuddyLabel'))}">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 .9-4.5 4.4 1.1 6.2L12 16.6 6.4 19.5l1.1-6.2L3 8.9 9 8l3-6z"/><path d="M8 22h8"/><path d="M12 16v6"/></svg>
-                                <span>用 WorkBuddy 帮我做游戏</span>
-                            </button>
-                            <button type="button" class="mh-gm-workbuddy-action secondary" id="mhGmPasteWorkBuddy" title="从剪贴板粘贴 WorkBuddy 草稿 JSON" aria-label="从剪贴板粘贴 WorkBuddy 草稿 JSON">
-                                <span>粘贴草稿</span>
-                            </button>
-                        </div>
                         <div class="mh-gm-attach-preview" id="mhGmAttachPreview"></div>
                         <div class="mh-gm-input-box">
                             <textarea class="mh-gm-textarea" id="mhGmInput" rows="2" placeholder="${escapeHtml(tt('mgGameChatPlaceholder'))}"></textarea>
@@ -1352,8 +1332,6 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     const historyPop = $('mhGmHistoryPop');
     const newBtn = $('mhGmNew');
     const configBtn = $('mhGmConfig');
-    const workBuddyBtn = $('mhGmWorkBuddy');
-    const pasteWorkBuddyBtn = $('mhGmPasteWorkBuddy');
     const modelBtn = $('mhGmModelBtn');
     
     // Image attachment state
@@ -2942,10 +2920,6 @@ ${ideaLine}`;
         return draft;
     }
 
-    function setWorkBuddyImportBusy(isBusy) {
-        if (pasteWorkBuddyBtn) pasteWorkBuddyBtn.disabled = isBusy;
-    }
-
     async function applyWorkBuddyGameDraft(gameDraft) {
         if (!gameDraft?.html) throw new Error('没有读取到 html 字段');
         currentHtml = gameDraft.html;
@@ -3007,7 +2981,6 @@ ${ideaLine}`;
     }
 
     async function importWorkBuddyGameFromClipboard() {
-        setWorkBuddyImportBusy(true);
         try {
             let text = '';
             try {
@@ -3028,8 +3001,6 @@ ${ideaLine}`;
         } catch (e) {
             console.warn('从剪贴板导入 WorkBuddy 游戏失败', e);
             showToast('导入失败：' + (e?.message || e), 'error', 3200);
-        } finally {
-            setWorkBuddyImportBusy(false);
         }
     }
 
@@ -4382,10 +4353,6 @@ ${ideaLine}`;
 
     // 新建会话。
     newBtn.onclick = startNewSession;
-
-    // 外部 AI 协作：复制完整提示词，并唤起 WorkBuddy。
-    workBuddyBtn.onclick = openWorkBuddy;
-    pasteWorkBuddyBtn.onclick = importWorkBuddyGameFromClipboard;
 
     // 设置弹窗（全局 / 游戏配置 / 美术资源三个标签页）。
     // 通过 ctx 把工坊的状态读写、emoji 选择器和持久化逻辑桥接给设置模块。

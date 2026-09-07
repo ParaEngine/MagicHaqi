@@ -733,6 +733,10 @@ body{background:#6bd7ef;color:var(--ink-cartoon);font-family:"Microsoft YaHei","
 .capture-quality{border-color:#ffe08a!important;background:#fff2bd!important;color:#234d70!important;box-shadow:0 2px 0 rgba(20,67,102,.32)!important}
 /* Runtime-injected failure summary appears after this stylesheet, so retain the light panel with explicit priority. */
 .expedition-failure{border:1px solid var(--expedition-blue-line)!important;background:var(--expedition-blue-panel)!important;box-shadow:0 8px 26px rgba(39,89,120,.20)!important}
+/* Short onboarding routes should fit the viewport instead of inheriting the 15-tier scroll canvas. */
+#map-screen .map-content.map-route-compact{height:100%!important;min-height:100%!important;overflow:hidden!important}
+#map-screen .map-stage.map-route-compact{box-sizing:border-box;height:100%!important;min-height:100%!important;margin:0!important}
+#map-screen .map-stage.map-route-compact .map-node-layer{justify-content:space-around!important;padding:clamp(14px,3vh,28px) 0!important}
 </style>
 </head>
 <body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none"><div id="outer-space"></div>
@@ -793,6 +797,10 @@ const mapNodeIconType=node=>node.investigationMission||node.confrontationMission
 AdventureMap.prototype.render=function(){
 	adventureMapRenderWithLootPreview.call(this);
 	const root=$("#mapRoute");
+	root.dataset.routeDepth=String(this.layout().columns.length);
+	const compactRoute=Number(root.dataset.routeDepth)<=4;
+	root.classList.toggle("map-route-compact",compactRoute);
+	root.parentElement.classList.toggle("map-route-compact",compactRoute);
 	const routePrepared=game_config.routePreparation===true;
 	root.querySelectorAll(".map-node[data-node-id]").forEach(button=>{
 		const node=this.nodes[button.dataset.nodeId];
@@ -1018,7 +1026,7 @@ const originalInitializeAdventureMap=GameManager.prototype.initializeAdventureMa
 GameManager.prototype.initializeAdventureMap=function(){originalInitializeAdventureMap.call(this);this.ui.applyCharacterArt()};
 window.addEventListener("message",event=>{if(event.data?.type==="setGameConfig"&&event.data.data){game_config={...game_config,...event.data.data};queueMicrotask(()=>{refreshExpeditionEcology?.();window.__haqiPlanetBoardingDebug?.game.ui.applyCharacterArt()})}});
 /* Expedition V2: every new avatar, capsule icon, and UI frame is a 1:1 square using a strict 90-degree top-down source. */
-const CAPTURE_RULES={itemId:"captureCapsule",itemName:"星际捕捉胶囊",price:26,maxCarryOut:3,baseChance:.015,lowHpBonus:.38,curveExponent:1.8,minChance:.01,maxChance:.45,absoluteMaxChance:.95,overallMultiplier:1.1,chanceMultiplierByRarity:{普通:1,稀有:.78,精英:.58,史诗:.4,传说:.28}};
+const CAPTURE_RULES={itemId:"captureCapsule",itemName:"星际捕捉胶囊",price:26,maxCarryOut:3,baseChance:.015,lowHpBonus:.38,curveExponent:1.8,minChance:.01,maxChance:.45,absoluteMaxChance:.95,overallMultiplier:1.87,chanceMultiplierByRarity:{普通:1,稀有:.78,精英:.58,史诗:.4,传说:.28}};
 const VIP_PASS={price:"9.9",expeditions:10,capsuleMultiplier:2,rewardMultiplier:2,qualityUpgradeChance:.04};
 const vipPassActive=game=>Boolean(game.state.vipPass?.remainingExpeditions>0);
 const capsuleGain=(game,amount=1)=>amount*(vipPassActive(game)?VIP_PASS.capsuleMultiplier:1);

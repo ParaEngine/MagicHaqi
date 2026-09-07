@@ -289,7 +289,8 @@
             pointer-events: none;
         }
 
-        .mh-onboarding-panel { position:fixed; top:calc(112px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); z-index:180; width:min(441px, calc(100vw - 24px)); max-height:calc(100dvh - 136px - env(safe-area-inset-bottom)); color:#17324d; }
+        .mh-onboarding-panel { position:absolute; top:calc(112px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); z-index:180; width:min(441px, calc(100vw - 24px)); max-height:calc(100dvh - 136px - env(safe-area-inset-bottom)); color:#17324d; }
+        body:has(.mh-onboarding-intro) .home-haqi-identity { visibility:hidden; }
         .mh-onboarding-panel.is-drawer { top:calc(112px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); width:auto; }
         .mh-onboarding-card { max-height:inherit; overflow:hidden auto; border:1.5px solid rgba(139,197,236,.78); border-radius:12px; background:linear-gradient(145deg, rgba(255,255,255,.72), rgba(226,245,255,.70)); box-shadow:0 15px 36px rgba(16,78,118,.16); backdrop-filter:blur(8px); }
         .mh-onboarding-head { display:flex; align-items:center; gap:12px; padding:15px 18px 12px; border-bottom:1.5px solid rgba(78,154,201,.24); cursor:grab; touch-action:none; }
@@ -338,21 +339,15 @@
         .mh-return-route-weekly { display:grid; gap:3px; margin:0 0 15px; padding:11px 12px; border-left:5px solid #5ca7c7; background:#edf7fb; color:#315f78; }
         .mh-return-route-weekly span { font-size:17px; font-weight:900; }
         .mh-return-route-weekly small { overflow:hidden; color:#56788a; font-size:15px; font-weight:700; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
-        .mh-onboarding-intro { overflow:hidden; background:#f4fbff; }
-        .mh-onboarding-intro-scene { position:relative; height:168px; overflow:hidden; border-bottom:1.5px solid rgba(78,154,201,.24); background:radial-gradient(circle at 78% 12%, rgba(255,221,112,.95) 0 5px, transparent 6px), linear-gradient(155deg, #0f5687, #1d92bd 58%, #9cdbe5); pointer-events:none; }
-        .mh-onboarding-intro-planet { position:absolute; right:-36px; bottom:-63px; width:189px; height:189px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #fff4b8 0 5%, #7dd9a8 6% 19%, #42a679 20% 28%, #4fa9cf 29% 100%); box-shadow:inset -27px -18px 0 rgba(10,67,104,.18), 0 0 42px rgba(163,234,255,.34); }
-        .mh-onboarding-intro-route { position:absolute; left:54px; top:87px; width:225px; height:66px; border-top:3px dashed rgba(255,255,255,.62); border-radius:50%; transform:rotate(-10deg); }
-        .mh-onboarding-intro-ship { position:absolute; left:39px; top:72px; font-size:41px; filter:drop-shadow(0 6px 5px rgba(0,32,60,.25)); animation:mhOnboardingFlight 2.6s ease-in-out both; }
-        .mh-onboarding-intro-star { position:absolute; color:#ffe985; font-size:17px; animation:mhOnboardingTwinkle 1.4s ease-in-out infinite alternate; }
-        .mh-onboarding-intro-star:nth-of-type(4) { left:28px; top:20px; }.mh-onboarding-intro-star:nth-of-type(5) { left:118px; top:28px; animation-delay:.4s; }.mh-onboarding-intro-star:nth-of-type(6) { left:185px; top:14px; animation-delay:.8s; }
-        .mh-onboarding-intro-copy { padding:20px 21px 21px; }
-        .mh-onboarding-kicker { color:#177ba8; font-size:15px; font-weight:900; }
-        .mh-onboarding-intro h2 { margin:5px 0 9px; font-size:24px; line-height:1.35; }
-        .mh-onboarding-intro p { margin:0; color:#4d6880; font-size:17px; line-height:1.55; }
-        .mh-onboarding-intro-summary { display:flex; gap:8px; margin:15px 0; }
-        .mh-onboarding-intro-summary span { flex:1; min-width:0; padding:8px 5px; border:1.5px solid #c7e2ee; border-radius:8px; background:#fff; color:#35627b; font-size:14px; font-weight:800; text-align:center; }
-        .mh-onboarding-intro-actions { display:flex; justify-content:flex-end; gap:11px; }
-        .mh-onboarding-later, .mh-onboarding-start { min-height:48px; padding:0 17px; border-radius:9px; font:inherit; font-size:17px; font-weight:900; cursor:pointer; }
+        .mh-onboarding-card.mh-onboarding-intro { position:relative; aspect-ratio:1376 / 993; overflow:hidden; border:0; border-radius:0; background:transparent url('https://cdn.keepwork.com/keepwork/cdn/haqi-onboarding-route-v2.webp') center / 100% 100% no-repeat; box-shadow:none; backdrop-filter:none; }
+        .mh-onboarding-intro-copy { position:absolute; inset:36% 10% 18%; display:flex; flex-direction:column; min-height:0; padding:0; }
+        .mh-onboarding-kicker { color:#177ba8; font-size:12px; font-weight:900; }
+        .mh-onboarding-intro h2 { margin:2px 0 3px; font-size:18px; line-height:1.2; }
+        .mh-onboarding-intro p { margin:0; color:#4d6880; font-size:12px; line-height:1.35; }
+        .mh-onboarding-intro-summary { display:flex; gap:6px; margin:5px 0; }
+        .mh-onboarding-intro-summary span { flex:1; min-width:0; padding:4px 3px; border:1px solid #c7e2ee; border-radius:6px; background:rgba(255,255,255,.78); color:#35627b; font-size:11px; font-weight:800; text-align:center; }
+        .mh-onboarding-intro-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:auto; }
+        .mh-onboarding-later, .mh-onboarding-start { min-height:30px; padding:0 13px; border-radius:7px; font:inherit; font-size:13px; font-weight:900; cursor:pointer; }
         .mh-onboarding-later { border:1px solid #b9d4e1; background:#fff; color:#527084; }.mh-onboarding-start { border:1px solid #126b9b; background:#2089c0; color:#fff; box-shadow:0 2px 0 #0d5f8b; }
         .mh-onboarding-drawer { display:grid; grid-template-columns:auto; place-items:center; min-width:78px; min-height:51px; padding:8px 14px; border:1.5px solid rgba(23,116,169,.76); border-radius:12px; background:rgba(239,249,255,.84); color:#174d70; font:inherit; cursor:grab; touch-action:none; box-shadow:0 9px 24px rgba(16,78,118,.14); backdrop-filter:blur(8px); }
         .mh-onboarding-drawer:active { cursor:grabbing; }
@@ -376,10 +371,8 @@
         @keyframes mhReturnFeedback { 0% { opacity:0; transform:translate(-50%,-10px) scale(.94); } 16%,72% { opacity:1; transform:translate(-50%,0) scale(1); } 100% { opacity:0; transform:translate(-50%,-8px) scale(.98); } }
         .guide-pulse-highlight { position:relative; z-index:2; outline:2px solid rgba(25,148,213,.88); outline-offset:3px; animation:guidePulseHighlight 1.7s ease-in-out infinite; }
         @keyframes guidePulseHighlight { 0%,100% { box-shadow:0 0 0 0 rgba(31,150,216,.46); } 55% { box-shadow:0 0 0 8px rgba(31,150,216,0); } }
-        @keyframes mhOnboardingFlight { from { opacity:0; transform:translate(-12px, 16px) rotate(-18deg); } to { opacity:1; transform:translate(126px, -30px) rotate(4deg); } }
-        @keyframes mhOnboardingTwinkle { from { opacity:.35; transform:scale(.75); } to { opacity:1; transform:scale(1.15); } }
         @keyframes mhOnboardingNode { 50% { box-shadow:0 0 0 7px rgba(25,134,189,0); } }
-        @media (prefers-reduced-motion:reduce) { .mh-reward-celebration-card, .mh-reward-spark, .mh-return-route-feedback, .mh-return-route-steps button.is-just-completed, .mh-onboarding-intro-ship, .mh-onboarding-intro-star, .mh-onboarding-route .is-active i { animation:none; } .mh-reward-spark { display:none; } .mh-onboarding-intro-ship { opacity:1; transform:translate(126px, -30px) rotate(4deg); } }
+        @media (prefers-reduced-motion:reduce) { .mh-reward-celebration-card, .mh-reward-spark, .mh-return-route-feedback, .mh-return-route-steps button.is-just-completed, .mh-onboarding-route .is-active i { animation:none; } .mh-reward-spark { display:none; } }
         @media (max-width:900px) { .mh-onboarding-panel { max-height:calc(100dvh - 240px - env(safe-area-inset-bottom)); } }
         @media (max-width:390px) { .mh-onboarding-panel { top:calc(116px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); width:min(100%, calc(100vw - 16px)); max-height:calc(100dvh - 236px - env(safe-area-inset-bottom)); } .mh-onboarding-panel.is-drawer { top:calc(116px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); width:auto; } .mh-onboarding-head { padding:12px 15px 11px; } .mh-onboarding-body { padding:12px 15px 15px; } .mh-onboarding-body p { margin-bottom:12px; } .mh-first-day-summary { gap:7px; } .mh-first-day-summary span { padding:8px; font-size:14px; } .mh-onboarding-complete-links { gap:9px; } .mh-onboarding-complete-links button { padding-inline:8px; font-size:15px; } }
 
@@ -1082,6 +1075,13 @@
         .shop-item.is-owned:hover { transform: none; filter: grayscale(0.4); }
         .shop-item.is-owned .price { color: #6b7280; }
         .mh-inv-item { cursor: grab; touch-action: none; }
+        .mh-inv-item {
+            min-height: 112px;
+            aspect-ratio: auto;
+            grid-template-rows: minmax(0, 1fr) auto;
+        }
+        .mh-inv-item .emoji { align-self: center; }
+        .mh-inv-item .name { transform: none; }
         .mh-inv-item.mh-inv-dragging { opacity: 0.35; cursor: grabbing; }
         .mh-inv-item.mh-inv-dragging:hover { transform: none; }
         .mh-inv-drag-clone { opacity: 0.95; box-shadow: 0 12px 24px rgba(0,0,0,0.25); border-radius: 14px; }
@@ -1259,7 +1259,7 @@
                 align-content: start;
                 gap: 9px 12px;
             }
-            .shop-item { aspect-ratio: 286 / 202; }
+            .mh-shop-grid .shop-item { aspect-ratio: 286 / 202; }
             .mh-shop-corner { right: -18px; width: min(250px, 30vw); }
             .mh-shop-back { width: 62px; }
         }
@@ -1278,13 +1278,13 @@
             .shop-filter-row { grid-template-columns: repeat(5, minmax(0, 72px)); justify-content: space-between; gap: 4px; overflow-x: visible; padding: 1px 0 3px; }
             .shop-filter-chip { min-height: 32px; padding: 4px 2px; font-size: 10px; }
             .mh-shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 4px 7px; }
-            .shop-item { padding: 4px 9px 5px; border-radius: 11px; }
+            .mh-shop-grid .shop-item { padding: 4px 9px 5px; border-radius: 11px; }
             .mh-shop-grid .shop-item { grid-template-rows: minmax(0, 1fr) 13px 17px; }
             .mh-shop-grid .shop-item .shop-item-visual { width: min(76px, 72%); height: min(64px, calc(100% - 3px)); }
             .mh-shop-grid .shop-item .name { transform: translateY(-10px); }
             .mh-shop-grid .shop-item .price { transform: translateY(-10px); }
-            .shop-item .name { font-size: 9px; line-height: 12px; }
-            .shop-item .price { font-size: 9px; }
+            .mh-shop-grid .shop-item .name { font-size: 9px; line-height: 12px; }
+            .mh-shop-grid .shop-item .price { font-size: 9px; }
             .mh-shop-footer { align-items: end; }
             .mh-shop-back { width: 52px; }
             .mh-shop-pager { width: 190px; grid-template-columns: 42px 1fr 42px; padding: 0 7px; }
@@ -1391,7 +1391,7 @@
             z-index: 72;
             display: flex;
             align-items: flex-start;
-            gap: 9px;
+            gap: 14px;
             pointer-events: auto;
         }
         .home-adventure-shortcut {
@@ -1684,7 +1684,7 @@
             .state-indicator-icon { font-size: 20px; }
             .state-indicator-value { font-size: 10px; }
             .pet-state-row { grid-template-columns: 22px 42px minmax(72px, 1fr) 30px; gap: 6px; }
-            .home-adventure-shortcuts { top: 7px; left: 7px; gap: 6px; }
+            .home-adventure-shortcuts { top: 12px; left: 12px; gap: 14px; }
             .home-adventure-shortcut { width: 60px; min-height: 66px; padding: 3px 1px; font-size: 11px; }
             .home-adventure-shortcut__icon { width: 42px; height: 42px; }
         }
@@ -1692,6 +1692,10 @@
         @media (max-width: 767px) {
             #mhStage { bottom: calc(144px + env(safe-area-inset-bottom)) !important; }
             .mh-dock { height: calc(144px + env(safe-area-inset-bottom)) !important; }
+        }
+        @media (orientation: landscape) and (max-height: 700px) and (min-width: 381px) {
+            #mhStage { bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
+            .mh-dock { height: calc(96px + env(safe-area-inset-bottom)) !important; }
         }
 
         /* ====== 右侧 Zoom Dial ====== */
@@ -2343,6 +2347,67 @@
         .home-adventure-shortcut.is-mineral:active {
             box-shadow: 0 2px 0 #55bda9, 0 5px 10px rgba(85, 189, 169, 0.24), inset 0 3px 0 rgba(255, 255, 255, 0.62), inset 0 -1px 0 rgba(53, 159, 142, 0.16);
         }
+            .home-adventure-shortcut,
+            .home-adventure-shortcut.is-expedition,
+            .home-adventure-shortcut.is-mineral,
+            .home-adventure-shortcut.is-english {
+                flex: 0 0 104px;
+                width: 104px;
+                height: 128px;
+                min-height: 128px;
+                padding: 0;
+                overflow: visible;
+                border: 0;
+                border-radius: 8px;
+                background: transparent;
+                box-shadow: none;
+                text-shadow: none;
+            }
+            .home-adventure-shortcut__icon {
+                width: 104px;
+                height: 128px;
+                filter: drop-shadow(0 3px 2px rgba(7, 49, 74, 0.2));
+            }
+            .home-adventure-shortcut:active,
+            .home-adventure-shortcut.is-mineral:active {
+                box-shadow: none;
+            }
+            @media (orientation: landscape) and (max-height: 700px) and (min-width: 381px) {
+                .home-adventure-shortcut.is-expedition,
+                .home-adventure-shortcut.is-mineral,
+                .home-adventure-shortcut.is-english,
+                .home-adventure-shortcut__icon {
+                    flex-basis: 54px;
+                    width: 54px;
+                    height: 66px;
+                    min-height: 66px;
+                }
+            }
+            @media (max-width: 380px) {
+                .home-adventure-shortcut,
+                .home-adventure-shortcut__icon {
+                    flex-basis: 104px;
+                    width: 104px;
+                    height: 128px;
+                    min-height: 128px;
+                }
+            }
+            @media (max-width: 767px) and (orientation: portrait) {
+                .home-adventure-shortcuts {
+                    gap: clamp(6px, 2vw, 10px);
+                }
+                .home-adventure-shortcut,
+                .home-adventure-shortcut.is-expedition,
+                .home-adventure-shortcut.is-mineral,
+                .home-adventure-shortcut.is-english,
+                .home-adventure-shortcut__icon {
+                    flex-basis: clamp(72px, 22vw, 92px);
+                    width: clamp(72px, 22vw, 92px);
+                    height: auto;
+                    min-height: 0;
+                    aspect-ratio: 104 / 128;
+                }
+            }
         .dock-icon-btn:active {
             box-shadow: 0 2px 0 #84b7dd, 0 5px 10px rgba(132, 183, 221, 0.24), inset 0 3px 0 rgba(255, 255, 255, 0.62), inset 0 -1px 0 rgba(89, 151, 200, 0.14);
         }
@@ -2719,7 +2784,37 @@
         window.addEventListener('resize', updateAppScale, { passive: true });
         window.visualViewport?.addEventListener('resize', updateAppScale, { passive: true });
 
-        await import('./js/app.js');
+        const importApp = async () => {
+            const retryDelays = [0, 250, 500, 1000];
+            let lastError;
+            for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+                if (retryDelays[attempt]) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+                }
+                try {
+                    const appUrl = new URL('./js/app.js', import.meta.url);
+                    if (attempt > 0) appUrl.searchParams.set('boot_retry', String(attempt));
+                    await import(/* @vite-ignore */ appUrl.href);
+                    return;
+                } catch (error) {
+                    lastError = error;
+                    console.warn(`MagicHaqi startup attempt ${attempt + 1} failed`, error);
+                }
+            }
+            throw lastError;
+        };
+
+        try {
+            await importApp();
+        } catch (error) {
+            console.error('MagicHaqi startup failed', error);
+            document.getElementById('app').innerHTML = `
+                <div style="min-height:100vh;display:grid;place-content:center;gap:14px;padding:24px;text-align:center;color:#fff;font-family:sans-serif">
+                    <strong style="font-size:20px">页面加载中断</strong>
+                    <span>本地服务可能正在刷新，请重新加载页面。</span>
+                    <button type="button" onclick="location.reload()" style="justify-self:center;padding:10px 22px;border:0;border-radius:8px;background:#fff;color:#2450bd;font-weight:700;cursor:pointer">重新加载</button>
+                </div>`;
+        }
     </script>
 </body>
 </html>

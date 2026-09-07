@@ -24,6 +24,32 @@ test('新手面板不覆盖登录页、小游戏和宠物图鉴视图', () => {
     assert.equal(shouldShowOnboardingPanel('expeditionMap'), true);
 });
 
+test('新手任务面板只属于 Field 场景并随缩放层刷新', async () => {
+    const fs = await import('node:fs/promises');
+    const appSource = await fs.readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+    const homeSource = await fs.readFile(new URL('../js/view_home.js', import.meta.url), 'utf8');
+
+    assert.match(appSource, /const fieldStage = app\.querySelector\('#mhStage\.zoom-field'\)/);
+    assert.match(appSource, /if \(!shouldShowOnboardingPanel\(state\.currentView\) \|\| !fieldStage\)/);
+    assert.match(appSource, /fieldStage\.appendChild\(panel\)/);
+    assert.match(appSource, /onZoomLevelChange: renderOnboardingPanel/);
+    assert.match(homeSource, /__lastCallbacks\?\.onZoomLevelChange\?\.\(zd\.id\)/);
+});
+
+test('新手任务面板按 Field 舞台可用空间等比缩放', async () => {
+    const fs = await import('node:fs/promises');
+    const appSource = await fs.readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+    const htmlSource = await fs.readFile(new URL('../MagicHaqi.html', import.meta.url), 'utf8');
+
+    assert.match(htmlSource, /\.mh-onboarding-panel \{ position:absolute;/);
+    assert.match(appSource, /function fitOnboardingPanelToField\(panel, fieldStage\)/);
+    assert.match(appSource, /const naturalHeight = Math\.max\(panel\.offsetHeight, card\.scrollHeight\)/);
+    assert.match(appSource, /const maxScale = card\.classList\.contains\('mh-onboarding-intro'\) \? 0\.84 : 1/);
+    assert.match(appSource, /const scale = Math\.min\(\s*maxScale,\s*Math\.max\(0, stageWidth - margin \* 2\) \/ naturalWidth,\s*Math\.max\(0, stageHeight - availableTop - margin\) \/ naturalHeight,/);
+    assert.match(appSource, /panel\.style\.transform = `scale\(\$\{scale\}\)`/);
+    assert.match(appSource, /requestAnimationFrame\(\(\) => fitOnboardingPanelToField\(panel, fieldStage\)\)/);
+});
+
 test('完成态航线在业务页由应用层收成抽屉', async () => {
     const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../js/app.js', import.meta.url), 'utf8'));
 

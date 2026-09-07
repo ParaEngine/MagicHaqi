@@ -30,7 +30,7 @@
         const overallMultiplier = Math.max(0, finiteNumber(rules?.overallMultiplier, 1));
 
         return clamp(
-            (cappedBaseChance + playerBonus + lowHpBonus) * overallMultiplier,
+            cappedBaseChance * overallMultiplier + playerBonus + lowHpBonus,
             finiteNumber(rules?.minChance),
             finiteNumber(rules?.absoluteMaxChance, 0.95),
         );

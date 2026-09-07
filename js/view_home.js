@@ -1672,6 +1672,7 @@ function runZoomTransition(from, to) {
         stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
         stage.style.touchAction = 'none';
         refreshZoomLevelBar(stage);
+        __lastCallbacks?.onZoomLevelChange?.(zd.id);
 
         const ctx = makeCtx(pet, __lastCallbacks);
         syncBgMusicForLevel(newLevel);

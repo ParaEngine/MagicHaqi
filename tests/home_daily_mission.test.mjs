@@ -115,3 +115,34 @@ test('六张横幅分别按美术按钮区域定位文字', () => {
     assert.match(hungerRule, /--home-daily-action-text-x:\s*11%/);
     assert.match(css, /\.home-daily-mission__action\s*>\s*span\s*\{[^}]*left:\s*var\(--home-daily-action-text-x,\s*0\)/);
 });
+
+test('今日任务只允许在 field 层级显示', () => {
+    const css = fs.readFileSync(new URL('../css/field.css', import.meta.url), 'utf8');
+    const source = fs.readFileSync(new URL('../js/level_field.js', import.meta.url), 'utf8');
+
+    assert.match(css, /\.mh-stage:not\(\.zoom-field\)\s+\.home-daily-mission\s*\{[^}]*display:\s*none/);
+    assert.match(css, /\.home-daily-mission\s*\{[^}]*z-index:\s*45/);
+    assert.match(css, /\.home-daily-mission\s*\{[^}]*max-width:\s*calc\(100dvw - 36px\)/);
+    assert.match(source, /<div class="field-pets">[\s\S]*?<section class="home-daily-mission[\s\S]*?<\/section>` : ''\}\s*<\/div>/);
+    assert.match(source, /function bindHomeDailyMissionDrag\(ctx\)/);
+    assert.match(source, /const scale = clientScaleForElement\(scene\)/);
+    assert.match(source, /Math\.hypot\(deltaX, deltaY\) < 5/);
+    assert.match(source, /grabOffsetX: event\.clientX - missionRect\.left/);
+    assert.match(source, /grabOffsetY: event\.clientY - missionRect\.top/);
+    assert.match(source, /const desiredLeft = event\.clientX - drag\.grabOffsetX/);
+    assert.match(source, /const desiredTop = event\.clientY - drag\.grabOffsetY/);
+    assert.match(source, /clampRange\(clientLeft, stageRect\.left/);
+    assert.match(source, /const safeTop = Math\.max\(stageRect\.top, shortcutRect\?\.bottom \+ 8 \|\| stageRect\.top\)/);
+    assert.match(source, /clampRange\(clientTop, safeTop/);
+    assert.match(source, /window\.addEventListener\('pointermove', moveDrag/);
+    assert.match(source, /window\.removeEventListener\('pointermove', moveDrag\)/);
+    assert.doesNotMatch(source, /event\.target\.closest\?\.\('button, a, input, textarea, select'\)/);
+    assert.match(source, /let homeDailyMissionDraggedAt = 0/);
+    assert.match(source, /if \(drag\.active\) homeDailyMissionDraggedAt = Date\.now\(\)/);
+    assert.match(source, /Date\.now\(\) - homeDailyMissionDraggedAt > 300/);
+    assert.match(css, /\.home-daily-mission__action\s*\{[^}]*touch-action:\s*none/);
+    assert.match(source, /!mission\.isConnected \|\| !stage\.classList\.contains\('zoom-field'\)/);
+    assert.match(source, /let homeDailyMissionClientPosition = null/);
+    assert.match(source, /if \(homeDailyMissionClientPosition\) \{\s*placeMission\(homeDailyMissionClientPosition\.left, homeDailyMissionClientPosition\.top\)/);
+    assert.match(source, /homeDailyMissionClientPosition = \{ left, top \}/);
+});

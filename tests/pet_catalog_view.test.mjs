@@ -53,3 +53,19 @@ test('pet catalog owns responsive scrolling without page overflow', () => {
     assert.match(source, /@media \(max-width:420px\) \{ \.mh-pet-list-scroll \{ padding:10px; \}/);
     assert.match(source, /--mh-pet-picker-footer-height:\$\{isPicker && multiple \? '62px' : '0px'\}/);
 });
+
+test('lazy pet cards recover from server load failures and expose manual retry', () => {
+    assert.match(source, /class="mh-pet-lazy-status"/);
+    assert.match(source, /delete el\.dataset\.petLazyLoading/);
+    assert.match(source, /loadingLabel\.textContent = t\('petLazyRetry'\)/);
+    assert.match(source, /\.addEventListener\('click', \(event\) => \{/);
+    assert.match(source, /load\(entry\.target\)\.then\(\(\) => \{/);
+});
+
+test('rare pet rehatching requires an expedition capture and grants only N quality', () => {
+    assert.match(source, /hasCapturedFamousPet\(entry, Object\.values\(state\.pets \|\| \{\}\), famousPetCaptureHistory\(\)\)/);
+    assert.match(source, /data-rare-capture/);
+    assert.match(source, /setView\('expeditionMap'\)/);
+    assert.match(source, /snapshot\?\.\('N'\)/);
+    assert.match(source, /battleStats: \{ \.\.\.quality\.stats \}/);
+});
